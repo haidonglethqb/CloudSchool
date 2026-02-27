@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Student Search &amp; Grade Summary</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#135bec",
+                        "primary-content": "#ffffff",
+                        "primary-dark": "#0e45b8",
+                        "primary-light": "#e8effd",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#101622",
+                        "surface-light": "#ffffff",
+                        "surface-dark": "#1a2332",
+                        "text-main": "#111318",
+                        "text-secondary": "#616f89",
+                        "border-light": "#f0f2f4",
+                        "border-dark": "#2d3a4f",
+                    },
+                    fontFamily: {
+                        "display": ["Lexend", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display min-h-screen flex flex-col overflow-x-hidden">
+<div class="layout-container flex h-full grow flex-col">
+<!-- Header / Navigation -->
+<header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark px-10 py-3 sticky top-0 z-50">
+<div class="flex items-center gap-4">
+<div class="size-8 text-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[32px]">school</span>
+</div>
+<h2 class="text-text-main dark:text-slate-100 text-lg font-bold leading-tight tracking-[-0.015em]">School Manager</h2>
+</div>
+<div class="flex flex-1 justify-end gap-8 items-center">
+<nav class="hidden md:flex items-center gap-9">
+<a class="text-text-main dark:text-slate-200 text-sm font-medium leading-normal hover:text-primary transition-colors" href="#">Dashboard</a>
+<a class="text-primary text-sm font-medium leading-normal" href="#">Students</a>
+<a class="text-text-main dark:text-slate-200 text-sm font-medium leading-normal hover:text-primary transition-colors" href="#">Teachers</a>
+<a class="text-text-main dark:text-slate-200 text-sm font-medium leading-normal hover:text-primary transition-colors" href="#">Settings</a>
+</nav>
+<div class="flex items-center gap-4">
+<button class="flex items-center justify-center p-2 rounded-full hover:bg-background-light dark:hover:bg-surface-dark/50 text-text-secondary">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 ring-2 ring-primary/20" data-alt="User profile avatar" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuB8qun0QLfW0Bc5VYjIhq9ADS1o3u0Kec000HLZUMQUFKHS2jUoItgMRpoHnQawEzu7W7XUPmRY7E6PaEENIBo1eBT6KW3W5yGsf4spDtlg5xh_CoeHGl12gf6Vg6vY33Zh50zDDnXnlFDFWhZvKX3Xf4Ig5bMkxZ40zGFFVIe3aGJvggC71SJRmn_h18wf4tej7B0vj_PI9sPmA7jKp0QpGnOYlEo3xJrJSRSGwtrGfLN0kNqQrHnsDxXEM0K5XtqjtlvApVIi-F-g");'></div>
+</div>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="flex flex-1 justify-center py-8 px-4 sm:px-10">
+<div class="layout-content-container flex flex-col w-full max-w-[1200px] flex-1 gap-6">
+<!-- Breadcrumbs & Title -->
+<div class="flex flex-col gap-2">
+<div class="flex items-center gap-2 text-sm">
+<a class="text-text-secondary dark:text-slate-400 font-medium hover:underline" href="#">Dashboard</a>
+<span class="text-text-secondary dark:text-slate-500">/</span>
+<span class="text-text-main dark:text-slate-200 font-medium">Grade Summary</span>
+</div>
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+<div class="flex flex-col gap-1">
+<h1 class="text-text-main dark:text-white text-3xl font-bold leading-tight">Student Grade Summary</h1>
+<p class="text-text-secondary dark:text-slate-400 text-sm font-normal">View and manage student grades across all semesters. Search by ID or name to find specific records.</p>
+</div>
+<div class="flex gap-2">
+<button class="flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-primary text-white font-medium hover:bg-primary-dark transition-colors shadow-sm shadow-primary/30">
+<span class="material-symbols-outlined text-[20px]">add</span>
+<span>Add New Entry</span>
+</button>
+<button class="flex items-center justify-center gap-2 h-10 px-4 rounded-lg border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark text-text-main dark:text-slate-200 font-medium hover:bg-background-light dark:hover:bg-surface-dark/80 transition-colors">
+<span class="material-symbols-outlined text-[20px]">download</span>
+<span>Export</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Filters & Search Section -->
+<div class="bg-surface-light dark:bg-surface-dark rounded-xl p-5 shadow-sm border border-border-light dark:border-border-dark flex flex-col gap-4">
+<div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+<!-- Search Bar -->
+<div class="md:col-span-5 lg:col-span-6">
+<label class="flex flex-col h-11 w-full relative">
+<div class="flex w-full flex-1 items-stretch rounded-lg h-full overflow-hidden border border-border-light dark:border-border-dark focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all">
+<div class="text-text-secondary dark:text-slate-400 flex bg-background-light dark:bg-surface-dark/50 items-center justify-center pl-3 pr-2 border-r-0">
+<span class="material-symbols-outlined">search</span>
+</div>
+<input class="flex w-full min-w-0 flex-1 resize-none bg-background-light dark:bg-surface-dark/50 text-text-main dark:text-slate-200 focus:outline-0 border-none h-full placeholder:text-text-secondary px-2 text-base font-normal leading-normal" placeholder="Search by student name or ID..." value=""/>
+</div>
+</label>
+</div>
+<!-- Dropdown Filters -->
+<div class="md:col-span-7 lg:col-span-6 flex flex-wrap md:flex-nowrap gap-3 justify-end">
+<button class="flex h-11 grow md:grow-0 items-center justify-between gap-x-2 rounded-lg bg-background-light dark:bg-surface-dark/50 border border-border-light dark:border-border-dark px-4 min-w-[140px] hover:border-primary/50 transition-colors group">
+<div class="flex flex-col items-start">
+<span class="text-[10px] uppercase tracking-wider text-text-secondary font-bold">Class</span>
+<span class="text-text-main dark:text-slate-200 text-sm font-medium leading-none">All Classes</span>
+</div>
+<span class="material-symbols-outlined text-text-secondary group-hover:text-primary transition-colors">arrow_drop_down</span>
+</button>
+<button class="flex h-11 grow md:grow-0 items-center justify-between gap-x-2 rounded-lg bg-background-light dark:bg-surface-dark/50 border border-border-light dark:border-border-dark px-4 min-w-[160px] hover:border-primary/50 transition-colors group">
+<div class="flex flex-col items-start">
+<span class="text-[10px] uppercase tracking-wider text-text-secondary font-bold">Semester</span>
+<span class="text-text-main dark:text-slate-200 text-sm font-medium leading-none">2023-2024</span>
+</div>
+<span class="material-symbols-outlined text-text-secondary group-hover:text-primary transition-colors">arrow_drop_down</span>
+</button>
+<button class="flex h-11 grow md:grow-0 items-center justify-between gap-x-2 rounded-lg bg-background-light dark:bg-surface-dark/50 border border-border-light dark:border-border-dark px-4 min-w-[140px] hover:border-primary/50 transition-colors group">
+<div class="flex flex-col items-start">
+<span class="text-[10px] uppercase tracking-wider text-text-secondary font-bold">Status</span>
+<span class="text-text-main dark:text-slate-200 text-sm font-medium leading-none">Active</span>
+</div>
+<span class="material-symbols-outlined text-text-secondary group-hover:text-primary transition-colors">arrow_drop_down</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Data Table Section -->
+<div class="bg-surface-light dark:bg-surface-dark rounded-xl shadow-sm border border-border-light dark:border-border-dark overflow-hidden flex flex-col">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-primary/5 border-b border-primary/10">
+<th class="py-4 px-6 text-xs font-bold uppercase tracking-wider text-primary w-16 text-center">STT</th>
+<th class="py-4 px-6 text-xs font-bold uppercase tracking-wider text-primary min-w-[200px]">Full Name</th>
+<th class="py-4 px-6 text-xs font-bold uppercase tracking-wider text-primary w-[120px]">ID</th>
+<th class="py-4 px-6 text-xs font-bold uppercase tracking-wider text-primary w-[120px]">Class</th>
+<th class="py-4 px-6 text-xs font-bold uppercase tracking-wider text-primary text-right w-[150px]">Sem 1 Avg</th>
+<th class="py-4 px-6 text-xs font-bold uppercase tracking-wider text-primary text-right w-[150px]">Sem 2 Avg</th>
+<th class="py-4 px-6 text-xs font-bold uppercase tracking-wider text-primary text-center w-[100px]">Action</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-border-light dark:divide-border-dark text-sm">
+<!-- Row 1 -->
+<tr class="hover:bg-background-light dark:hover:bg-surface-dark/50 transition-colors group">
+<td class="py-4 px-6 text-text-secondary text-center">01</td>
+<td class="py-4 px-6 font-medium text-text-main dark:text-slate-200">
+<div class="flex items-center gap-3">
+<div class="size-8 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 flex items-center justify-center font-bold text-xs">
+                                                JD
+                                            </div>
+<span>John Doe</span>
+</div>
+</td>
+<td class="py-4 px-6 text-text-secondary">STD-0012</td>
+<td class="py-4 px-6">
+<span class="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-slate-800 dark:text-slate-200">
+                                            10A1
+                                        </span>
+</td>
+<td class="py-4 px-6 text-right font-medium text-text-main dark:text-slate-200">8.5</td>
+<td class="py-4 px-6 text-right font-medium text-text-main dark:text-slate-200">8.7</td>
+<td class="py-4 px-6 text-center">
+<button class="p-1 text-text-secondary hover:text-primary transition-colors rounded hover:bg-primary/10">
+<span class="material-symbols-outlined text-[20px]">edit</span>
+</button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-background-light dark:hover:bg-surface-dark/50 transition-colors group">
+<td class="py-4 px-6 text-text-secondary text-center">02</td>
+<td class="py-4 px-6 font-medium text-text-main dark:text-slate-200">
+<div class="flex items-center gap-3">
+<div class="size-8 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-300 flex items-center justify-center font-bold text-xs">
+                                                JS
+                                            </div>
+<span>Jane Smith</span>
+</div>
+</td>
+<td class="py-4 px-6 text-text-secondary">STD-0015</td>
+<td class="py-4 px-6">
+<span class="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-slate-800 dark:text-slate-200">
+                                            10A1
+                                        </span>
+</td>
+<td class="py-4 px-6 text-right font-medium text-text-main dark:text-slate-200">9.2</td>
+<td class="py-4 px-6 text-right font-medium text-green-600 dark:text-green-400">9.5</td>
+<td class="py-4 px-6 text-center">
+<button class="p-1 text-text-secondary hover:text-primary transition-colors rounded hover:bg-primary/10">
+<span class="material-symbols-outlined text-[20px]">edit</span>
+</button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-background-light dark:hover:bg-surface-dark/50 transition-colors group">
+<td class="py-4 px-6 text-text-secondary text-center">03</td>
+<td class="py-4 px-6 font-medium text-text-main dark:text-slate-200">
+<div class="flex items-center gap-3">
+<div class="size-8 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-300 flex items-center justify-center font-bold text-xs">
+                                                MJ
+                                            </div>
+<span>Michael Johnson</span>
+</div>
+</td>
+<td class="py-4 px-6 text-text-secondary">STD-0023</td>
+<td class="py-4 px-6">
+<span class="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-slate-800 dark:text-slate-200">
+                                            10B2
+                                        </span>
+</td>
+<td class="py-4 px-6 text-right font-medium text-red-500 dark:text-red-400">6.8</td>
+<td class="py-4 px-6 text-right font-medium text-text-main dark:text-slate-200">7.2</td>
+<td class="py-4 px-6 text-center">
+<button class="p-1 text-text-secondary hover:text-primary transition-colors rounded hover:bg-primary/10">
+<span class="material-symbols-outlined text-[20px]">edit</span>
+</button>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-background-light dark:hover:bg-surface-dark/50 transition-colors group">
+<td class="py-4 px-6 text-text-secondary text-center">04</td>
+<td class="py-4 px-6 font-medium text-text-main dark:text-slate-200">
+<div class="flex items-center gap-3">
+<div class="size-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-300 flex items-center justify-center font-bold text-xs">
+                                                EW
+                                            </div>
+<span>Emily Williams</span>
+</div>
+</td>
+<td class="py-4 px-6 text-text-secondary">STD-0044</td>
+<td class="py-4 px-6">
+<span class="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-slate-800 dark:text-slate-200">
+                                            10A1
+                                        </span>
+</td>
+<td class="py-4 px-6 text-right font-medium text-text-main dark:text-slate-200">8.9</td>
+<td class="py-4 px-6 text-right font-medium text-text-main dark:text-slate-200">8.8</td>
+<td class="py-4 px-6 text-center">
+<button class="p-1 text-text-secondary hover:text-primary transition-colors rounded hover:bg-primary/10">
+<span class="material-symbols-outlined text-[20px]">edit</span>
+</button>
+</td>
+</tr>
+<!-- Row 5 -->
+<tr class="hover:bg-background-light dark:hover:bg-surface-dark/50 transition-colors group">
+<td class="py-4 px-6 text-text-secondary text-center">05</td>
+<td class="py-4 px-6 font-medium text-text-main dark:text-slate-200">
+<div class="flex items-center gap-3">
+<div class="size-8 rounded-full bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-300 flex items-center justify-center font-bold text-xs">
+                                                DB
+                                            </div>
+<span>David Brown</span>
+</div>
+</td>
+<td class="py-4 px-6 text-text-secondary">STD-0089</td>
+<td class="py-4 px-6">
+<span class="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-slate-800 dark:text-slate-200">
+                                            10C3
+                                        </span>
+</td>
+<td class="py-4 px-6 text-right font-medium text-text-main dark:text-slate-200">7.5</td>
+<td class="py-4 px-6 text-right font-medium text-text-main dark:text-slate-200">7.8</td>
+<td class="py-4 px-6 text-center">
+<button class="p-1 text-text-secondary hover:text-primary transition-colors rounded hover:bg-primary/10">
+<span class="material-symbols-outlined text-[20px]">edit</span>
+</button>
+</td>
+</tr>
+<!-- Row 6 -->
+<tr class="hover:bg-background-light dark:hover:bg-surface-dark/50 transition-colors group">
+<td class="py-4 px-6 text-text-secondary text-center">06</td>
+<td class="py-4 px-6 font-medium text-text-main dark:text-slate-200">
+<div class="flex items-center gap-3">
+<div class="size-8 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 flex items-center justify-center font-bold text-xs">
+                                                SL
+                                            </div>
+<span>Sarah Lee</span>
+</div>
+</td>
+<td class="py-4 px-6 text-text-secondary">STD-0102</td>
+<td class="py-4 px-6">
+<span class="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-slate-800 dark:text-slate-200">
+                                            10B2
+                                        </span>
+</td>
+<td class="py-4 px-6 text-right font-medium text-green-600 dark:text-green-400">9.8</td>
+<td class="py-4 px-6 text-right font-medium text-green-600 dark:text-green-400">9.9</td>
+<td class="py-4 px-6 text-center">
+<button class="p-1 text-text-secondary hover:text-primary transition-colors rounded hover:bg-primary/10">
+<span class="material-symbols-outlined text-[20px]">edit</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Pagination -->
+<div class="border-t border-border-light dark:border-border-dark p-4 flex items-center justify-between">
+<p class="text-sm text-text-secondary">Showing <span class="font-medium text-text-main dark:text-slate-200">1</span> to <span class="font-medium text-text-main dark:text-slate-200">6</span> of <span class="font-medium text-text-main dark:text-slate-200">42</span> results</p>
+<div class="flex gap-2">
+<button class="size-8 flex items-center justify-center rounded border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark text-text-secondary hover:bg-background-light dark:hover:bg-surface-dark/80 disabled:opacity-50" disabled="">
+<span class="material-symbols-outlined text-sm">chevron_left</span>
+</button>
+<button class="size-8 flex items-center justify-center rounded border border-primary bg-primary text-white text-sm font-medium">
+                                1
+                            </button>
+<button class="size-8 flex items-center justify-center rounded border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark text-text-main dark:text-slate-200 text-sm font-medium hover:bg-background-light dark:hover:bg-surface-dark/80">
+                                2
+                            </button>
+<button class="size-8 flex items-center justify-center rounded border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark text-text-main dark:text-slate-200 text-sm font-medium hover:bg-background-light dark:hover:bg-surface-dark/80">
+                                3
+                            </button>
+<button class="size-8 flex items-center justify-center rounded border border-border-light dark:border-border-dark bg-surface-light dark:bg-surface-dark text-text-secondary hover:bg-background-light dark:hover:bg-surface-dark/80">
+<span class="material-symbols-outlined text-sm">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

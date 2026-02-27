@@ -1,0 +1,294 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== MULTI-TENANT MODELS ====================
+
+// Tenant (School) - Each school is a tenant
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique // e.g., "LQDHS" for Le Quy Don High School
+  address     String?
+  phone       String?
+  email       String?
+  logo        String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  users       User[]
+  students    Student[]
+  classes     Class[]
+  grades      Grade[]
+  subjects    Subject[]
+  semesters   Semester[]
+  scores      Score[]
+  settings    TenantSettings?
+
+  @@map("tenants")
+}
+
+// Tenant-specific settings (QD6)
+model TenantSettings {
+  id              String  @id @default(uuid())
+  tenantId        String  @unique
+  tenant          Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // QD1: Age settings
+  minAge          Int     @default(15)
+  maxAge          Int     @default(20)
+  
+  // QD2: Class settings
+  maxClassSize    Int     @default(40)
+  
+  // QD5: Pass score
+  passScore       Float   @default(5.0)
+  
+  // Grade calculation weights (can be customized per school)
+  quiz15Weight    Float   @default(1.0)  // Hệ số điểm 15'
+  quiz45Weight    Float   @default(2.0)  // Hệ số điểm 1 tiết
+  finalWeight     Float   @default(3.0)  // Hệ số điểm cuối kỳ
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("tenant_settings")
+}
+
+// User (Admin, Teacher, Parent)
+model User {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  email       String
+  password    String
+  fullName    String
+  role        UserRole @default(TEACHER)
+  phone       String?
+  isActive    Boolean  @default(true)
+  
+  // Parent-Student relation (for PARENT role)
+  children    ParentStudent[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN  // System admin (can manage all tenants)
+  ADMIN        // School admin
+  TEACHER      // Teacher
+  PARENT       // Parent (can view children's scores)
+}
+
+// ==================== ACADEMIC MODELS ====================
+
+// Grade Level (Khối) - e.g., Grade 10, 11, 12
+model Grade {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  name        String   // e.g., "Khối 10", "Khối 11", "Khối 12"
+  level       Int      // 10, 11, 12
+  
+  classes     Class[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, level])
+  @@map("grades")
+}
+
+// Class (Lớp) - e.g., 10A1, 10A2
+model Class {
+  id              String   @id @default(uuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  gradeId         String
+  grade           Grade    @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  
+  name            String   // e.g., "10A1", "10A2"
+  homeroomTeacher String?  // Teacher name
+  maxStudents     Int      @default(40)
+  isActive        Boolean  @default(true)
+  
+  students        Student[]
+  scoreRecords    ScoreRecord[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@map("classes")
+}
+
+// Subject (Môn học) - e.g., Toán, Lý, Hóa
+model Subject {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  name        String   // e.g., "Toán", "Lý", "Hóa"
+  code        String   // e.g., "MATH", "PHY", "CHEM"
+  isActive    Boolean  @default(true)
+  
+  scores      Score[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@map("subjects")
+}
+
+// Semester (Học kỳ)
+model Semester {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  name        String   // e.g., "Học kỳ I", "Học kỳ II"
+  year        String   // e.g., "2024-2025"
+  semesterNum Int      // 1 or 2
+  startDate   DateTime?
+  endDate     DateTime?
+  isActive    Boolean  @default(true)
+  
+  scores      Score[]
+  scoreRecords ScoreRecord[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, year, semesterNum])
+  @@map("semesters")
+}
+
+// ==================== STUDENT MODELS ====================
+
+// Student (Học sinh) - BM1
+model Student {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  classId     String?
+  class       Class?   @relation(fields: [classId], references: [id], onDelete: SetNull)
+  
+  studentCode String   // Mã học sinh
+  fullName    String
+  gender      Gender
+  dateOfBirth DateTime
+  address     String?
+  email       String?
+  phone       String?
+  
+  isActive    Boolean  @default(true)
+  
+  scores      Score[]
+  parents     ParentStudent[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, studentCode])
+  @@map("students")
+}
+
+// Parent-Student relation (many-to-many)
+model ParentStudent {
+  id          String   @id @default(uuid())
+  
+  parentId    String
+  parent      User     @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  relationship String  @default("PARENT") // PARENT, GUARDIAN, OTHER
+  isPrimary   Boolean  @default(true)     // Primary contact parent
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([parentId, studentId])
+  @@map("parent_students")
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+// ==================== SCORE MODELS ====================
+
+// Score (Điểm) - Individual score entry - BM4
+model Score {
+  id          String    @id @default(uuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  studentId   String
+  student     Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  subjectId   String
+  subject     Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  
+  semesterId  String
+  semester    Semester  @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  
+  scoreType   ScoreType
+  value       Float     // 0-10
+  note        String?
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("scores")
+}
+
+enum ScoreType {
+  QUIZ_15     // Điểm 15 phút
+  QUIZ_45     // Điểm 1 tiết
+  FINAL       // Điểm thi cuối kỳ
+}
+
+// Score Record - Aggregated score per student/subject/semester
+model ScoreRecord {
+  id              String   @id @default(uuid())
+  
+  classId         String
+  class           Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  
+  semesterId      String
+  semester        Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  
+  subjectName     String
+  totalStudents   Int
+  passedStudents  Int
+  passRate        Float
+  averageScore    Float
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([classId, semesterId, subjectName])
+  @@map("score_records")
+}

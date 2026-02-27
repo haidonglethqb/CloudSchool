@@ -1,0 +1,23 @@
+services:
+  # PostgreSQL Database for development
+  db:
+    image: postgres:16-alpine
+    container_name: cloudschool-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: cloudschool
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - cloudschool-dev-network
+
+volumes:
+  postgres_data_dev:
+
+networks:
+  cloudschool-dev-network:
+    driver: bridge
