@@ -245,6 +245,64 @@ router.patch('/:id', authenticate, async (req, res, next) => {
   }
 })
 
+// PUT alias for update (frontend compatibility)
+router.put('/:id', authenticate, async (req, res, next) => {
+  // Delegate to the PATCH handler
+  req.method = 'PATCH'
+  try {
+    const { fullName, gender, dateOfBirth, address, email, phone, classId } = req.body
+
+    if (dateOfBirth) {
+      await validateAge(req.tenantId, dateOfBirth)
+    }
+
+    if (classId) {
+      const classInfo = await prisma.class.findFirst({
+        where: { id: classId, tenantId: req.tenantId },
+        include: { _count: { select: { students: true } } }
+      })
+
+      if (!classInfo) {
+        throw new AppError('Class not found', 404, 'CLASS_NOT_FOUND')
+      }
+
+      const currentStudent = await prisma.student.findFirst({
+        where: { id: req.params.id, tenantId: req.tenantId }
+      })
+
+      if (currentStudent.classId !== classId && classInfo._count.students >= classInfo.maxStudents) {
+        throw new AppError(
+          `Class ${classInfo.name} is full (max: ${classInfo.maxStudents})`,
+          400,
+          'CLASS_FULL'
+        )
+      }
+    }
+
+    const student = await prisma.student.update({
+      where: { id: req.params.id },
+      data: {
+        fullName,
+        gender,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+        address,
+        email,
+        phone,
+        classId
+      },
+      include: {
+        class: {
+          include: { grade: true }
+        }
+      }
+    })
+
+    res.json({ data: student })
+  } catch (error) {
+    next(error)
+  }
+})
+
 // Delete student (soft delete)
 router.delete('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
   try {

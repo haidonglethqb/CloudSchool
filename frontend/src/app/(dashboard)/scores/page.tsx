@@ -100,7 +100,31 @@ export default function ScoresPage() {
         selectedSubject,
         selectedSemester
       )
-      setScoreData(response.data.data)
+      
+      // Transform backend response to frontend format
+      const backendData = response.data.data
+      const students = backendData.students || backendData || []
+      
+      const transformed: StudentScore[] = (Array.isArray(students) ? students : []).map((item: any) => {
+        const student = item.student || item
+        const scores = item.scores || { quiz15: [], quiz45: [], final: [] }
+        const averages = item.averages || {}
+        
+        return {
+          studentId: student.id || item.studentId,
+          studentCode: student.studentCode || item.studentCode,
+          fullName: student.fullName || item.fullName,
+          scores: {
+            quiz15: (scores.quiz15 || []).map((s: any) => typeof s === 'number' ? s : s.value),
+            quiz45: (scores.quiz45 || []).map((s: any) => typeof s === 'number' ? s : s.value),
+            final: (scores.final || []).map((s: any) => typeof s === 'number' ? s : s.value),
+          },
+          average: averages.total ?? item.average ?? null,
+          passed: item.isPassed ?? item.passed ?? null,
+        }
+      })
+      
+      setScoreData(transformed)
       setEditedScores(new Map())
     } catch (error) {
       console.error('Failed to fetch scores:', error)
@@ -121,29 +145,38 @@ export default function ScoresPage() {
     value: string
   ) => {
     const numValue = parseFloat(value)
-    if (isNaN(numValue) || numValue < 0 || numValue > 10) return
+    if (value !== '' && (isNaN(numValue) || numValue < 0 || numValue > 10)) return
 
     // Update local state
     setScoreData((prev) =>
       prev.map((student) => {
         if (student.studentId !== studentId) return student
         const newScores = { ...student.scores }
-        newScores[scoreType][index] = numValue
+        const newArr = [...newScores[scoreType]]
+        if (value === '') {
+          // Allow clearing
+          newArr[index] = undefined as any
+        } else {
+          newArr[index] = numValue
+        }
+        newScores[scoreType] = newArr
         return { ...student, scores: newScores }
       })
     )
 
-    // Track edited score
-    const key = `${studentId}-${scoreType}-${index}`
-    setEditedScores((prev) => {
-      const newMap = new Map(prev)
-      newMap.set(key, {
-        studentId,
-        scoreType: scoreType === 'quiz15' ? 'QUIZ_15' : scoreType === 'quiz45' ? 'QUIZ_45' : 'FINAL',
-        value: numValue,
+    // Track edited score (only if valid number)
+    if (value !== '' && !isNaN(numValue)) {
+      const key = `${studentId}-${scoreType}-${index}`
+      setEditedScores((prev) => {
+        const newMap = new Map(prev)
+        newMap.set(key, {
+          studentId,
+          scoreType: scoreType === 'quiz15' ? 'QUIZ_15' : scoreType === 'quiz45' ? 'QUIZ_45' : 'FINAL',
+          value: numValue,
+        })
+        return newMap
       })
-      return newMap
-    })
+    }
   }
 
   const handleSave = async () => {

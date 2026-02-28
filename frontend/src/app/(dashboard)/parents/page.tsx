@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuthStore } from '@/store/auth'
+import { parentApi, studentApi } from '@/lib/api'
 import { Plus, Search, Edit2, Trash2, UserPlus, Eye } from 'lucide-react'
 import Link from 'next/link'
+import toast from 'react-hot-toast'
 
 interface Parent {
   id: string
@@ -22,7 +23,6 @@ interface Parent {
 }
 
 export default function ParentsPage() {
-  const { token } = useAuthStore()
   const [parents, setParents] = useState<Parent[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -40,12 +40,9 @@ export default function ParentsPage() {
 
   const fetchParents = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/parents?search=${search}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      const data = await res.json()
-      if (data.data) {
-        setParents(data.data)
+      const res = await parentApi.list({ search })
+      if (res.data?.data) {
+        setParents(res.data.data)
       }
     } catch (err) {
       console.error('Failed to fetch parents:', err)
@@ -56,12 +53,9 @@ export default function ParentsPage() {
 
   const fetchStudents = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/students?limit=100`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      const data = await res.json()
-      if (data.data) {
-        setStudents(data.data)
+      const res = await studentApi.list({ search: '', limit: 100 } as any)
+      if (res.data?.data) {
+        setStudents(res.data.data)
       }
     } catch (err) {
       console.error('Failed to fetch students:', err)
@@ -79,26 +73,13 @@ export default function ParentsPage() {
     setError('')
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/parents`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(formData)
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error?.message || 'Failed to create parent')
-      }
-
+      await parentApi.create(formData)
+      toast.success('Tạo tài khoản phụ huynh thành công')
       setShowModal(false)
       setFormData({ email: '', password: '', fullName: '', phone: '', studentIds: [] })
       fetchParents()
     } catch (err: any) {
-      setError(err.message)
+      setError(err.response?.data?.error?.message || err.message)
     } finally {
       setSubmitting(false)
     }
@@ -108,13 +89,12 @@ export default function ParentsPage() {
     if (!confirm('Bạn có chắc muốn xóa tài khoản phụ huynh này?')) return
 
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/parents/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      await parentApi.delete(id)
+      toast.success('Đã xóa tài khoản phụ huynh')
       fetchParents()
     } catch (err) {
       console.error('Failed to delete parent:', err)
+      toast.error('Không thể xóa phụ huynh')
     }
   }
 

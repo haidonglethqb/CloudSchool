@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuthStore } from '@/store/auth'
+import { parentApi } from '@/lib/api'
 import Link from 'next/link'
 import { BookOpen, User, ChevronRight } from 'lucide-react'
 
@@ -13,19 +13,15 @@ interface Child {
 }
 
 export default function MyChildrenScoresPage() {
-  const { token } = useAuthStore()
   const [children, setChildren] = useState<Child[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchChildren = async () => {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/parents/my-children`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-        const data = await res.json()
-        if (data.data) {
-          setChildren(data.data)
+        const res = await parentApi.getMyChildren()
+        if (res.data?.data) {
+          setChildren(res.data.data)
         }
       } catch (err) {
         console.error('Failed to fetch children:', err)
@@ -35,7 +31,7 @@ export default function MyChildrenScoresPage() {
     }
 
     fetchChildren()
-  }, [token])
+  }, [])
 
   if (loading) {
     return (

@@ -113,13 +113,13 @@ router.post('/register-school', [
     const token = jwt.sign(
       { sub: user.id, tenantId: tenant.id, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+      { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
     )
 
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      maxAge: 60 * 60 * 1000 // 1 hour
     })
 
     res.status(201).json({
@@ -184,13 +184,13 @@ router.post('/login', validateLogin, async (req, res, next) => {
     const token = jwt.sign(
       { sub: user.id, tenantId: tenant.id, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+      { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
     )
 
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 7 * 24 * 60 * 60 * 1000
+      maxAge: 60 * 60 * 1000 // 1 hour
     })
 
     res.json({

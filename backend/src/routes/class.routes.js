@@ -142,6 +142,32 @@ router.patch('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req
   }
 })
 
+// PUT alias for update (frontend compatibility)
+router.put('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
+  try {
+    const { name, homeroomTeacher, maxStudents, isActive, gradeId } = req.body
+
+    const classInfo = await prisma.class.update({
+      where: { id: req.params.id },
+      data: {
+        name,
+        homeroomTeacher,
+        maxStudents,
+        isActive,
+        ...(gradeId && { gradeId })
+      },
+      include: {
+        grade: true,
+        _count: { select: { students: true } }
+      }
+    })
+
+    res.json({ data: classInfo })
+  } catch (error) {
+    next(error)
+  }
+})
+
 // Delete class (soft delete)
 router.delete('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
   try {

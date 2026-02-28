@@ -9,6 +9,168 @@ const { authenticate, authorize } = require('../middleware/auth')
 // All routes require authentication
 router.use(authenticate)
 
+// ==================== PARENT ROUTES (for parent users) ====================
+// NOTE: These MUST come before /:id routes to avoid matching 'my-children' and 'semesters' as :id
+
+// Get available semesters for parent to filter
+router.get('/semesters', authorize('PARENT'), async (req, res, next) => {
+  try {
+    const semesters = await prisma.semester.findMany({
+      where: { tenantId: req.user.tenantId },
+      orderBy: [{ year: 'desc' }, { semesterNum: 'desc' }]
+    })
+
+    res.json({ data: semesters })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// Get my children
+router.get('/my-children', authorize('PARENT'), async (req, res, next) => {
+  try {
+    const children = await prisma.parentStudent.findMany({
+      where: { parentId: req.user.id },
+      include: {
+        student: {
+          include: {
+            class: {
+              include: { grade: true }
+            }
+          }
+        }
+      }
+    })
+
+    res.json({
+      data: children.map(c => ({
+        id: c.student.id,
+        studentCode: c.student.studentCode,
+        fullName: c.student.fullName,
+        gender: c.student.gender,
+        dateOfBirth: c.student.dateOfBirth,
+        class: c.student.class ? {
+          id: c.student.class.id,
+          name: c.student.class.name,
+          grade: c.student.class.grade?.name
+        } : null,
+        relationship: c.relationship,
+        isPrimary: c.isPrimary
+      }))
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// Get child's scores
+router.get('/my-children/:studentId/scores', authorize('PARENT'), async (req, res, next) => {
+  try {
+    const { studentId } = req.params
+    const { semesterId } = req.query
+
+    // Verify parent has access to this student
+    const link = await prisma.parentStudent.findUnique({
+      where: { parentId_studentId: { parentId: req.user.id, studentId } }
+    })
+    if (!link) {
+      throw new AppError('You do not have access to this student', 403, 'FORBIDDEN')
+    }
+
+    const student = await prisma.student.findUnique({
+      where: { id: studentId },
+      include: {
+        class: { include: { grade: true } }
+      }
+    })
+
+    const whereClause = { studentId }
+    if (semesterId) {
+      whereClause.semesterId = semesterId
+    }
+
+    const scores = await prisma.score.findMany({
+      where: whereClause,
+      include: {
+        subject: true,
+        semester: true
+      },
+      orderBy: [
+        { semester: { year: 'desc' } },
+        { semester: { semesterNum: 'desc' } },
+        { subject: { name: 'asc' } }
+      ]
+    })
+
+    // Group scores by subject and semester
+    const groupedScores = {}
+    for (const score of scores) {
+      const key = `${score.semesterId}-${score.subjectId}`
+      if (!groupedScores[key]) {
+        groupedScores[key] = {
+          semester: { id: score.semester.id, name: score.semester.name, year: score.semester.year },
+          subject: { id: score.subject.id, name: score.subject.name },
+          quiz15: [],
+          quiz45: [],
+          final: null
+        }
+      }
+      if (score.scoreType === 'QUIZ_15') {
+        groupedScores[key].quiz15.push(score.value)
+      } else if (score.scoreType === 'QUIZ_45') {
+        groupedScores[key].quiz45.push(score.value)
+      } else if (score.scoreType === 'FINAL') {
+        groupedScores[key].final = score.value
+      }
+    }
+
+    // Get tenant settings for calculation
+    const settings = await prisma.tenantSettings.findUnique({
+      where: { tenantId: req.user.tenantId }
+    })
+
+    // Calculate averages
+    const result = Object.values(groupedScores).map(item => {
+      const quiz15Avg = item.quiz15.length > 0 
+        ? item.quiz15.reduce((a, b) => a + b, 0) / item.quiz15.length 
+        : null
+      const quiz45Avg = item.quiz45.length > 0 
+        ? item.quiz45.reduce((a, b) => a + b, 0) / item.quiz45.length 
+        : null
+
+      let average = null
+      if (quiz15Avg !== null && quiz45Avg !== null && item.final !== null && settings) {
+        const totalWeight = settings.quiz15Weight + settings.quiz45Weight + settings.finalWeight
+        average = (quiz15Avg * settings.quiz15Weight + quiz45Avg * settings.quiz45Weight + item.final * settings.finalWeight) / totalWeight
+        average = Math.round(average * 100) / 100
+      }
+
+      return {
+        ...item,
+        quiz15Avg: quiz15Avg !== null ? Math.round(quiz15Avg * 100) / 100 : null,
+        quiz45Avg: quiz45Avg !== null ? Math.round(quiz45Avg * 100) / 100 : null,
+        average,
+        isPassing: average !== null ? average >= (settings?.passScore || 5.0) : null
+      }
+    })
+
+    res.json({
+      data: {
+        student: {
+          id: student.id,
+          fullName: student.fullName,
+          studentCode: student.studentCode,
+          class: student.class?.name,
+          grade: student.class?.grade?.name
+        },
+        scores: result
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 // ==================== ADMIN ROUTES ====================
 
 // Get all parents in the current tenant
@@ -313,167 +475,6 @@ router.delete('/:id', authorize('SUPER_ADMIN', 'ADMIN'), async (req, res, next) 
     await prisma.user.delete({ where: { id } })
 
     res.json({ message: 'Parent deleted successfully' })
-  } catch (error) {
-    next(error)
-  }
-})
-
-// ==================== PARENT ROUTES (for parent users) ====================
-
-// Get my children
-router.get('/my-children', authorize('PARENT'), async (req, res, next) => {
-  try {
-    const children = await prisma.parentStudent.findMany({
-      where: { parentId: req.user.id },
-      include: {
-        student: {
-          include: {
-            class: {
-              include: { grade: true }
-            }
-          }
-        }
-      }
-    })
-
-    res.json({
-      data: children.map(c => ({
-        id: c.student.id,
-        studentCode: c.student.studentCode,
-        fullName: c.student.fullName,
-        gender: c.student.gender,
-        dateOfBirth: c.student.dateOfBirth,
-        class: c.student.class ? {
-          id: c.student.class.id,
-          name: c.student.class.name,
-          grade: c.student.class.grade?.name
-        } : null,
-        relationship: c.relationship,
-        isPrimary: c.isPrimary
-      }))
-    })
-  } catch (error) {
-    next(error)
-  }
-})
-
-// Get child's scores
-router.get('/my-children/:studentId/scores', authorize('PARENT'), async (req, res, next) => {
-  try {
-    const { studentId } = req.params
-    const { semesterId } = req.query
-
-    // Verify parent has access to this student
-    const link = await prisma.parentStudent.findUnique({
-      where: { parentId_studentId: { parentId: req.user.id, studentId } }
-    })
-    if (!link) {
-      throw new AppError('You do not have access to this student', 403, 'FORBIDDEN')
-    }
-
-    const student = await prisma.student.findUnique({
-      where: { id: studentId },
-      include: {
-        class: { include: { grade: true } }
-      }
-    })
-
-    const whereClause = { studentId }
-    if (semesterId) {
-      whereClause.semesterId = semesterId
-    }
-
-    const scores = await prisma.score.findMany({
-      where: whereClause,
-      include: {
-        subject: true,
-        semester: true
-      },
-      orderBy: [
-        { semester: { year: 'desc' } },
-        { semester: { semesterNum: 'desc' } },
-        { subject: { name: 'asc' } }
-      ]
-    })
-
-    // Group scores by subject and semester
-    const groupedScores = {}
-    for (const score of scores) {
-      const key = `${score.semesterId}-${score.subjectId}`
-      if (!groupedScores[key]) {
-        groupedScores[key] = {
-          semester: { id: score.semester.id, name: score.semester.name, year: score.semester.year },
-          subject: { id: score.subject.id, name: score.subject.name },
-          quiz15: [],
-          quiz45: [],
-          final: null
-        }
-      }
-      if (score.scoreType === 'QUIZ_15') {
-        groupedScores[key].quiz15.push(score.value)
-      } else if (score.scoreType === 'QUIZ_45') {
-        groupedScores[key].quiz45.push(score.value)
-      } else if (score.scoreType === 'FINAL') {
-        groupedScores[key].final = score.value
-      }
-    }
-
-    // Get tenant settings for calculation
-    const settings = await prisma.tenantSettings.findUnique({
-      where: { tenantId: req.user.tenantId }
-    })
-
-    // Calculate averages
-    const result = Object.values(groupedScores).map(item => {
-      const quiz15Avg = item.quiz15.length > 0 
-        ? item.quiz15.reduce((a, b) => a + b, 0) / item.quiz15.length 
-        : null
-      const quiz45Avg = item.quiz45.length > 0 
-        ? item.quiz45.reduce((a, b) => a + b, 0) / item.quiz45.length 
-        : null
-
-      let average = null
-      if (quiz15Avg !== null && quiz45Avg !== null && item.final !== null && settings) {
-        const totalWeight = settings.quiz15Weight + settings.quiz45Weight + settings.finalWeight
-        average = (quiz15Avg * settings.quiz15Weight + quiz45Avg * settings.quiz45Weight + item.final * settings.finalWeight) / totalWeight
-        average = Math.round(average * 100) / 100
-      }
-
-      return {
-        ...item,
-        quiz15Avg: quiz15Avg !== null ? Math.round(quiz15Avg * 100) / 100 : null,
-        quiz45Avg: quiz45Avg !== null ? Math.round(quiz45Avg * 100) / 100 : null,
-        average,
-        isPassing: average !== null ? average >= (settings?.passScore || 5.0) : null
-      }
-    })
-
-    res.json({
-      data: {
-        student: {
-          id: student.id,
-          fullName: student.fullName,
-          studentCode: student.studentCode,
-          class: student.class?.name,
-          grade: student.class?.grade?.name
-        },
-        scores: result
-      }
-    })
-  } catch (error) {
-    next(error)
-  }
-})
-
-// Get available semesters for parent to filter
-router.get('/semesters', authorize('PARENT'), async (req, res, next) => {
-  try {
-    const semesters = await prisma.semester.findMany({
-      where: { tenantId: req.user.tenantId },
-      orderBy: [{ year: 'desc' }, { semesterNum: 'desc' }]
-    })
-
-    res.json({ data: semesters })
   } catch (error) {
     next(error)
   }

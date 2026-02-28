@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuthStore } from '@/store/auth'
+import { parentApi } from '@/lib/api'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, BookOpen, CheckCircle, XCircle } from 'lucide-react'
@@ -28,7 +28,6 @@ interface StudentInfo {
 
 export default function ChildScoresPage() {
   const { studentId } = useParams()
-  const { token } = useAuthStore()
   const [student, setStudent] = useState<StudentInfo | null>(null)
   const [scores, setScores] = useState<ScoreData[]>([])
   const [semesters, setSemesters] = useState<any[]>([])
@@ -38,14 +37,10 @@ export default function ChildScoresPage() {
   useEffect(() => {
     const fetchSemesters = async () => {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/parents/semesters`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-        const data = await res.json()
-        if (data.data) {
-          setSemesters(data.data)
-          // Select the active semester by default
-          const activeSemester = data.data.find((s: any) => s.isActive)
+        const res = await parentApi.getSemesters()
+        if (res.data?.data) {
+          setSemesters(res.data.data)
+          const activeSemester = res.data.data.find((s: any) => s.isActive)
           if (activeSemester) {
             setSelectedSemester(activeSemester.id)
           }
@@ -55,24 +50,19 @@ export default function ChildScoresPage() {
       }
     }
     fetchSemesters()
-  }, [token])
+  }, [])
 
   useEffect(() => {
     const fetchScores = async () => {
       setLoading(true)
       try {
-        let url = `${process.env.NEXT_PUBLIC_API_URL}/parents/my-children/${studentId}/scores`
-        if (selectedSemester) {
-          url += `?semesterId=${selectedSemester}`
-        }
-        
-        const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-        const data = await res.json()
-        if (data.data) {
-          setStudent(data.data.student)
-          setScores(data.data.scores)
+        const res = await parentApi.getChildScores(
+          studentId as string,
+          selectedSemester || undefined
+        )
+        if (res.data?.data) {
+          setStudent(res.data.data.student)
+          setScores(res.data.data.scores)
         }
       } catch (err) {
         console.error('Failed to fetch scores:', err)
@@ -84,7 +74,7 @@ export default function ChildScoresPage() {
     if (studentId) {
       fetchScores()
     }
-  }, [studentId, selectedSemester, token])
+  }, [studentId, selectedSemester])
 
   if (loading) {
     return (

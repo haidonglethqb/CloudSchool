@@ -205,3 +205,41 @@ export const tenantApi = {
   getCurrent: () => api.get('/tenants/current'),
   getStats: () => api.get('/tenants/stats'),
 }
+
+// Parent API
+export const parentApi = {
+  list: (params?: { search?: string; page?: number; limit?: number }) =>
+    api.get('/parents', { params }),
+  
+  create: (data: {
+    email: string
+    password: string
+    fullName: string
+    phone?: string
+    studentIds: string[]
+  }) => api.post('/parents', data),
+  
+  update: (id: string, data: Partial<{
+    email: string
+    fullName: string
+    phone: string
+    isActive: boolean
+    password: string
+  }>) => api.put(`/parents/${id}`, data),
+  
+  delete: (id: string) => api.delete(`/parents/${id}`),
+  
+  linkStudent: (parentId: string, studentId: string, relationship?: string) =>
+    api.post(`/parents/${parentId}/students`, { studentId, relationship }),
+  
+  unlinkStudent: (parentId: string, studentId: string) =>
+    api.delete(`/parents/${parentId}/students/${studentId}`),
+  
+  // Parent self-service routes
+  getMyChildren: () => api.get('/parents/my-children'),
+  
+  getChildScores: (studentId: string, semesterId?: string) =>
+    api.get(`/parents/my-children/${studentId}/scores`, { params: { semesterId } }),
+  
+  getSemesters: () => api.get('/parents/semesters'),
+}
