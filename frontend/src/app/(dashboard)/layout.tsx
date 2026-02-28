@@ -24,13 +24,13 @@ import {
 // Menu items by role
 const adminMenuItems = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
-  { href: '/students/new', icon: UserPlus, label: 'Tiếp nhận HS (BM1)' },
-  { href: '/classes', icon: Users, label: 'Danh sách lớp (BM2)' },
-  { href: '/students', icon: Search, label: 'Tra cứu HS (BM3)' },
-  { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm (BM4)' },
-  { href: '/reports', icon: BarChart3, label: 'Báo cáo (BM5)' },
+  { href: '/students/new', icon: UserPlus, label: 'Tiếp nhận HS ' },
+  { href: '/classes', icon: Users, label: 'Danh sách lớp ' },
+  { href: '/students', icon: Search, label: 'Tra cứu HS ' },
+  { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm ' },
+  { href: '/reports', icon: BarChart3, label: 'Báo cáo ' },
   { href: '/parents', icon: UserCheck, label: 'Quản lý Phụ huynh' },
-  { href: '/settings', icon: Settings, label: 'Quy định (QD)' },
+  { href: '/settings', icon: Settings, label: 'Quy định ' },
 ]
 
 const teacherMenuItems = [
