@@ -2,105 +2,74 @@ const express = require('express')
 const router = express.Router()
 const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
-const { authenticate } = require('../middleware/auth')
+const { authenticate, authorize } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
 
-// Validation for score (QD4: 0 <= Điểm <= 10)
-const validateScore = [
-  body('studentId').notEmpty().withMessage('Student ID is required'),
-  body('subjectId').notEmpty().withMessage('Subject ID is required'),
-  body('semesterId').notEmpty().withMessage('Semester ID is required'),
-  body('scoreType').isIn(['QUIZ_15', 'QUIZ_45', 'FINAL']).withMessage('Invalid score type'),
-  body('value').isFloat({ min: 0, max: 10 }).withMessage('Score must be between 0 and 10')
-]
-
-// Get scores by class and subject (BM4 - Bảng điểm môn học)
+// GET /scores/class/:classId - Get score sheet for a class
 router.get('/class/:classId', authenticate, async (req, res, next) => {
   try {
     const { subjectId, semesterId } = req.query
 
     if (!subjectId || !semesterId) {
-      throw new AppError('Subject ID and Semester ID are required', 400, 'MISSING_PARAMS')
+      throw new AppError('subjectId and semesterId are required', 400, 'MISSING_PARAMS')
     }
 
-    // Get all students in class
+    // Teacher can only see assigned classes
+    if (req.user.role === 'TEACHER') {
+      const assignment = await prisma.teacherAssignment.findFirst({
+        where: { teacherId: req.user.id, classId: req.params.classId, subjectId }
+      })
+      if (!assignment) {
+        throw new AppError('Not assigned to this class/subject', 403, 'FORBIDDEN')
+      }
+    }
+
     const students = await prisma.student.findMany({
-      where: {
-        classId: req.params.classId,
-        isActive: true
-      },
+      where: { classId: req.params.classId, isActive: true },
       orderBy: { fullName: 'asc' }
     })
 
-    // Get settings for grade calculation
-    const settings = await prisma.tenantSettings.findUnique({
-      where: { tenantId: req.tenantId }
+    // Get score components for this subject
+    const scoreComponents = await prisma.scoreComponent.findMany({
+      where: { tenantId: req.tenantId, subjectId },
+      orderBy: { weight: 'desc' }
     })
 
-    // Get scores for each student
+    const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+
+    // Get scores for all students
     const studentsWithScores = await Promise.all(
       students.map(async (student) => {
         const scores = await prisma.score.findMany({
-          where: {
-            studentId: student.id,
-            subjectId,
-            semesterId
-          }
+          where: { studentId: student.id, subjectId, semesterId },
+          include: { scoreComponent: true }
         })
 
-        const quiz15Scores = scores.filter(s => s.scoreType === 'QUIZ_15')
-        const quiz45Scores = scores.filter(s => s.scoreType === 'QUIZ_45')
-        const finalScores = scores.filter(s => s.scoreType === 'FINAL')
-
-        // Calculate averages
-        const avg15 = quiz15Scores.length > 0 
-          ? quiz15Scores.reduce((sum, s) => sum + s.value, 0) / quiz15Scores.length 
-          : null
-        const avg45 = quiz45Scores.length > 0 
-          ? quiz45Scores.reduce((sum, s) => sum + s.value, 0) / quiz45Scores.length 
-          : null
-        const avgFinal = finalScores.length > 0 
-          ? finalScores.reduce((sum, s) => sum + s.value, 0) / finalScores.length 
-          : null
-
         // Calculate weighted average
-        let totalWeight = 0
         let weightedSum = 0
+        let totalWeight = 0
+        const scoreMap = {}
 
-        if (avg15 !== null) {
-          weightedSum += avg15 * settings.quiz15Weight
-          totalWeight += settings.quiz15Weight
-        }
-        if (avg45 !== null) {
-          weightedSum += avg45 * settings.quiz45Weight
-          totalWeight += settings.quiz45Weight
-        }
-        if (avgFinal !== null) {
-          weightedSum += avgFinal * settings.finalWeight
-          totalWeight += settings.finalWeight
+        for (const sc of scoreComponents) {
+          const score = scores.find(s => s.scoreComponentId === sc.id)
+          scoreMap[sc.id] = score || null
+          if (score) {
+            weightedSum += score.value * sc.weight
+            totalWeight += sc.weight
+          }
         }
 
         const average = totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) / 100 : null
 
         return {
           student,
-          scores: {
-            quiz15: quiz15Scores,
-            quiz45: quiz45Scores,
-            final: finalScores
-          },
-          averages: {
-            quiz15: avg15 ? Math.round(avg15 * 100) / 100 : null,
-            quiz45: avg45 ? Math.round(avg45 * 100) / 100 : null,
-            final: avgFinal ? Math.round(avgFinal * 100) / 100 : null,
-            total: average
-          },
+          scores: scoreMap,
+          average,
           isPassed: average !== null && average >= settings.passScore
         }
       })
     )
 
-    // Get class and subject info
     const [classInfo, subject, semester] = await Promise.all([
       prisma.class.findUnique({ where: { id: req.params.classId }, include: { grade: true } }),
       prisma.subject.findUnique({ where: { id: subjectId } }),
@@ -112,13 +81,9 @@ router.get('/class/:classId', authenticate, async (req, res, next) => {
         class: classInfo,
         subject,
         semester,
+        scoreComponents,
         students: studentsWithScores,
-        settings: {
-          quiz15Weight: settings.quiz15Weight,
-          quiz45Weight: settings.quiz45Weight,
-          finalWeight: settings.finalWeight,
-          passScore: settings.passScore
-        }
+        passScore: settings.passScore
       }
     })
   } catch (error) {
@@ -126,50 +91,149 @@ router.get('/class/:classId', authenticate, async (req, res, next) => {
   }
 })
 
-// Add/Update score
-router.post('/', authenticate, validateScore, async (req, res, next) => {
+// GET /scores/student/:studentId - Get all scores for a student
+router.get('/student/:studentId', authenticate, async (req, res, next) => {
+  try {
+    const { semesterId } = req.query
+
+    const where = {
+      studentId: req.params.studentId,
+      tenantId: req.tenantId,
+      ...(semesterId && { semesterId })
+    }
+
+    const scores = await prisma.score.findMany({
+      where,
+      include: {
+        subject: true,
+        semester: true,
+        scoreComponent: true
+      },
+      orderBy: [{ subjectId: 'asc' }, { scoreComponentId: 'asc' }]
+    })
+
+    const student = await prisma.student.findUnique({
+      where: { id: req.params.studentId },
+      include: { class: { include: { grade: true } } }
+    })
+
+    // Group by subject and calculate averages
+    const subjects = await prisma.subject.findMany({
+      where: { tenantId: req.tenantId, isActive: true }
+    })
+
+    const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+
+    const subjectScores = subjects.map(subject => {
+      const subjectData = scores.filter(s => s.subjectId === subject.id)
+
+      let weightedSum = 0
+      let totalWeight = 0
+      for (const s of subjectData) {
+        weightedSum += s.value * s.scoreComponent.weight
+        totalWeight += s.scoreComponent.weight
+      }
+
+      const average = totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) / 100 : null
+
+      return {
+        subject,
+        scores: subjectData,
+        average,
+        isPassed: average !== null && average >= settings.passScore
+      }
+    }).filter(s => s.scores.length > 0)
+
+    // Overall average
+    const validAverages = subjectScores.filter(s => s.average !== null).map(s => s.average)
+    const overallAverage = validAverages.length > 0
+      ? Math.round((validAverages.reduce((a, b) => a + b, 0) / validAverages.length) * 100) / 100
+      : null
+
+    // Ranking (among classmates)
+    let ranking = null
+    if (student.classId && semesterId) {
+      const classmates = await prisma.student.findMany({
+        where: { classId: student.classId, isActive: true },
+        include: { scores: { where: { semesterId }, include: { scoreComponent: true } } }
+      })
+
+      const classmateAverages = classmates.map(cm => {
+        let sum = 0; let weight = 0
+        for (const s of cm.scores) {
+          sum += s.value * s.scoreComponent.weight
+          weight += s.scoreComponent.weight
+        }
+        return { id: cm.id, average: weight > 0 ? sum / weight : 0 }
+      }).sort((a, b) => b.average - a.average)
+
+      ranking = classmateAverages.findIndex(c => c.id === student.id) + 1
+    }
+
+    res.json({
+      data: {
+        student,
+        subjectScores,
+        overallAverage,
+        ranking,
+        totalStudents: student.classId ? await prisma.student.count({ where: { classId: student.classId, isActive: true } }) : null
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /scores - Create/Update score
+router.post('/', authenticate, authorize('SUPER_ADMIN', 'TEACHER'), [
+  body('studentId').notEmpty(),
+  body('subjectId').notEmpty(),
+  body('semesterId').notEmpty(),
+  body('scoreComponentId').notEmpty(),
+  body('value').isFloat({ min: 0, max: 10 }).withMessage('Score must be 0-10')
+], async (req, res, next) => {
   try {
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
       return res.status(400).json({ error: { code: 'VALIDATION_ERROR', details: errors.array() } })
     }
 
-    const { studentId, subjectId, semesterId, scoreType, value, note } = req.body
+    const { studentId, subjectId, semesterId, scoreComponentId, value } = req.body
 
-    // Verify student belongs to tenant
-    const student = await prisma.student.findFirst({
-      where: { id: studentId, tenantId: req.tenantId }
-    })
-
-    if (!student) {
-      throw new AppError('Student not found', 404, 'STUDENT_NOT_FOUND')
+    // Teacher can only enter scores for assigned classes
+    if (req.user.role === 'TEACHER') {
+      const student = await prisma.student.findUnique({ where: { id: studentId } })
+      const assignment = await prisma.teacherAssignment.findFirst({
+        where: { teacherId: req.user.id, classId: student.classId, subjectId }
+      })
+      if (!assignment) {
+        throw new AppError('Not assigned to this class/subject', 403, 'FORBIDDEN')
+      }
     }
 
-    const score = await prisma.score.create({
-      data: {
-        tenantId: req.tenantId,
-        studentId,
-        subjectId,
-        semesterId,
-        scoreType,
-        value,
-        note
+    // Upsert score (one score per student/subject/semester/component)
+    const score = await prisma.score.upsert({
+      where: {
+        studentId_subjectId_semesterId_scoreComponentId: {
+          studentId, subjectId, semesterId, scoreComponentId
+        }
       },
-      include: {
-        student: true,
-        subject: true,
-        semester: true
-      }
+      create: {
+        tenantId: req.tenantId,
+        studentId, subjectId, semesterId, scoreComponentId, value
+      },
+      update: { value },
+      include: { scoreComponent: true, subject: true, student: true }
     })
 
-    res.status(201).json({ data: score })
+    res.json({ data: score })
   } catch (error) {
     next(error)
   }
 })
 
-// Batch update scores (for scoresheet)
-router.post('/batch', authenticate, async (req, res, next) => {
+// POST /scores/batch - Batch save scores
+router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'TEACHER'), async (req, res, next) => {
   try {
     const { scores } = req.body
 
@@ -177,38 +241,21 @@ router.post('/batch', authenticate, async (req, res, next) => {
       throw new AppError('Scores array is required', 400, 'INVALID_INPUT')
     }
 
-    // Validate all scores
-    for (const score of scores) {
-      if (score.value < 0 || score.value > 10) {
-        throw new AppError(`Invalid score value: ${score.value}. Must be between 0 and 10`, 400, 'INVALID_SCORE')
-      }
-    }
-
-    // Process scores
     const results = await Promise.all(
-      scores.map(async (scoreData) => {
-        const { id, studentId, subjectId, semesterId, scoreType, value, note } = scoreData
-
-        if (id) {
-          // Update existing score
-          return prisma.score.update({
-            where: { id },
-            data: { value, note }
-          })
-        } else {
-          // Create new score
-          return prisma.score.create({
-            data: {
-              tenantId: req.tenantId,
-              studentId,
-              subjectId,
-              semesterId,
-              scoreType,
-              value,
-              note
-            }
-          })
+      scores.map(({ studentId, subjectId, semesterId, scoreComponentId, value }) => {
+        if (value < 0 || value > 10) {
+          throw new AppError(`Invalid score: ${value}`, 400, 'INVALID_SCORE')
         }
+
+        return prisma.score.upsert({
+          where: {
+            studentId_subjectId_semesterId_scoreComponentId: {
+              studentId, subjectId, semesterId, scoreComponentId
+            }
+          },
+          create: { tenantId: req.tenantId, studentId, subjectId, semesterId, scoreComponentId, value },
+          update: { value }
+        })
       })
     )
 
@@ -218,58 +265,24 @@ router.post('/batch', authenticate, async (req, res, next) => {
   }
 })
 
-// Update single score
-router.patch('/:id', authenticate, async (req, res, next) => {
+// PATCH /scores/:id/lock
+router.patch('/:id/lock', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
-    const { value, note } = req.body
-
-    if (value !== undefined && (value < 0 || value > 10)) {
-      throw new AppError('Score must be between 0 and 10', 400, 'INVALID_SCORE')
-    }
-
     const score = await prisma.score.update({
       where: { id: req.params.id },
-      data: { value, note }
+      data: { isLocked: true }
     })
-
     res.json({ data: score })
   } catch (error) {
     next(error)
   }
 })
 
-// Delete score
-router.delete('/:id', authenticate, async (req, res, next) => {
+// DELETE /scores/:id
+router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
-    await prisma.score.delete({
-      where: { id: req.params.id }
-    })
-
-    res.json({ data: { message: 'Score deleted successfully' } })
-  } catch (error) {
-    next(error)
-  }
-})
-
-// Get student scores
-router.get('/student/:studentId', authenticate, async (req, res, next) => {
-  try {
-    const { semesterId, subjectId } = req.query
-
-    const scores = await prisma.score.findMany({
-      where: {
-        studentId: req.params.studentId,
-        ...(semesterId && { semesterId }),
-        ...(subjectId && { subjectId })
-      },
-      include: {
-        subject: true,
-        semester: true
-      },
-      orderBy: { createdAt: 'desc' }
-    })
-
-    res.json({ data: scores })
+    await prisma.score.delete({ where: { id: req.params.id } })
+    res.json({ data: { message: 'Score deleted' } })
   } catch (error) {
     next(error)
   }

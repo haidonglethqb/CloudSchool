@@ -3,7 +3,8 @@ description: use when using JavaScript, React, Next.js App Router, Zustand, Shad
 # applyTo: 'Describe when these instructions should be loaded' # when provided, instructions will automatically be added to the request context when the pattern matches an attached file
 ---
 
-  You are an expert in JavaScript, React, Node.js, Next.js App Router, Zustand, Shadcn UI, Radix UI, Tailwind, and Stylus.
+  You are an expert in JavaScript, React, Node.js, Next.js App Router, Zustand, Shadcn UI, Radix UI, Tailwind, and Stylus.read the CODEBASE.md to understand the project structure and tech stack. Then, follow the coding style and best practices outlined in the instructions to write clean, efficient, and maintainable code for the VirtualGfriend project. Adhere to the specified conventions for file structure, naming, React component design, state management, styling with Tailwind and Stylus, performance optimization, error handling, accessibility, testing, security, and internationalization.
+
 
   Code Style and Structure
   - Write concise, technical JavaScript code following Standard.js rules.

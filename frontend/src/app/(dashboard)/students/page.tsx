@@ -23,8 +23,9 @@ interface Student {
   fullName: string
   gender: string
   dateOfBirth: string
-  email: string | null
   address: string
+  parentName: string | null
+  parentPhone: string | null
   class: { id: string; name: string; grade: { name: string } } | null
   createdAt: string
 }
@@ -233,7 +234,7 @@ export default function StudentsPage() {
                   <th className="table-header">Giới tính</th>
                   <th className="table-header">Ngày sinh</th>
                   <th className="table-header">Lớp</th>
-                  <th className="table-header">Email</th>
+                  <th className="table-header">Phụ huynh</th>
                   <th className="table-header text-right">Thao tác</th>
                 </tr>
               </thead>
@@ -256,7 +257,7 @@ export default function StudentsPage() {
                       )}
                     </td>
                     <td className="table-cell text-gray-500">
-                      {student.email || '-'}
+                      {student.parentName || '-'}
                     </td>
                     <td className="table-cell text-right">
                       <div className="flex items-center justify-end gap-2">

@@ -5,47 +5,30 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
 
-// Get all subjects (QD4)
-router.get('/', authenticate, async (req, res, next) => {
-  try {
-    const subjects = await prisma.subject.findMany({
-      where: {
-        tenantId: req.tenantId,
-        isActive: true
-      },
-      orderBy: { name: 'asc' }
-    })
+// ==================== SUBJECT ROUTES ====================
 
-    res.json({ data: subjects })
-  } catch (error) {
-    next(error)
-  }
-})
+// ==================== SEMESTER ROUTES (must be before /:id) ====================
 
-// ==================== SEMESTER ROUTES (must come before /:id) ====================
-
-// Get all semesters (both paths for compatibility)
+// GET /subjects/semesters
 const semesterListHandler = async (req, res, next) => {
   try {
     const semesters = await prisma.semester.findMany({
       where: { tenantId: req.tenantId },
       orderBy: [{ year: 'desc' }, { semesterNum: 'asc' }]
     })
-
     res.json({ data: semesters })
   } catch (error) {
     next(error)
   }
 }
-
 router.get('/semesters', authenticate, semesterListHandler)
 router.get('/semesters/list', authenticate, semesterListHandler)
 
-// Create semester
-router.post('/semesters', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), [
-  body('name').notEmpty().withMessage('Semester name is required'),
-  body('year').notEmpty().withMessage('Year is required'),
-  body('semesterNum').isInt({ min: 1, max: 2 }).withMessage('Semester number must be 1 or 2')
+// POST /subjects/semesters
+router.post('/semesters', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
+  body('name').notEmpty(),
+  body('year').notEmpty(),
+  body('semesterNum').isInt({ min: 1, max: 2 })
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req)
@@ -58,9 +41,7 @@ router.post('/semesters', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), [
     const semester = await prisma.semester.create({
       data: {
         tenantId: req.tenantId,
-        name,
-        year,
-        semesterNum,
+        name, year, semesterNum,
         startDate: startDate ? new Date(startDate) : null,
         endDate: endDate ? new Date(endDate) : null
       }
@@ -72,17 +53,15 @@ router.post('/semesters', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), [
   }
 })
 
-// Update semester
-router.patch('/semesters/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
+// PATCH /subjects/semesters/:id
+router.patch('/semesters/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const { name, year, semesterNum, startDate, endDate, isActive } = req.body
 
     const semester = await prisma.semester.update({
       where: { id: req.params.id },
       data: {
-        name,
-        year,
-        semesterNum,
+        name, year, semesterNum,
         startDate: startDate ? new Date(startDate) : undefined,
         endDate: endDate ? new Date(endDate) : undefined,
         isActive
@@ -95,21 +74,49 @@ router.patch('/semesters/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), 
   }
 })
 
+// DELETE /subjects/semesters/:id
+router.delete('/semesters/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+  try {
+    const scores = await prisma.score.count({ where: { semesterId: req.params.id } })
+    if (scores > 0) throw new AppError('Cannot delete semester with existing scores', 400, 'HAS_SCORES')
+
+    await prisma.semester.delete({ where: { id: req.params.id } })
+    res.json({ data: { message: 'Semester deleted' } })
+  } catch (error) {
+    next(error)
+  }
+})
+
 // ==================== SUBJECT CRUD ====================
 
-// Get subject by ID
+// GET /subjects
+router.get('/', authenticate, async (req, res, next) => {
+  try {
+    const { includeInactive } = req.query
+    const where = { tenantId: req.tenantId }
+    if (!includeInactive) where.isActive = true
+
+    const subjects = await prisma.subject.findMany({
+      where,
+      include: { scoreComponents: true },
+      orderBy: { name: 'asc' }
+    })
+
+    res.json({ data: subjects })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /subjects/:id
 router.get('/:id', authenticate, async (req, res, next) => {
   try {
     const subject = await prisma.subject.findFirst({
-      where: {
-        id: req.params.id,
-        tenantId: req.tenantId
-      }
+      where: { id: req.params.id, tenantId: req.tenantId },
+      include: { scoreComponents: { orderBy: { weight: 'desc' } } }
     })
 
-    if (!subject) {
-      throw new AppError('Subject not found', 404, 'NOT_FOUND')
-    }
+    if (!subject) throw new AppError('Subject not found', 404, 'NOT_FOUND')
 
     res.json({ data: subject })
   } catch (error) {
@@ -117,8 +124,8 @@ router.get('/:id', authenticate, async (req, res, next) => {
   }
 })
 
-// Create new subject (QD6 - Thay đổi môn học)
-router.post('/', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), [
+// POST /subjects
+router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
   body('name').notEmpty().withMessage('Subject name is required'),
   body('code').notEmpty().withMessage('Subject code is required')
 ], async (req, res, next) => {
@@ -128,13 +135,19 @@ router.post('/', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), [
       return res.status(400).json({ error: { code: 'VALIDATION_ERROR', details: errors.array() } })
     }
 
-    const { name, code } = req.body
+    const { name, code, description } = req.body
+
+    const existing = await prisma.subject.findFirst({
+      where: { tenantId: req.tenantId, code: code.toUpperCase() }
+    })
+    if (existing) throw new AppError('Subject code already exists', 409, 'DUPLICATE')
 
     const subject = await prisma.subject.create({
       data: {
         tenantId: req.tenantId,
         name,
-        code: code.toUpperCase()
+        code: code.toUpperCase(),
+        description
       }
     })
 
@@ -144,16 +157,17 @@ router.post('/', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), [
   }
 })
 
-// Update subject
-router.patch('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
+// PUT /subjects/:id
+router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
-    const { name, code, isActive } = req.body
+    const { name, code, description, isActive } = req.body
 
     const subject = await prisma.subject.update({
       where: { id: req.params.id },
       data: {
         name,
         code: code?.toUpperCase(),
+        description,
         isActive
       }
     })
@@ -164,35 +178,15 @@ router.patch('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req
   }
 })
 
-// PUT alias for update (frontend compatibility)
-router.put('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
-  try {
-    const { name, code, isActive } = req.body
-
-    const subject = await prisma.subject.update({
-      where: { id: req.params.id },
-      data: {
-        name,
-        code: code?.toUpperCase(),
-        isActive
-      }
-    })
-
-    res.json({ data: subject })
-  } catch (error) {
-    next(error)
-  }
-})
-
-// Delete subject (soft delete)
-router.delete('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
+// DELETE /subjects/:id (soft delete)
+router.delete('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     await prisma.subject.update({
       where: { id: req.params.id },
       data: { isActive: false }
     })
 
-    res.json({ data: { message: 'Subject deleted successfully' } })
+    res.json({ data: { message: 'Subject deleted' } })
   } catch (error) {
     next(error)
   }

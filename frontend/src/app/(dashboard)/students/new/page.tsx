@@ -16,7 +16,8 @@ const studentSchema = z.object({
   gender: z.enum(['MALE', 'FEMALE', 'OTHER'], { required_error: 'Chọn giới tính' }),
   dateOfBirth: z.string().min(1, 'Chọn ngày sinh'),
   address: z.string().min(5, 'Địa chỉ ít nhất 5 ký tự'),
-  email: z.string().email('Email không hợp lệ').optional().or(z.literal('')),
+  parentName: z.string().optional().or(z.literal('')),
+  parentPhone: z.string().optional().or(z.literal('')),
   classId: z.string().uuid('Chọn lớp'),
 })
 
@@ -51,7 +52,8 @@ export default function NewStudentPage() {
     resolver: zodResolver(studentSchema),
     defaultValues: {
       gender: undefined,
-      email: '',
+      parentName: '',
+      parentPhone: '',
     },
   })
 
@@ -113,7 +115,8 @@ export default function NewStudentPage() {
       setSubmitting(true)
       await studentApi.create({
         ...data,
-        email: data.email || undefined,
+        parentName: data.parentName || undefined,
+        parentPhone: data.parentPhone || undefined,
       })
       toast.success('Tiếp nhận học sinh thành công!')
       router.push('/students')
@@ -228,18 +231,26 @@ export default function NewStudentPage() {
             )}
           </div>
 
-          {/* Email */}
-          <div>
-            <label className="label">Email (không bắt buộc)</label>
-            <input
-              type="email"
-              className={`input ${errors.email ? 'border-red-500' : ''}`}
-              placeholder="hocsinh@example.com"
-              {...register('email')}
-            />
-            {errors.email && (
-              <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>
-            )}
+          {/* Phụ huynh */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Tên phụ huynh</label>
+              <input
+                type="text"
+                className="input"
+                placeholder="Nguyễn Văn B"
+                {...register('parentName')}
+              />
+            </div>
+            <div>
+              <label className="label">SĐT phụ huynh</label>
+              <input
+                type="text"
+                className="input"
+                placeholder="0901234567"
+                {...register('parentPhone')}
+              />
+            </div>
           </div>
 
           {/* Class Selection */}

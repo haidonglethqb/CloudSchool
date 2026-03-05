@@ -1,275 +1,387 @@
-# CloudSchool - School Management System
+# CloudSchool - Hệ thống Quản lý Trường học SaaS (Multi-Tenant)
 
-Enterprise-grade multi-tenant school management system with comprehensive features for student enrollment, class management, grade tracking, and reporting.
+Hệ thống quản lý trường học đa tổ chức (multi-tenant), hỗ trợ nhiều trường cùng vận hành trên một nền tảng duy nhất, với phân quyền 6 vai trò và cách ly dữ liệu hoàn toàn.
 
-## Overview
+## Tổng quan
 
-CloudSchool is a complete school management solution built with modern web technologies. The system supports multiple schools (multi-tenancy) with isolated data and independent configurations for each institution.
+CloudSchool là nền tảng SaaS cho phép:
+- **Platform Admin** quản lý toàn bộ các trường, gói dịch vụ
+- Mỗi **trường** tự đăng ký, quản lý học sinh, giáo viên, điểm, báo cáo
+- **Phụ huynh** theo dõi điểm con em qua tài khoản riêng
+- Dữ liệu được cách ly hoàn toàn giữa các trường (multi-tenant)
 
-## Key Features
+## Tính năng chính
 
-### Multi-tenant Architecture
-- Single codebase serving multiple schools
-- Complete data isolation per tenant
-- Independent configurations and settings per school
-- Role-based access control (Super Admin, Admin, Teacher, Parent)
+| Module | Mô tả |
+|--------|-------|
+| Đăng nhập & Đăng ký trường | Cổng đăng nhập chung cho tất cả trường + cổng riêng cho Platform Admin |
+| Quản lý trường (Platform Admin) | CRUD trường, tạm ngưng/kích hoạt, quản lý gói dịch vụ |
+| Quản lý người dùng | CRUD người dùng với phân quyền: SUPER_ADMIN, STAFF, TEACHER |
+| Tiếp nhận học sinh | Thêm HS với kiểm tra tuổi (QD1) và sĩ số lớp (QD2) |
+| Quản lý lớp học | CRUD lớp, phân công giáo viên, chuyển lớp HS |
+| Quản lý môn học & đầu điểm | CRUD môn, cấu hình đầu điểm (ScoreComponent) với trọng số linh hoạt |
+| Nhập điểm | Nhập điểm theo đầu điểm, batch save, lock điểm |
+| Xét lên lớp | Tính ĐTB, xét Đạt/Không đạt/Thi lại |
+| Báo cáo | Báo cáo theo môn, theo học kỳ, dashboard tổng hợp |
+| Quản lý phụ huynh | CRUD tài khoản PH, liên kết HS-PH |
+| Xem điểm (Phụ huynh) | PH xem điểm con em theo học kỳ |
+| Quy định trường | Cấu hình tuổi, sĩ số tối đa, điểm đạt, khối lớp |
 
-### Core Functionalities
+## 6 Vai trò (Roles)
 
-| Code | Module | Description |
-|------|--------|-------------|
-| BM1 | Student Enrollment | Register new students with age validation (QD1) and class capacity checks (QD2) |
-| BM2 | Class Management | Manage grades and classes |
-| BM3 | Student Search | Search by name, student code, or class |
-| BM4 | Grade Entry | Enter grades for 15-min tests, 1-period tests, and final exams with customizable weights |
-| BM5.1 | Subject Report | Statistics on pass rates by subject |
-| BM5.2 | Semester Report | Comprehensive semester-wide statistics |
-| QD | Settings Management | Configure age limits, class capacity, passing grade, and grade weights |
+| Vai trò | Mô tả | Phạm vi |
+|---------|-------|---------|
+| `PLATFORM_ADMIN` | Quản trị nền tảng | Toàn hệ thống, không thuộc trường nào |
+| `SUPER_ADMIN` | Quản trị trường | Toàn bộ dữ liệu 1 trường |
+| `STAFF` | Nhân viên giáo vụ | Quản lý HS, lớp, điểm, PH |
+| `TEACHER` | Giáo viên | Xem/nhập điểm lớp được phân công |
+| `STUDENT` | Học sinh | Xem điểm cá nhân |
+| `PARENT` | Phụ huynh | Xem điểm con em được liên kết |
 
-### Configurable Business Rules
-
-- **QD1**: Student age range (default: 15-20 years)
-- **QD2**: Maximum students per class (default: 40)
-- **QD3**: Grade level management
-- **QD4**: Subject management, grades 0-10 scale
-- **QD5**: Passing grade threshold (default: 5.0)
-- **Grade Weights**: 15-min test (1x), 1-period test (2x), Final exam (3x)
-
-## Technical Stack
+## Tech Stack
 
 ### Backend
-- **Node.js** + **Express.js**
+- **Node.js** + **Express.js 5**
 - **Prisma ORM** + **PostgreSQL**
-- **JWT Authentication**
-- RESTful API
+- **JWT** (httpOnly cookie) authentication
+- **bcryptjs** password hashing
+- **express-validator** input validation
 
 ### Frontend
-- **Next.js 14** (App Router)
-- **TypeScript**
-- **Tailwind CSS**
-- **Zustand** (State Management)
-- **React Hook Form** + **Zod** (Validation)
+- **Next.js 14** (App Router, TypeScript)
+- **Tailwind CSS** (custom theme)
+- **Zustand** (state management)
+- **React Hook Form** + **Zod** (form validation)
+- **Axios** (API client with interceptors)
+- **Lucide React** (icons)
 
 ### DevOps
 - **Docker** + **Docker Compose**
-- **GitHub Actions** CI/CD
 - **PostgreSQL 16**
 
-## Installation
+---
 
-### Prerequisites
-- Node.js 20+
-- Docker & Docker Compose (recommended)
-- PostgreSQL 16+ (if not using Docker)
+## Cài đặt & Chạy
 
-### Development Setup with Docker
+### Yêu cầu
+
+- **Node.js** >= 18
+- **PostgreSQL** >= 14 (hoặc dùng Docker)
+- **npm** hoặc **yarn**
+
+### Bước 1: Clone & cài dependencies
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/your-username/cloudschool.git
+git clone <repo-url> cloudschool
 cd cloudschool
 
-# 2. Start database
-docker-compose -f docker-compose.dev.yml up -d
-
-# 3. Install dependencies
-cd backend && npm install
-cd ../frontend && npm install
-
-# 4. Create environment file for backend
+# Cài backend
 cd backend
-cp .env.example .env
+npm install
 
-# 5. Generate Prisma client and seed database
+# Cài frontend
+cd ../frontend
+npm install
+```
+
+### Bước 2: Cấu hình biến môi trường
+
+**Backend** — tạo file `backend/.env`:
+
+```env
+PORT=5000
+DATABASE_URL=postgresql://postgres:postgres123@localhost:5432/cloudschool
+JWT_SECRET=your-super-secret-key-change-in-production
+JWT_EXPIRES_IN=24h
+CORS_ORIGIN=http://localhost:3000
+NODE_ENV=development
+```
+
+**Frontend** — tạo file `frontend/.env.local`:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:5000/api
+```
+
+### Bước 3: Khởi tạo database
+
+```bash
+cd backend
+
+# Tạo Prisma client
 npx prisma generate
-npx prisma db push --force-reset
+
+# Tạo database tables (development)
+npx prisma db push
+
+# Seed dữ liệu mẫu
 npm run db:seed
+```
 
-# 6. Start backend server (port 5000)
-node src/app.js
+### Bước 4: Chạy ứng dụng
 
-# 7. Open new terminal and start frontend (port 3000)
+```bash
+# Terminal 1 - Backend (port 5000)
+cd backend
+npm run dev
+
+# Terminal 2 - Frontend (port 3000)
 cd frontend
 npm run dev
 ```
 
-### Production Setup with Docker Compose
+### Sử dụng Docker Compose (Development)
 
 ```bash
-# 1. Copy and configure environment
-cp .env.example .env
-# Edit environment variables in .env
+# Chạy PostgreSQL
+docker-compose -f docker-compose.dev.yml up -d
 
-# 2. Build and run
+# Sau đó làm Bước 3 & 4 ở trên
+```
+
+### Sử dụng Docker Compose (Production)
+
+```bash
 docker-compose up -d --build
 
-# 3. Run database migrations (first time only)
+# Chạy migration & seed lần đầu
 docker-compose exec backend npx prisma migrate deploy
 docker-compose exec backend npm run db:seed
 ```
 
-Access points:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:5000/api
-- Health check: http://localhost:5000/health
+### Truy cập
 
-## API Documentation
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:3000 |
+| Backend API | http://localhost:5000/api |
+| Health check | http://localhost:5000/health |
+| Prisma Studio | `cd backend && npx prisma studio` |
+
+---
+
+## Tài khoản Demo
+
+Sau khi chạy `npm run db:seed`:
+
+### Platform Admin (đăng nhập ở cổng riêng)
+
+| Email | Password |
+|-------|----------|
+| admin@cloudschool.vn | admin123 |
+
+### Demo School — Mã trường: `THPT-DEMO`
+
+| Vai trò | Email | Password |
+|---------|-------|----------|
+| School Admin | admin@demo.school.vn | admin123 |
+| Staff | staff@demo.school.vn | staff123 |
+| Teacher | teacher@demo.school.vn | teacher123 |
+| Parent 1 | parent1@demo.school.vn | parent123 |
+| Parent 2 | parent2@demo.school.vn | parent123 |
+
+> **Lưu ý**: Đăng nhập cho trường cần nhập **Mã trường** (Tenant Code). Platform Admin toggle ở nút riêng trên form đăng nhập.
+
+---
+
+## API Endpoints
 
 ### Authentication
 ```
-POST /api/auth/register-school    # Register new school
-POST /api/auth/login              # User login
-POST /api/auth/logout             # User logout
-GET  /api/auth/me                 # Current user info
+POST /api/auth/login              # Đăng nhập (chung cho tất cả)
+POST /api/auth/register-school    # Đăng ký trường mới
+GET  /api/auth/me                 # Lấy thông tin user hiện tại
+POST /api/auth/logout             # Đăng xuất
 ```
 
-### Students (BM1, BM3)
+### Platform Admin
 ```
-GET    /api/students              # List all students
-POST   /api/students              # Create new student
-GET    /api/students/:id          # Get student details
-PUT    /api/students/:id          # Update student
-DELETE /api/students/:id          # Delete student
-GET    /api/students/:id/grades   # Get student grades
-```
-
-### Classes (BM2)
-```
-GET    /api/classes               # List all classes
-GET    /api/classes/grades        # List all grade levels
-POST   /api/classes               # Create new class
-GET    /api/classes/:id           # Get class details
-PUT    /api/classes/:id           # Update class
-DELETE /api/classes/:id           # Delete class
+GET    /api/admin/dashboard        # Dashboard tổng quan
+GET    /api/admin/schools          # Danh sách trường
+POST   /api/admin/schools          # Tạo trường
+GET    /api/admin/schools/:id      # Chi tiết trường
+PUT    /api/admin/schools/:id      # Sửa trường
+DELETE /api/admin/schools/:id      # Xóa trường
+PATCH  /api/admin/schools/:id/suspend   # Tạm ngưng
+PATCH  /api/admin/schools/:id/activate  # Kích hoạt
+GET    /api/admin/subscriptions    # Danh sách gói
+POST   /api/admin/subscriptions    # Tạo gói
+PUT    /api/admin/subscriptions/:id # Sửa gói
+DELETE /api/admin/subscriptions/:id # Xóa gói
 ```
 
-### Scores (BM4)
+### Users
 ```
-GET  /api/scores/class/:classId   # Get class grade sheet
-POST /api/scores                  # Add single grade
-POST /api/scores/batch            # Batch grade entry
+GET    /api/users                  # Danh sách users (SUPER_ADMIN, STAFF)
+GET    /api/users/:id              # Chi tiết user
+POST   /api/users                  # Tạo user (SUPER_ADMIN)
+PUT    /api/users/:id              # Sửa user
+PATCH  /api/users/:id/disable      # Vô hiệu hóa
+DELETE /api/users/:id              # Xóa user
 ```
 
-### Reports (BM5)
+### Students
 ```
-GET /api/reports/subject-summary  # Subject summary report (BM5.1)
-GET /api/reports/semester-summary # Semester summary report (BM5.2)
-GET /api/reports/dashboard        # Dashboard statistics
+GET    /api/students               # Danh sách HS
+GET    /api/students/:id           # Chi tiết HS
+POST   /api/students               # Thêm HS
+PUT    /api/students/:id           # Sửa HS
+DELETE /api/students/:id           # Xóa HS
+POST   /api/students/:id/transfer  # Chuyển lớp
+```
+
+### Classes
+```
+GET    /api/classes/grades          # Danh sách khối
+GET    /api/classes                 # Danh sách lớp
+GET    /api/classes/:id             # Chi tiết lớp
+POST   /api/classes                 # Tạo lớp
+PUT    /api/classes/:id             # Sửa lớp
+DELETE /api/classes/:id             # Xóa lớp
+POST   /api/classes/:id/assign-teacher     # Phân công GV
+DELETE /api/classes/:id/assign-teacher/:id  # Hủy phân công
+GET    /api/classes/:id/students    # DS HS trong lớp
+POST   /api/classes/:id/students    # Thêm HS vào lớp
+DELETE /api/classes/:id/students/:id # Xóa HS khỏi lớp
+```
+
+### Subjects & Semesters
+```
+GET    /api/subjects                # DS môn học
+GET    /api/subjects/:id            # Chi tiết môn
+POST   /api/subjects                # Tạo môn
+PUT    /api/subjects/:id            # Sửa môn
+DELETE /api/subjects/:id            # Xóa môn (soft delete)
+GET    /api/subjects/semesters      # DS học kỳ
+POST   /api/subjects/semesters      # Tạo học kỳ
+PATCH  /api/subjects/semesters/:id  # Sửa học kỳ
+DELETE /api/subjects/semesters/:id  # Xóa học kỳ
+```
+
+### Score Components
+```
+GET    /api/score-components        # DS đầu điểm
+POST   /api/score-components        # Tạo đầu điểm
+PUT    /api/score-components/:id    # Sửa đầu điểm
+DELETE /api/score-components/:id    # Xóa đầu điểm
+```
+
+### Scores
+```
+GET  /api/scores/class/:classId     # Bảng điểm lớp
+GET  /api/scores/student/:studentId # Điểm 1 HS
+POST /api/scores                    # Nhập 1 điểm
+POST /api/scores/batch              # Nhập nhiều điểm
+PATCH /api/scores/:id/lock          # Khóa điểm
+DELETE /api/scores/:id              # Xóa điểm
+```
+
+### Promotion
+```
+GET  /api/promotion                 # DS xét lên lớp
+POST /api/promotion/calculate       # Tính & xét lên lớp
+PUT  /api/promotion/:id             # Chỉnh kết quả thủ công
+```
+
+### Reports
+```
+GET /api/reports/subject-summary    # Báo cáo theo môn
+GET /api/reports/semester-summary   # Báo cáo học kỳ
+GET /api/reports/dashboard          # Dashboard thống kê
 ```
 
 ### Parents
 ```
-GET    /api/parents               # List all parents (Admin only)
-POST   /api/parents               # Create parent account (Admin only)
-POST   /api/parents/:id/students  # Link student to parent (Admin only)
-DELETE /api/parents/:id/students/:studentId  # Unlink student (Admin only)
-GET    /api/parents/my-children   # Get current parent's children
-GET    /api/parents/my-children/:studentId/scores  # Get child's scores
+GET    /api/parents                 # DS phụ huynh (Admin)
+POST   /api/parents                 # Tạo PH
+PUT    /api/parents/:id             # Sửa PH
+DELETE /api/parents/:id             # Xóa PH
+POST   /api/parents/:id/students    # Liên kết HS
+DELETE /api/parents/:id/students/:id # Hủy liên kết
+GET    /api/parents/semesters       # DS học kỳ (PH)
+GET    /api/parents/my-children     # Con em của tôi
+GET    /api/parents/my-children/:id/scores # Điểm con em
 ```
 
-### Settings (QD)
+### Settings
 ```
-GET  /api/settings                # Get current settings
-PUT  /api/settings                # Update settings
-GET  /api/subjects                # List subjects
-POST /api/subjects                # Create subject
+GET  /api/settings                  # Lấy quy định
+PUT  /api/settings                  # Sửa quy định
+GET  /api/settings/grades           # DS khối
+POST /api/settings/grades           # Tạo khối
+PUT  /api/settings/grades/:id       # Sửa khối
+DELETE /api/settings/grades/:id     # Xóa khối
 ```
 
-## Project Structure
+### Tenant
+```
+GET /api/tenants/current            # Thông tin trường hiện tại
+PUT /api/tenants/current            # Cập nhật thông tin trường
+GET /api/tenants/stats              # Thống kê trường
+```
+
+---
+
+## Cấu trúc dự án
 
 ```
 cloudschool/
 ├── backend/
 │   ├── prisma/
-│   │   ├── schema.prisma        # Database schema
-│   │   └── seed.js              # Seed data
+│   │   ├── schema.prisma          # Database schema (20+ models)
+│   │   └── seed.js                # Seed dữ liệu demo
 │   ├── src/
-│   │   ├── app.js               # Express app
-│   │   ├── lib/
-│   │   │   └── prisma.js        # Prisma client
+│   │   ├── app.js                 # Express app + routes
+│   │   ├── lib/prisma.js          # Prisma client
 │   │   ├── middleware/
-│   │   │   ├── auth.js          # JWT authentication
-│   │   │   └── errorHandler.js  # Error handling
+│   │   │   ├── auth.js            # authenticate, authorize, tenantGuard
+│   │   │   └── errorHandler.js    # Global error handler + AppError
 │   │   └── routes/
-│   │       ├── auth.routes.js
-│   │       ├── student.routes.js
-│   │       ├── class.routes.js
-│   │       ├── subject.routes.js
-│   │       ├── score.routes.js
-│   │       ├── report.routes.js
-│   │       ├── parent.routes.js
-│   │       └── settings.routes.js
-│   ├── Dockerfile
+│   │       ├── auth.routes.js     # Login, register, me, logout
+│   │       ├── admin.routes.js    # Platform admin: schools & subscriptions
+│   │       ├── user.routes.js     # User CRUD
+│   │       ├── student.routes.js  # Student CRUD + transfer
+│   │       ├── class.routes.js    # Class CRUD + teacher assignments
+│   │       ├── subject.routes.js  # Subject CRUD + semester CRUD
+│   │       ├── score-component.routes.js  # Score component CRUD
+│   │       ├── score.routes.js    # Score entry + batch + lock
+│   │       ├── promotion.routes.js # Promotion calculate + override
+│   │       ├── report.routes.js   # Reports
+│   │       ├── parent.routes.js   # Parent CRUD + self-service
+│   │       ├── settings.routes.js # Settings + grade CRUD
+│   │       └── tenant.routes.js   # Tenant info & stats
 │   └── package.json
 ├── frontend/
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── (dashboard)/     # Protected routes
-│   │   │   │   ├── dashboard/
-│   │   │   │   ├── students/
-│   │   │   │   ├── classes/
-│   │   │   │   ├── scores/
-│   │   │   │   ├── reports/
-│   │   │   │   ├── parents/
-│   │   │   │   ├── my-children/
-│   │   │   │   └── settings/
-│   │   │   ├── login/
-│   │   │   └── register/
+│   │   │   ├── login/             # Cổng đăng nhập chung
+│   │   │   ├── register/          # Đăng ký trường
+│   │   │   └── (dashboard)/       # Protected routes
+│   │   │       ├── layout.tsx     # Sidebar + menu theo role
+│   │   │       ├── dashboard/     # Dashboard 6 roles
+│   │   │       ├── admin/schools/ # Quản lý trường (Platform Admin)
+│   │   │       ├── admin/subscriptions/ # Gói dịch vụ
+│   │   │       ├── users/         # Quản lý người dùng
+│   │   │       ├── students/      # CRUD học sinh
+│   │   │       ├── classes/       # CRUD lớp + phân công
+│   │   │       ├── subjects/      # Môn học + đầu điểm
+│   │   │       ├── scores/        # Nhập điểm
+│   │   │       ├── promotion/     # Xét lên lớp
+│   │   │       ├── reports/       # Báo cáo
+│   │   │       ├── parents/       # Quản lý PH
+│   │   │       ├── settings/      # Quy định + khối
+│   │   │       ├── my-children/   # PH xem con em
+│   │   │       └── my-scores/     # HS xem điểm
 │   │   ├── lib/
-│   │   │   ├── api.ts           # API client
-│   │   │   └── utils.ts
-│   │   └── store/
-│   │       └── auth.ts          # Zustand store
-│   ├── Dockerfile
+│   │   │   ├── api.ts             # Axios client + all API modules
+│   │   │   └── utils.ts           # Helpers
+│   │   └── store/auth.ts          # Zustand auth store
 │   └── package.json
-├── .github/
-│   └── workflows/
-│       └── ci-cd.yml            # GitHub Actions
-├── docker-compose.yml           # Production
-├── docker-compose.dev.yml       # Development
+├── docker-compose.yml
+├── docker-compose.dev.yml
 └── README.md
 ```
-
-## Demo Credentials
-
-After running the seed script, use these credentials to login:
-
-| Role | Email | Password | Tenant Code |
-|------|-------|----------|-------------|
-| Admin | admin@demo.school.vn | admin123 | THPT-DEMO |
-| Teacher | teacher@demo.school.vn | teacher123 | THPT-DEMO |
-| Parent 1 | parent1@demo.school.vn | parent123 | THPT-DEMO |
-| Parent 2 | parent2@demo.school.vn | parent123 | THPT-DEMO |
-
-**Note**: Tenant code is required for login to ensure multi-tenant isolation.
-
-## Environment Configuration
-
-### Backend (.env)
-```env
-PORT=5000
-DATABASE_URL=postgresql://postgres:postgres123@localhost:5432/cloudschool
-JWT_SECRET=your-secret-key-change-in-production
-NODE_ENV=development
-```
-
-### Frontend (.env.local)
-```env
-NEXT_PUBLIC_API_URL=http://localhost:5000/api
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ## License
 
 MIT License
-
-## Support
-
-For issues and questions, please open a GitHub issue or contact the development team.

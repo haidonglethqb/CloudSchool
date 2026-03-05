@@ -38,13 +38,16 @@ export function getGenderLabel(gender: string): string {
   return labels[gender] || gender
 }
 
-export function getScoreTypeLabel(type: string): string {
+export function getRoleLabel(role: string): string {
   const labels: Record<string, string> = {
-    QUIZ_15: '15 phút',
-    QUIZ_45: '1 tiết',
-    FINAL: 'Cuối kỳ',
+    PLATFORM_ADMIN: 'Quản trị hệ thống',
+    SUPER_ADMIN: 'Quản trị trường',
+    STAFF: 'Nhân viên',
+    TEACHER: 'Giáo viên',
+    STUDENT: 'Học sinh',
+    PARENT: 'Phụ huynh',
   }
-  return labels[type] || type
+  return labels[role] || role
 }
 
 export function getPassStatus(score: number, passScore: number): { passed: boolean; label: string; color: string } {

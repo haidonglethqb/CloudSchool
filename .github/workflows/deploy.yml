@@ -17,7 +17,45 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
+  # ─────────────────────────────────────────────
+  # Job 1: TypeScript check trước khi build image
+  # ─────────────────────────────────────────────
+  type-check:
+    runs-on: ubuntu-latest
+    outputs:
+      image_name_lower: ${{ steps.lowercase.outputs.image_name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Lowercase image name
+        id: lowercase
+        run: echo "image_name=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install server dependencies
+        working-directory: ./server
+        run: npm ci
+
+      - name: Generate Prisma Client
+        working-directory: ./server
+        run: npx prisma generate
+
+      - name: TypeScript check (server)
+        working-directory: ./server
+        run: npx tsc --noEmit
+
+  # ─────────────────────────────────────────────
+  # Job 2a: Build và push Server image (PARALLEL)
+  # ─────────────────────────────────────────────
+  build-server:
+    needs: type-check
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -41,7 +79,7 @@ jobs:
         id: meta-server
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/server
+          images: ${{ env.REGISTRY }}/${{ needs.type-check.outputs.image_name_lower }}/server
           tags: |
             type=sha,prefix=
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
@@ -57,11 +95,35 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # ─────────────────────────────────────────────
+  # Job 2b: Build và push Client image (PARALLEL)
+  # ─────────────────────────────────────────────
+  build-client:
+    needs: type-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract metadata for Client
         id: meta-client
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/client
+          images: ${{ env.REGISTRY }}/${{ needs.type-check.outputs.image_name_lower }}/client
           tags: |
             type=sha,prefix=
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
@@ -80,8 +142,11 @@ jobs:
             NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
             NEXT_PUBLIC_WS_URL=${{ secrets.NEXT_PUBLIC_WS_URL }}
 
+  # ─────────────────────────────────────────────
+  # Job 3: Deploy lên VPS (đợi cả 2 builds hoàn thành)
+  # ─────────────────────────────────────────────
   deploy:
-    needs: build-and-push
+    needs: [type-check, build-server, build-client]
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment }}
 
@@ -96,13 +161,18 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
+          # Tăng timeout để tránh SSH timeout khi pull image lớn
+          command_timeout: 15m
           script: |
+            set -e
             cd ${{ secrets.VPS_DEPLOY_PATH }}
-            
+
             # Ensure required directories exist
             mkdir -p nginx/ssl nginx/logs
-            
-            # Create .env file with secrets
+
+            # ── Bước 1: Ghi .env ───────────────────────────────────
+            # GITHUB_REPOSITORY phải lowercase để khớp với image name trên GHCR
+            # (docker/metadata-action tự lowercase khi push)
             cat > .env << 'ENVEOF'
             POSTGRES_USER=vgfriend
             POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
@@ -113,25 +183,108 @@ jobs:
             CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}
             NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
             NEXT_PUBLIC_WS_URL=${{ secrets.NEXT_PUBLIC_WS_URL }}
-            GITHUB_REPOSITORY=${{ github.repository }}
+            SMTP_HOST=${{ secrets.SMTP_HOST }}
+            SMTP_PORT=${{ secrets.SMTP_PORT }}
+            SMTP_SECURE=${{ secrets.SMTP_SECURE }}
+            SMTP_USER=${{ secrets.SMTP_USER }}
+            SMTP_PASS=${{ secrets.SMTP_PASS }}
+            SMTP_FROM_NAME=${{ secrets.SMTP_FROM_NAME }}
+            GITHUB_REPOSITORY=${{ needs.type-check.outputs.image_name_lower }}
             ENVEOF
-            # Remove leading whitespace from .env (caused by YAML indentation)
+            # Xóa leading whitespace do YAML indentation
             sed -i 's/^[[:space:]]*//' .env
-            
-            # Login to GitHub Container Registry
+
+            # ── Bước 2: Login GHCR ─────────────────────────────────
             echo "${{ secrets.CR_PAT }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-            
-            # Pull latest images
+
+            # ── Bước 3: Pull images mới ────────────────────────────
             docker compose pull
-            
-            # Recreate containers with new images (include nginx via production profile)
+
+            # ── Bước 4: Start database trước, chờ healthy ─────────
+            docker compose up -d postgres redis
+
+            echo "Waiting for PostgreSQL to be ready..."
+            for i in $(seq 1 30); do
+              if docker compose exec -T postgres pg_isready -U vgfriend -d vgfriend > /dev/null 2>&1; then
+                echo "PostgreSQL is ready."
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "ERROR: PostgreSQL did not become ready in time."
+                exit 1
+              fi
+              sleep 2
+            done
+
+            # ── Bước 5: Chạy migration TRƯỚC khi start server ──────
+            # Dùng docker compose run để tạo container tạm từ image mới
+            # --no-deps: không start lại postgres (đã chạy ở trên)
+            # --rm: tự xóa container sau khi xong
+            echo "Running database migrations..."
+            docker compose run --rm --no-deps server npx prisma migrate deploy
+            echo "Migrations completed."
+
+            # ── Bước 5.5: Seed database (idempotent - safe to run multiple times)
+            # This uses upsert so it won't duplicate or delete user data
+            echo "Seeding database..."
+            docker compose run --rm --no-deps server npx prisma db seed
+            echo "Seeding completed."
+
+            # ── Bước 6: Start tất cả services ─────────────────────
             docker compose --profile production up -d --force-recreate
+
+            # ── Bước 7: Verify server healthy ──────────────────────
+            echo "Waiting for server to be healthy..."
+            for i in $(seq 1 20); do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' vgfriend-server 2>/dev/null || echo "starting")
+              if [ "$STATUS" = "healthy" ]; then
+                echo "Server is healthy!"
+                break
+              fi
+              if [ "$i" -eq 20 ]; then
+                echo "ERROR: Server did not become healthy. Check logs:"
+                docker compose logs --tail=50 server
+                exit 1
+              fi
+              echo "Server status: $STATUS, retrying ($i/20)..."
+              sleep 5
+            done
+
+            # ── Bước 8: Cleanup để tránh tràn bộ nhớ ──────────────
+            echo "Starting cleanup..."
             
-            # Cleanup old images
-            docker image prune -af
+            # 8.1: Xóa containers đã stopped (không ảnh hưởng running containers)
+            docker container prune -f
             
-            # Run database migrations
-            docker compose exec -T server npx prisma migrate deploy
+            # 8.2: Xóa dangling images (images không có tag)
+            docker image prune -f
+            
+            # 8.3: Xóa images cũ của project (giữ lại 3 versions gần nhất để rollback)
+            # Lấy list tất cả images của project, sort theo thời gian, xóa từ image thứ 4 trở đi
+            echo "Cleaning old server images..."
+            docker images "ghcr.io/${{ needs.type-check.outputs.image_name_lower }}/server" --format "{{.ID}} {{.CreatedAt}}" | \
+              sort -k2 -r | tail -n +4 | awk '{print $1}' | xargs -r docker rmi -f 2>/dev/null || true
+            
+            echo "Cleaning old client images..."
+            docker images "ghcr.io/${{ needs.type-check.outputs.image_name_lower }}/client" --format "{{.ID}} {{.CreatedAt}}" | \
+              sort -k2 -r | tail -n +4 | awk '{print $1}' | xargs -r docker rmi -f 2>/dev/null || true
+            
+            # 8.4: Xóa build cache (giữ lại 500MB để tăng tốc build sau)
+            docker builder prune -f --keep-storage 500MB 2>/dev/null || true
+            
+            # 8.5: Xóa networks không sử dụng
+            docker network prune -f
+            
+            # 8.6: Dọn nginx logs cũ hơn 7 ngày (giữ logs gần đây để debug)
+            find ./nginx/logs -name "*.log" -type f -mtime +7 -exec truncate -s 0 {} \; 2>/dev/null || true
+            
+            # 8.7: Hiển thị disk usage sau cleanup
+            echo "Disk usage after cleanup:"
+            df -h / | tail -1
+            echo "Docker disk usage:"
+            docker system df
+            
+            # ⚠️  KHÔNG dùng 'docker volume prune' - sẽ xóa postgres_data và redis_data!
             
             echo "Deployment completed successfully!"
 

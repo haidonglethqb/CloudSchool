@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { reportApi, subjectApi, settingsApi } from '@/lib/api'
+import { reportApi, subjectApi } from '@/lib/api'
 import { getPassStatus } from '@/lib/utils'
 import {
   BarChart3,

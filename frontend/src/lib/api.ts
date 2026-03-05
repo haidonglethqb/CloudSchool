@@ -6,240 +6,201 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
 export const api = axios.create({
   baseURL: API_URL,
   withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
 })
 
-// Request interceptor
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = useAuthStore.getState().token
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
+    if (token) config.headers.Authorization = `Bearer ${token}`
     return config
   },
   (error) => Promise.reject(error)
 )
 
-// Response interceptor
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ error?: { message?: string; code?: string } }>) => {
     if (error.response?.status === 401) {
       useAuthStore.getState().logout()
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login'
-      }
+      if (typeof window !== 'undefined') window.location.href = '/login'
     }
     return Promise.reject(error)
   }
 )
 
-// Auth API
+// ==================== Auth ====================
 export const authApi = {
-  login: (email: string, password: string, tenantCode: string) =>
-    api.post('/auth/login', { email, password, tenantCode }),
-  
-  registerSchool: (data: { schoolName: string; schoolCode: string; adminEmail: string; adminPassword: string; adminName: string }) =>
+  login: (data: { email: string; password: string; tenantCode?: string }) =>
+    api.post('/auth/login', data),
+  registerSchool: (data: { schoolName: string; adminEmail: string; adminPassword: string; adminName: string }) =>
     api.post('/auth/register-school', data),
-  
   me: () => api.get('/auth/me'),
-  
   logout: () => api.post('/auth/logout'),
 }
 
-// Student API
+// ==================== Platform Admin ====================
+export const adminApi = {
+  dashboard: () => api.get('/admin/dashboard'),
+  // Schools
+  listSchools: (params?: { search?: string; status?: string; page?: number; limit?: number }) =>
+    api.get('/admin/schools', { params }),
+  getSchool: (id: string) => api.get(`/admin/schools/${id}`),
+  createSchool: (data: { name: string; address?: string; phone?: string; email?: string; adminEmail: string; adminName: string; adminPassword?: string; planId?: string }) =>
+    api.post('/admin/schools', data),
+  updateSchool: (id: string, data: Record<string, unknown>) => api.put(`/admin/schools/${id}`, data),
+  deleteSchool: (id: string) => api.delete(`/admin/schools/${id}`),
+  suspendSchool: (id: string) => api.patch(`/admin/schools/${id}/suspend`),
+  activateSchool: (id: string) => api.patch(`/admin/schools/${id}/activate`),
+  // Subscriptions
+  listSubscriptions: () => api.get('/admin/subscriptions'),
+  createSubscription: (data: { name: string; maxStudents: number; maxTeachers: number; maxClasses: number; price: number; features?: string[] }) =>
+    api.post('/admin/subscriptions', data),
+  updateSubscription: (id: string, data: Record<string, unknown>) => api.put(`/admin/subscriptions/${id}`, data),
+  deleteSubscription: (id: string) => api.delete(`/admin/subscriptions/${id}`),
+}
+
+// ==================== Users ====================
+export const userApi = {
+  list: (params?: { search?: string; role?: string; status?: string; page?: number; limit?: number }) =>
+    api.get('/users', { params }),
+  get: (id: string) => api.get(`/users/${id}`),
+  create: (data: { email: string; password: string; fullName: string; phone?: string; role: string; department?: string }) =>
+    api.post('/users', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/users/${id}`, data),
+  disable: (id: string) => api.patch(`/users/${id}/disable`),
+  delete: (id: string) => api.delete(`/users/${id}`),
+}
+
+// ==================== Students ====================
 export const studentApi = {
   list: (params?: { search?: string; classId?: string; gradeId?: string }) =>
     api.get('/students', { params }),
-  
   get: (id: string) => api.get(`/students/${id}`),
-  
-  create: (data: {
-    fullName: string
-    gender: string
-    dateOfBirth: string
-    address: string
-    email?: string
-    classId: string
-  }) => api.post('/students', data),
-  
-  update: (id: string, data: Partial<{
-    fullName: string
-    gender: string
-    dateOfBirth: string
-    address: string
-    email: string
-    classId: string
-  }>) => api.put(`/students/${id}`, data),
-  
+  create: (data: { fullName: string; gender: string; dateOfBirth: string; address?: string; classId: string; parentName?: string; parentPhone?: string }) =>
+    api.post('/students', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/students/${id}`, data),
   delete: (id: string) => api.delete(`/students/${id}`),
-  
-  getGrades: (studentId: string) => api.get(`/students/${studentId}/grades`),
+  transfer: (id: string, newClassId: string) => api.post(`/students/${id}/transfer`, { newClassId }),
 }
 
-// Class API
+// ==================== Classes ====================
 export const classApi = {
-  list: (gradeId?: string) => api.get('/classes', { params: { gradeId } }),
-  
+  list: (params?: { gradeId?: string; academicYear?: string }) =>
+    api.get('/classes', { params }),
   get: (id: string) => api.get(`/classes/${id}`),
-  
-  create: (data: { name: string; gradeId: string }) =>
+  create: (data: { name: string; gradeId: string; academicYear?: string }) =>
     api.post('/classes', data),
-  
-  update: (id: string, data: { name?: string; gradeId?: string }) =>
-    api.put(`/classes/${id}`, data),
-  
+  update: (id: string, data: Record<string, unknown>) => api.put(`/classes/${id}`, data),
   delete: (id: string) => api.delete(`/classes/${id}`),
-  
   getGrades: () => api.get('/classes/grades'),
-  
-  createGrade: (data: { name: string; level: number }) =>
-    api.post('/classes/grades', data),
+  // Teacher assignments
+  assignTeacher: (classId: string, data: { teacherId: string; subjectId: string; isHomeroom?: boolean }) =>
+    api.post(`/classes/${classId}/assign-teacher`, data),
+  removeAssignment: (classId: string, assignmentId: string) =>
+    api.delete(`/classes/${classId}/assign-teacher/${assignmentId}`),
+  // Class students
+  getStudents: (classId: string) => api.get(`/classes/${classId}/students`),
+  addStudent: (classId: string, studentId: string) =>
+    api.post(`/classes/${classId}/students`, { studentId }),
+  removeStudent: (classId: string, studentId: string) =>
+    api.delete(`/classes/${classId}/students/${studentId}`),
 }
 
-// Subject API
+// ==================== Subjects ====================
 export const subjectApi = {
-  list: () => api.get('/subjects'),
-  
+  list: (params?: { includeInactive?: boolean }) => api.get('/subjects', { params }),
   get: (id: string) => api.get(`/subjects/${id}`),
-  
-  create: (data: { name: string; code: string }) =>
+  create: (data: { name: string; code: string; description?: string }) =>
     api.post('/subjects', data),
-  
-  update: (id: string, data: { name?: string; code?: string }) =>
-    api.put(`/subjects/${id}`, data),
-  
+  update: (id: string, data: Record<string, unknown>) => api.put(`/subjects/${id}`, data),
   delete: (id: string) => api.delete(`/subjects/${id}`),
-  
   // Semesters
   getSemesters: () => api.get('/subjects/semesters'),
-  
-  createSemester: (data: { name: string; year: number; term: number }) =>
+  createSemester: (data: { name: string; year: string; semesterNum: number; startDate?: string; endDate?: string }) =>
     api.post('/subjects/semesters', data),
-  
-  setActiveSemester: (id: string) =>
-    api.patch(`/subjects/semesters/${id}/activate`),
+  updateSemester: (id: string, data: Record<string, unknown>) =>
+    api.patch(`/subjects/semesters/${id}`, data),
+  deleteSemester: (id: string) => api.delete(`/subjects/semesters/${id}`),
 }
 
-// Score API
+// ==================== Score Components ====================
+export const scoreComponentApi = {
+  list: (subjectId?: string) => api.get('/score-components', { params: { subjectId } }),
+  create: (data: { name: string; weight: number; subjectId: string }) =>
+    api.post('/score-components', data),
+  update: (id: string, data: { name?: string; weight?: number }) =>
+    api.put(`/score-components/${id}`, data),
+  delete: (id: string) => api.delete(`/score-components/${id}`),
+}
+
+// ==================== Scores ====================
 export const scoreApi = {
   getByClass: (classId: string, subjectId: string, semesterId: string) =>
     api.get(`/scores/class/${classId}`, { params: { subjectId, semesterId } }),
-  
-  create: (data: {
-    studentId: string
-    subjectId: string
-    semesterId: string
-    scoreType: string
-    value: number
-  }) => api.post('/scores', data),
-  
-  batchUpdate: (scores: Array<{
-    studentId: string
-    subjectId: string
-    semesterId: string
-    scoreType: string
-    value: number
-  }>) => api.post('/scores/batch', { scores }),
-  
-  update: (id: string, value: number) =>
-    api.patch(`/scores/${id}`, { value }),
-  
-  delete: (id: string) => api.delete(`/scores/${id}`),
-  
-  getStudentScores: (studentId: string, semesterId?: string) =>
+  getByStudent: (studentId: string, semesterId?: string) =>
     api.get(`/scores/student/${studentId}`, { params: { semesterId } }),
+  save: (data: { studentId: string; subjectId: string; semesterId: string; scoreComponentId: string; value: number }) =>
+    api.post('/scores', data),
+  batchSave: (scores: Array<{ studentId: string; subjectId: string; semesterId: string; scoreComponentId: string; value: number }>) =>
+    api.post('/scores/batch', { scores }),
+  lock: (id: string) => api.patch(`/scores/${id}/lock`),
+  delete: (id: string) => api.delete(`/scores/${id}`),
 }
 
-// Report API
+// ==================== Promotion ====================
+export const promotionApi = {
+  list: (params?: { semesterId?: string; classId?: string }) =>
+    api.get('/promotion', { params }),
+  calculate: (data: { semesterId: string; classId?: string }) =>
+    api.post('/promotion/calculate', data),
+  override: (id: string, result: string) =>
+    api.put(`/promotion/${id}`, { result }),
+}
+
+// ==================== Reports ====================
 export const reportApi = {
   subjectSummary: (subjectId: string, semesterId: string) =>
     api.get('/reports/subject-summary', { params: { subjectId, semesterId } }),
-  
   semesterSummary: (semesterId: string) =>
     api.get('/reports/semester-summary', { params: { semesterId } }),
-  
   dashboard: () => api.get('/reports/dashboard'),
 }
 
-// Settings API
+// ==================== Settings ====================
 export const settingsApi = {
   get: () => api.get('/settings'),
-  
-  update: (data: Partial<{
-    minAge: number
-    maxAge: number
-    maxClassSize: number
-    passScore: number
-    quiz15Weight: number
-    quiz45Weight: number
-    finalWeight: number
-  }>) => api.put('/settings', data),
-  
-  updateAgeRules: (minAge: number, maxAge: number) =>
-    api.patch('/settings/age-rules', { minAge, maxAge }),
-  
-  updateClassSize: (maxClassSize: number) =>
-    api.patch('/settings/class-size', { maxClassSize }),
-  
-  updatePassScore: (passScore: number) =>
-    api.patch('/settings/pass-score', { passScore }),
-  
-  updateScoreWeights: (quiz15Weight: number, quiz45Weight: number, finalWeight: number) =>
-    api.patch('/settings/score-weights', { quiz15Weight, quiz45Weight, finalWeight }),
-  
+  update: (data: Partial<{ minAge: number; maxAge: number; maxClassSize: number; passScore: number }>) =>
+    api.put('/settings', data),
   // Grades
   getGrades: () => api.get('/settings/grades'),
-  createGrade: (data: { name: string; level: number }) =>
-    api.post('/settings/grades', data),
-  updateGrade: (id: string, data: { name?: string; level?: number }) =>
-    api.put(`/settings/grades/${id}`, data),
+  createGrade: (data: { name: string; level: number }) => api.post('/settings/grades', data),
+  updateGrade: (id: string, data: { name?: string; level?: number }) => api.put(`/settings/grades/${id}`, data),
   deleteGrade: (id: string) => api.delete(`/settings/grades/${id}`),
 }
 
-// Tenant API
+// ==================== Tenant ====================
 export const tenantApi = {
   getCurrent: () => api.get('/tenants/current'),
+  update: (data: Record<string, unknown>) => api.put('/tenants/current', data),
   getStats: () => api.get('/tenants/stats'),
 }
 
-// Parent API
+// ==================== Parents ====================
 export const parentApi = {
   list: (params?: { search?: string; page?: number; limit?: number }) =>
     api.get('/parents', { params }),
-  
-  create: (data: {
-    email: string
-    password: string
-    fullName: string
-    phone?: string
-    studentIds: string[]
-  }) => api.post('/parents', data),
-  
-  update: (id: string, data: Partial<{
-    email: string
-    fullName: string
-    phone: string
-    isActive: boolean
-    password: string
-  }>) => api.put(`/parents/${id}`, data),
-  
+  create: (data: { email: string; password: string; fullName: string; phone?: string; studentIds: string[] }) =>
+    api.post('/parents', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/parents/${id}`, data),
   delete: (id: string) => api.delete(`/parents/${id}`),
-  
   linkStudent: (parentId: string, studentId: string, relationship?: string) =>
     api.post(`/parents/${parentId}/students`, { studentId, relationship }),
-  
   unlinkStudent: (parentId: string, studentId: string) =>
     api.delete(`/parents/${parentId}/students/${studentId}`),
-  
-  // Parent self-service routes
+  // Self-service
   getMyChildren: () => api.get('/parents/my-children'),
-  
   getChildScores: (studentId: string, semesterId?: string) =>
     api.get(`/parents/my-children/${studentId}/scores`, { params: { semesterId } }),
-  
   getSemesters: () => api.get('/parents/semesters'),
 }

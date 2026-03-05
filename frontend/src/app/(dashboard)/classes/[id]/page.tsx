@@ -20,17 +20,23 @@ import toast from 'react-hot-toast'
 interface ClassDetail {
   id: string
   name: string
-  homeroomTeacher: string | null
-  maxStudents: number
+  capacity: number
+  academicYear: string | null
   isActive: boolean
   grade: { id: string; name: string; level: number }
+  teacherAssignments: Array<{
+    id: string
+    isHomeroom: boolean
+    teacher: { id: string; fullName: string }
+    subject: { id: string; name: string } | null
+  }>
   students: Array<{
     id: string
     studentCode: string
     fullName: string
     gender: string
     dateOfBirth: string
-    email: string | null
+    parentName: string | null
   }>
   _count: { students: number }
 }
@@ -45,7 +51,6 @@ export default function ClassDetailPage() {
   const [maxClassSize, setMaxClassSize] = useState(40)
   const [formData, setFormData] = useState({
     name: '',
-    homeroomTeacher: '',
   })
 
   useEffect(() => {
@@ -59,7 +64,6 @@ export default function ClassDetailPage() {
         setClassData(data)
         setFormData({
           name: data.name || '',
-          homeroomTeacher: data.homeroomTeacher || '',
         })
         setMaxClassSize(settingsRes.data.data.maxClassSize || 40)
       } catch (error: any) {
@@ -144,7 +148,10 @@ export default function ClassDetailPage() {
                   Lớp {classData.name}
                 </h1>
                 <p className="text-gray-500 text-sm mt-1">
-                  {classData.grade.name} - {classData.homeroomTeacher || 'Chưa có GVCN'}
+                  {classData.grade.name}
+                  {classData.teacherAssignments?.find(a => a.isHomeroom)
+                    ? ` - GVCN: ${classData.teacherAssignments.find(a => a.isHomeroom)?.teacher.fullName}`
+                    : ' - Chưa có GVCN'}
                 </p>
               </>
             )}
@@ -226,7 +233,7 @@ export default function ClassDetailPage() {
                   <th className="table-header">Họ và tên</th>
                   <th className="table-header">Giới tính</th>
                   <th className="table-header">Ngày sinh</th>
-                  <th className="table-header">Email</th>
+                  <th className="table-header">Phụ huynh</th>
                   <th className="table-header text-right">Thao tác</th>
                 </tr>
               </thead>
@@ -238,7 +245,7 @@ export default function ClassDetailPage() {
                     <td className="table-cell font-medium">{student.fullName}</td>
                     <td className="table-cell">{getGenderLabel(student.gender)}</td>
                     <td className="table-cell">{formatDate(student.dateOfBirth)}</td>
-                    <td className="table-cell text-gray-500">{student.email || '-'}</td>
+                    <td className="table-cell text-gray-500">{student.parentName || '-'}</td>
                     <td className="table-cell text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Link

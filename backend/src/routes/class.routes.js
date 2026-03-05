@@ -5,7 +5,7 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
 
-// Get all grades with classes (BM2)
+// GET /classes/grades - Get grades with classes
 router.get('/grades', authenticate, async (req, res, next) => {
   try {
     const grades = await prisma.grade.findMany({
@@ -13,35 +13,50 @@ router.get('/grades', authenticate, async (req, res, next) => {
       include: {
         classes: {
           where: { isActive: true },
-          include: {
-            _count: { select: { students: true } }
-          },
+          include: { _count: { select: { students: true } } },
           orderBy: { name: 'asc' }
         }
       },
       orderBy: { level: 'asc' }
     })
-
     res.json({ data: grades })
   } catch (error) {
     next(error)
   }
 })
 
-// Get all classes
+// GET /classes
 router.get('/', authenticate, async (req, res, next) => {
   try {
-    const { gradeId } = req.query
+    const { gradeId, academicYear } = req.query
+
+    let where = {
+      tenantId: req.tenantId,
+      isActive: true,
+      ...(gradeId && { gradeId }),
+      ...(academicYear && { academicYear })
+    }
+
+    // Teacher only sees assigned classes
+    if (req.user.role === 'TEACHER') {
+      const assignments = await prisma.teacherAssignment.findMany({
+        where: { teacherId: req.user.id },
+        select: { classId: true }
+      })
+      where.id = { in: assignments.map(a => a.classId) }
+    }
 
     const classes = await prisma.class.findMany({
-      where: {
-        tenantId: req.tenantId,
-        isActive: true,
-        ...(gradeId && { gradeId })
-      },
+      where,
       include: {
         grade: true,
-        _count: { select: { students: true } }
+        _count: { select: { students: true } },
+        teacherAssignments: {
+          include: {
+            teacher: { select: { id: true, fullName: true } },
+            subject: { select: { id: true, name: true } }
+          }
+        }
       },
       orderBy: { name: 'asc' }
     })
@@ -52,36 +67,36 @@ router.get('/', authenticate, async (req, res, next) => {
   }
 })
 
-// Get class by ID with students (BM2 - Danh sách lớp)
+// GET /classes/:id
 router.get('/:id', authenticate, async (req, res, next) => {
   try {
     const classInfo = await prisma.class.findFirst({
-      where: {
-        id: req.params.id,
-        tenantId: req.tenantId
-      },
+      where: { id: req.params.id, tenantId: req.tenantId },
       include: {
         grade: true,
         students: {
           where: { isActive: true },
           orderBy: { fullName: 'asc' }
         },
+        teacherAssignments: {
+          include: {
+            teacher: { select: { id: true, fullName: true } },
+            subject: { select: { id: true, name: true } }
+          }
+        },
         _count: { select: { students: true } }
       }
     })
 
-    if (!classInfo) {
-      throw new AppError('Class not found', 404, 'NOT_FOUND')
-    }
-
+    if (!classInfo) throw new AppError('Class not found', 404, 'NOT_FOUND')
     res.json({ data: classInfo })
   } catch (error) {
     next(error)
   }
 })
 
-// Create new class
-router.post('/', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), [
+// POST /classes
+router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
   body('name').notEmpty().withMessage('Class name is required'),
   body('gradeId').notEmpty().withMessage('Grade is required')
 ], async (req, res, next) => {
@@ -91,24 +106,19 @@ router.post('/', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), [
       return res.status(400).json({ error: { code: 'VALIDATION_ERROR', details: errors.array() } })
     }
 
-    const { name, gradeId, homeroomTeacher, maxStudents } = req.body
+    const { name, gradeId, academicYear, capacity } = req.body
 
-    // Get tenant settings for max class size
-    const settings = await prisma.tenantSettings.findUnique({
-      where: { tenantId: req.tenantId }
-    })
+    const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
 
     const classInfo = await prisma.class.create({
       data: {
         tenantId: req.tenantId,
         gradeId,
         name,
-        homeroomTeacher,
-        maxStudents: maxStudents || settings.maxClassSize
+        academicYear: academicYear || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
+        capacity: capacity || settings?.maxClassSize || 40
       },
-      include: {
-        grade: true
-      }
+      include: { grade: true }
     })
 
     res.status(201).json({ data: classInfo })
@@ -117,23 +127,21 @@ router.post('/', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), [
   }
 })
 
-// Update class
-router.patch('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
+// PUT /classes/:id
+router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
-    const { name, homeroomTeacher, maxStudents, isActive } = req.body
+    const { name, gradeId, academicYear, capacity, isActive } = req.body
 
     const classInfo = await prisma.class.update({
       where: { id: req.params.id },
       data: {
-        name,
-        homeroomTeacher,
-        maxStudents,
-        isActive
+        ...(name && { name }),
+        ...(gradeId && { gradeId }),
+        ...(academicYear && { academicYear }),
+        ...(capacity && { capacity }),
+        ...(isActive !== undefined && { isActive })
       },
-      include: {
-        grade: true,
-        _count: { select: { students: true } }
-      }
+      include: { grade: true, _count: { select: { students: true } } }
     })
 
     res.json({ data: classInfo })
@@ -142,36 +150,9 @@ router.patch('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req
   }
 })
 
-// PUT alias for update (frontend compatibility)
-router.put('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
+// DELETE /classes/:id
+router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
-    const { name, homeroomTeacher, maxStudents, isActive, gradeId } = req.body
-
-    const classInfo = await prisma.class.update({
-      where: { id: req.params.id },
-      data: {
-        name,
-        homeroomTeacher,
-        maxStudents,
-        isActive,
-        ...(gradeId && { gradeId })
-      },
-      include: {
-        grade: true,
-        _count: { select: { students: true } }
-      }
-    })
-
-    res.json({ data: classInfo })
-  } catch (error) {
-    next(error)
-  }
-})
-
-// Delete class (soft delete)
-router.delete('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
-  try {
-    // Check if class has students
     const classInfo = await prisma.class.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },
       include: { _count: { select: { students: true } } }
@@ -181,106 +162,96 @@ router.delete('/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (re
       throw new AppError('Cannot delete class with students', 400, 'CLASS_HAS_STUDENTS')
     }
 
-    await prisma.class.update({
-      where: { id: req.params.id },
-      data: { isActive: false }
-    })
-
-    res.json({ data: { message: 'Class deleted successfully' } })
+    await prisma.class.delete({ where: { id: req.params.id } })
+    res.json({ data: { message: 'Class deleted' } })
   } catch (error) {
     next(error)
   }
 })
 
-// Get class students with grades
-router.get('/:id/students', authenticate, async (req, res, next) => {
+// POST /classes/:id/assign-teacher
+router.post('/:id/assign-teacher', authenticate, authorize('SUPER_ADMIN'), [
+  body('teacherId').notEmpty(),
+  body('subjectId').notEmpty()
+], async (req, res, next) => {
   try {
-    const { semesterId } = req.query
+    const { teacherId, subjectId, isHomeroom } = req.body
 
-    const students = await prisma.student.findMany({
-      where: {
+    const assignment = await prisma.teacherAssignment.create({
+      data: {
+        tenantId: req.tenantId,
+        teacherId,
         classId: req.params.id,
-        isActive: true
+        subjectId,
+        isHomeroom: isHomeroom || false
       },
       include: {
-        scores: {
-          where: semesterId ? { semesterId } : {},
-          include: {
-            subject: true,
-            semester: true
-          }
-        }
-      },
-      orderBy: { fullName: 'asc' }
+        teacher: { select: { id: true, fullName: true } },
+        subject: { select: { id: true, name: true } },
+        class: { select: { id: true, name: true } }
+      }
     })
 
+    res.status(201).json({ data: assignment })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// DELETE /classes/:id/assign-teacher/:assignmentId
+router.delete('/:id/assign-teacher/:assignmentId', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+  try {
+    await prisma.teacherAssignment.delete({ where: { id: req.params.assignmentId } })
+    res.json({ data: { message: 'Assignment removed' } })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /classes/:id/students
+router.get('/:id/students', authenticate, async (req, res, next) => {
+  try {
+    const students = await prisma.student.findMany({
+      where: { classId: req.params.id, isActive: true },
+      orderBy: { fullName: 'asc' }
+    })
     res.json({ data: students })
   } catch (error) {
     next(error)
   }
 })
 
-// Create grade (khối)
-router.post('/grades', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), [
-  body('name').notEmpty().withMessage('Grade name is required'),
-  body('level').isInt({ min: 1, max: 12 }).withMessage('Level must be between 1 and 12')
-], async (req, res, next) => {
+// POST /classes/:id/students - Add student to class
+router.post('/:id/students', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
-    const errors = validationResult(req)
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ error: { code: 'VALIDATION_ERROR', details: errors.array() } })
-    }
+    const { studentId } = req.body
 
-    const { name, level } = req.body
-
-    const grade = await prisma.grade.create({
-      data: {
-        tenantId: req.tenantId,
-        name,
-        level
-      }
-    })
-
-    res.status(201).json({ data: grade })
-  } catch (error) {
-    next(error)
-  }
-})
-
-// Update grade
-router.patch('/grades/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
-  try {
-    const { name, level } = req.body
-
-    const grade = await prisma.grade.update({
-      where: { id: req.params.id },
-      data: { name, level }
-    })
-
-    res.json({ data: grade })
-  } catch (error) {
-    next(error)
-  }
-})
-
-// Delete grade
-router.delete('/grades/:id', authenticate, authorize('ADMIN', 'SUPER_ADMIN'), async (req, res, next) => {
-  try {
-    // Check if grade has classes
-    const grade = await prisma.grade.findFirst({
+    const cls = await prisma.class.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },
-      include: { _count: { select: { classes: true } } }
+      include: { _count: { select: { students: true } } }
     })
-
-    if (grade._count.classes > 0) {
-      throw new AppError('Cannot delete grade with classes', 400, 'GRADE_HAS_CLASSES')
+    if (cls._count.students >= cls.capacity) {
+      throw new AppError('Class is full', 400, 'CLASS_FULL')
     }
 
-    await prisma.grade.delete({
-      where: { id: req.params.id }
+    const student = await prisma.student.update({
+      where: { id: studentId },
+      data: { classId: req.params.id }
     })
+    res.json({ data: student })
+  } catch (error) {
+    next(error)
+  }
+})
 
-    res.json({ data: { message: 'Grade deleted successfully' } })
+// DELETE /classes/:id/students/:studentId - Remove student from class
+router.delete('/:id/students/:studentId', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+  try {
+    const student = await prisma.student.update({
+      where: { id: req.params.studentId },
+      data: { classId: null }
+    })
+    res.json({ data: student })
   } catch (error) {
     next(error)
   }

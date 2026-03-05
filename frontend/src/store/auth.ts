@@ -9,12 +9,14 @@ interface Child {
   relationship: string
 }
 
+export type UserRole = 'PLATFORM_ADMIN' | 'SUPER_ADMIN' | 'STAFF' | 'TEACHER' | 'STUDENT' | 'PARENT'
+
 interface User {
   id: string
   email: string
   fullName: string
-  role: 'SUPER_ADMIN' | 'ADMIN' | 'TEACHER' | 'PARENT'
-  tenantId: string
+  role: UserRole
+  tenantId?: string
   tenant?: {
     id: string
     name: string
@@ -40,8 +42,6 @@ export const useAuthStore = create<AuthState>()(
       setAuth: (user, token) => set({ user, token, isAuthenticated: true }),
       logout: () => set({ user: null, token: null, isAuthenticated: false }),
     }),
-    {
-      name: 'auth-storage',
-    }
+    { name: 'auth-storage' }
   )
 )

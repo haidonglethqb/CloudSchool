@@ -26,9 +26,9 @@ interface Student {
   fullName: string
   gender: string
   dateOfBirth: string
-  email: string | null
-  phone: string | null
   address: string | null
+  parentName: string | null
+  parentPhone: string | null
   class: {
     id: string
     name: string
@@ -36,10 +36,10 @@ interface Student {
   } | null
   scores: Array<{
     id: string
-    scoreType: string
     value: number
+    scoreComponent: { name: string }
     subject: { name: string }
-    semester: { name: string; year: string }
+    semester: { name: string; year: number }
   }>
   createdAt: string
 }
@@ -183,26 +183,26 @@ export default function StudentDetailPage() {
                 </div>
               </div>
 
-              {student.email && (
+              {student.parentName && (
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
-                    <Mail className="w-4 h-4 text-gray-500" />
+                    <User className="w-4 h-4 text-gray-500" />
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500">Email</p>
-                    <p className="text-sm font-medium">{student.email}</p>
+                    <p className="text-xs text-gray-500">Phụ huynh</p>
+                    <p className="text-sm font-medium">{student.parentName}</p>
                   </div>
                 </div>
               )}
 
-              {student.phone && (
+              {student.parentPhone && (
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
                     <Phone className="w-4 h-4 text-gray-500" />
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500">Số điện thoại</p>
-                    <p className="text-sm font-medium">{student.phone}</p>
+                    <p className="text-xs text-gray-500">SĐT phụ huynh</p>
+                    <p className="text-sm font-medium">{student.parentPhone}</p>
                   </div>
                 </div>
               )}
@@ -270,18 +270,8 @@ export default function StudentDetailPage() {
                             {score.semester.name} ({score.semester.year})
                           </td>
                           <td className="table-cell">
-                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                              score.scoreType === 'FINAL'
-                                ? 'bg-purple-100 text-purple-700'
-                                : score.scoreType === 'QUIZ_45'
-                                  ? 'bg-blue-100 text-blue-700'
-                                  : 'bg-gray-100 text-gray-700'
-                            }`}>
-                              {score.scoreType === 'QUIZ_15'
-                                ? '15 phút'
-                                : score.scoreType === 'QUIZ_45'
-                                  ? '1 tiết'
-                                  : 'Cuối kỳ'}
+                            <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                              {score.scoreComponent.name}
                             </span>
                           </td>
                           <td className="table-cell text-center">

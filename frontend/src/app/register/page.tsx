@@ -9,12 +9,11 @@ import { z } from 'zod'
 import toast from 'react-hot-toast'
 import { authApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
-import { GraduationCap, Eye, EyeOff, Loader2, Building2 } from 'lucide-react'
+import { GraduationCap, Eye, EyeOff, Loader2 } from 'lucide-react'
 
 const registerSchema = z
   .object({
     schoolName: z.string().min(3, 'Tên trường ít nhất 3 ký tự'),
-    schoolCode: z.string().min(2, 'Mã trường ít nhất 2 ký tự').regex(/^[A-Z0-9-]+$/, 'Mã trường chỉ chứa chữ in hoa, số và dấu gạch ngang'),
     adminEmail: z.string().email('Email không hợp lệ'),
     adminName: z.string().min(2, 'Họ tên ít nhất 2 ký tự'),
     adminPassword: z.string().min(6, 'Mật khẩu ít nhất 6 ký tự'),
@@ -46,14 +45,13 @@ export default function RegisterPage() {
       setIsLoading(true)
       const response = await authApi.registerSchool({
         schoolName: data.schoolName,
-        schoolCode: data.schoolCode.toUpperCase(),
         adminEmail: data.adminEmail,
         adminName: data.adminName,
         adminPassword: data.adminPassword,
       })
       const { user, token, tenant } = response.data.data
       setAuth({ ...user, tenant }, token)
-      toast.success('Đăng ký thành công!')
+      toast.success(`Đăng ký thành công! Mã trường: ${tenant.code}`)
       router.push('/dashboard')
     } catch (error: any) {
       const message = error.response?.data?.error?.message || 'Đăng ký thất bại'
@@ -66,7 +64,6 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-primary-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-2xl mb-4">
             <GraduationCap className="w-10 h-10 text-white" />
@@ -75,11 +72,9 @@ export default function RegisterPage() {
           <p className="text-gray-600 mt-1">Đăng ký trường học mới</p>
         </div>
 
-        {/* Register form */}
         <div className="card p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">
-            Thông tin đăng ký
-          </h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-6">Thông tin đăng ký</h2>
+          <p className="text-sm text-gray-500 mb-4">Mã trường sẽ được tạo tự động sau khi đăng ký.</p>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div>
@@ -91,31 +86,8 @@ export default function RegisterPage() {
                 {...register('schoolName')}
               />
               {errors.schoolName && (
-                <p className="text-red-500 text-xs mt-1">
-                  {errors.schoolName.message}
-                </p>
+                <p className="text-red-500 text-xs mt-1">{errors.schoolName.message}</p>
               )}
-            </div>
-
-            <div>
-              <label className="label">Mã trường (dùng để đăng nhập)</label>
-              <div className="relative">
-                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  className={`input pl-10 uppercase ${errors.schoolCode ? 'border-red-500' : ''}`}
-                  placeholder="VD: THPT-ABC"
-                  {...register('schoolCode')}
-                />
-              </div>
-              {errors.schoolCode && (
-                <p className="text-red-500 text-xs mt-1">
-                  {errors.schoolCode.message}
-                </p>
-              )}
-              <p className="text-gray-500 text-xs mt-1">
-                Mã trường sẽ được dùng khi đăng nhập (chữ in hoa, số, gạch ngang)
-              </p>
             </div>
 
             <div>
@@ -127,9 +99,7 @@ export default function RegisterPage() {
                 {...register('adminName')}
               />
               {errors.adminName && (
-                <p className="text-red-500 text-xs mt-1">
-                  {errors.adminName.message}
-                </p>
+                <p className="text-red-500 text-xs mt-1">{errors.adminName.message}</p>
               )}
             </div>
 
@@ -142,9 +112,7 @@ export default function RegisterPage() {
                 {...register('adminEmail')}
               />
               {errors.adminEmail && (
-                <p className="text-red-500 text-xs mt-1">
-                  {errors.adminEmail.message}
-                </p>
+                <p className="text-red-500 text-xs mt-1">{errors.adminEmail.message}</p>
               )}
             </div>
 
@@ -162,17 +130,11 @@ export default function RegisterPage() {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
-                  {showPassword ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
               {errors.adminPassword && (
-                <p className="text-red-500 text-xs mt-1">
-                  {errors.adminPassword.message}
-                </p>
+                <p className="text-red-500 text-xs mt-1">{errors.adminPassword.message}</p>
               )}
             </div>
 
@@ -185,20 +147,16 @@ export default function RegisterPage() {
                 {...register('confirmPassword')}
               />
               {errors.confirmPassword && (
-                <p className="text-red-500 text-xs mt-1">
-                  {errors.confirmPassword.message}
-                </p>
+                <p className="text-red-500 text-xs mt-1">{errors.confirmPassword.message}</p>
               )}
             </div>
 
             <button
               type="submit"
               disabled={isLoading}
-              className="btn-primary w-full py-2.5"
+              className="btn-primary w-full py-2.5 flex items-center justify-center"
             >
-              {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              ) : null}
+              {isLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
               Đăng ký trường học
             </button>
           </form>

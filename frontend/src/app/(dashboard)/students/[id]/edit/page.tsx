@@ -24,8 +24,8 @@ export default function StudentEditPage() {
     fullName: '',
     gender: 'MALE',
     dateOfBirth: '',
-    email: '',
-    phone: '',
+    parentName: '',
+    parentPhone: '',
     address: '',
     classId: '',
   })
@@ -50,8 +50,8 @@ export default function StudentEditPage() {
           fullName: student.fullName || '',
           gender: student.gender || 'MALE',
           dateOfBirth: dob,
-          email: student.email || '',
-          phone: student.phone || '',
+          parentName: student.parentName || '',
+          parentPhone: student.parentPhone || '',
           address: student.address || '',
           classId: student.classId || '',
         })
@@ -91,7 +91,8 @@ export default function StudentEditPage() {
         fullName: formData.fullName,
         gender: formData.gender,
         dateOfBirth: formData.dateOfBirth,
-        email: formData.email || undefined,
+        parentName: formData.parentName || undefined,
+        parentPhone: formData.parentPhone || undefined,
         address: formData.address || undefined,
         classId: formData.classId || undefined,
       })
@@ -180,24 +181,24 @@ export default function StudentEditPage() {
             </div>
           </div>
 
-          {/* Email & Phone */}
+          {/* Phụ huynh */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Email</label>
+              <label className="label">Tên phụ huynh</label>
               <input
-                type="email"
+                type="text"
                 className="input"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                value={formData.parentName}
+                onChange={(e) => setFormData({ ...formData, parentName: e.target.value })}
               />
             </div>
             <div>
-              <label className="label">Số điện thoại</label>
+              <label className="label">SĐT phụ huynh</label>
               <input
                 type="tel"
                 className="input"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                value={formData.parentPhone}
+                onChange={(e) => setFormData({ ...formData, parentPhone: e.target.value })}
               />
             </div>
           </div>

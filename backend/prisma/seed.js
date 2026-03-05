@@ -3,35 +3,61 @@ const bcrypt = require('bcryptjs')
 
 const prisma = new PrismaClient()
 
-async function main() {
+async function main () {
   console.log('🌱 Starting database seed...')
 
-  // Create demo tenant
+  // 1. Create Platform Admin
+  const platformAdminPassword = await bcrypt.hash('admin123', 10)
+  const platformAdmin = await prisma.user.create({
+    data: {
+      email: 'admin@cloudschool.vn',
+      password: platformAdminPassword,
+      fullName: 'Platform Admin',
+      role: 'PLATFORM_ADMIN',
+      tenantId: null
+    }
+  })
+  console.log('✅ Created platform admin:', platformAdmin.email)
+
+  // 2. Create a subscription plan
+  const plan = await prisma.subscriptionPlan.create({
+    data: {
+      name: 'Basic',
+      price: 0,
+      studentLimit: 500,
+      teacherLimit: 50,
+      classLimit: 30,
+      description: 'Gói miễn phí cho trường demo',
+      features: ['Quản lý học sinh', 'Nhập điểm', 'Báo cáo cơ bản']
+    }
+  })
+  console.log('✅ Created subscription plan:', plan.name)
+
+  // 3. Create demo tenant
   const tenant = await prisma.tenant.create({
     data: {
       name: 'Trường THPT Demo',
       code: 'THPT-DEMO',
-      isActive: true
+      email: 'contact@demo.school.vn',
+      status: 'ACTIVE',
+      planId: plan.id
     }
   })
   console.log('✅ Created tenant:', tenant.name)
 
-  // Create tenant settings
-  const settings = await prisma.tenantSettings.create({
+  // 4. Create tenant settings
+  await prisma.tenantSettings.create({
     data: {
       tenantId: tenant.id,
       minAge: 15,
       maxAge: 20,
       maxClassSize: 40,
-      passScore: 5.0,
-      quiz15Weight: 1,
-      quiz45Weight: 2,
-      finalWeight: 3
+      passScore: 5.0
     }
   })
   console.log('✅ Created tenant settings')
 
-  // Create admin user
+  // 5. Create school admin user
   const hashedPassword = await bcrypt.hash('admin123', 10)
   const admin = await prisma.user.create({
     data: {
@@ -39,25 +65,40 @@ async function main() {
       email: 'admin@demo.school.vn',
       password: hashedPassword,
       fullName: 'Quản trị viên',
-      role: 'ADMIN'
+      role: 'SUPER_ADMIN'
     }
   })
   console.log('✅ Created admin user:', admin.email)
 
-  // Create teacher
+  // 6. Create staff user
+  const staffHash = await bcrypt.hash('staff123', 10)
+  const staff = await prisma.user.create({
+    data: {
+      tenantId: tenant.id,
+      email: 'staff@demo.school.vn',
+      password: staffHash,
+      fullName: 'Nhân viên Giáo vụ',
+      role: 'STAFF',
+      department: 'Giáo vụ'
+    }
+  })
+  console.log('✅ Created staff user:', staff.email)
+
+  // 7. Create teacher
   const teacherHash = await bcrypt.hash('teacher123', 10)
   const teacher = await prisma.user.create({
     data: {
       tenantId: tenant.id,
       email: 'teacher@demo.school.vn',
       password: teacherHash,
-      fullName: 'Giáo viên Demo',
-      role: 'TEACHER'
+      fullName: 'Nguyễn Văn Thầy',
+      role: 'TEACHER',
+      department: 'Toán'
     }
   })
   console.log('✅ Created teacher user:', teacher.email)
 
-  // Create grades
+  // 8. Create grades
   const grades = await Promise.all([
     prisma.grade.create({ data: { tenantId: tenant.id, name: 'Khối 10', level: 10 } }),
     prisma.grade.create({ data: { tenantId: tenant.id, name: 'Khối 11', level: 11 } }),
@@ -65,78 +106,125 @@ async function main() {
   ])
   console.log('✅ Created grades:', grades.map(g => g.name).join(', '))
 
-  // Create classes
+  // 9. Create classes
   const classes = await Promise.all([
-    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[0].id, name: '10A1' } }),
-    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[0].id, name: '10A2' } }),
-    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[1].id, name: '11A1' } }),
-    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[2].id, name: '12A1' } })
+    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[0].id, name: '10A1', academicYear: '2024-2025', capacity: 40 } }),
+    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[0].id, name: '10A2', academicYear: '2024-2025', capacity: 40 } }),
+    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[1].id, name: '11A1', academicYear: '2024-2025', capacity: 40 } }),
+    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[2].id, name: '12A1', academicYear: '2024-2025', capacity: 40 } })
   ])
   console.log('✅ Created classes:', classes.map(c => c.name).join(', '))
 
-  // Create subjects
+  // 10. Create subjects
   const subjects = await Promise.all([
-    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Toán', code: 'MATH' } }),
-    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Ngữ văn', code: 'LITERATURE' } }),
-    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Tiếng Anh', code: 'ENGLISH' } }),
-    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Vật lý', code: 'PHYSICS' } }),
-    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Hóa học', code: 'CHEMISTRY' } }),
-    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Sinh học', code: 'BIOLOGY' } }),
-    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Lịch sử', code: 'HISTORY' } }),
-    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Địa lý', code: 'GEOGRAPHY' } })
+    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Toán', code: 'MATH', description: 'Môn Toán học' } }),
+    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Ngữ văn', code: 'LITERATURE', description: 'Môn Ngữ văn' } }),
+    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Tiếng Anh', code: 'ENGLISH', description: 'Môn Tiếng Anh' } }),
+    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Vật lý', code: 'PHYSICS', description: 'Môn Vật lý' } }),
+    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Hóa học', code: 'CHEMISTRY', description: 'Môn Hóa học' } }),
+    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Sinh học', code: 'BIOLOGY', description: 'Môn Sinh học' } }),
+    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Lịch sử', code: 'HISTORY', description: 'Môn Lịch sử' } }),
+    prisma.subject.create({ data: { tenantId: tenant.id, name: 'Địa lý', code: 'GEOGRAPHY', description: 'Môn Địa lý' } })
   ])
   console.log('✅ Created subjects:', subjects.map(s => s.name).join(', '))
 
-  // Create semester
+  // 11. Create score components for each subject
+  const scoreComponentConfig = [
+    { name: 'Kiểm tra miệng', weight: 10 },
+    { name: 'Kiểm tra 15 phút', weight: 20 },
+    { name: 'Kiểm tra 1 tiết', weight: 30 },
+    { name: 'Thi cuối kỳ', weight: 40 }
+  ]
+
+  const scoreComponents = {}
+  for (const subject of subjects) {
+    scoreComponents[subject.id] = await Promise.all(
+      scoreComponentConfig.map(sc =>
+        prisma.scoreComponent.create({
+          data: { tenantId: tenant.id, subjectId: subject.id, name: sc.name, weight: sc.weight }
+        })
+      )
+    )
+  }
+  console.log('✅ Created score components for all subjects')
+
+  // 12. Create teacher assignments
+  await prisma.teacherAssignment.create({
+    data: {
+      tenantId: tenant.id,
+      teacherId: teacher.id,
+      classId: classes[0].id,
+      subjectId: subjects[0].id,
+      isHomeroom: true
+    }
+  })
+  await prisma.teacherAssignment.create({
+    data: {
+      tenantId: tenant.id,
+      teacherId: teacher.id,
+      classId: classes[1].id,
+      subjectId: subjects[0].id,
+      isHomeroom: false
+    }
+  })
+  console.log('✅ Created teacher assignments')
+
+  // 13. Create semester
   const semester = await prisma.semester.create({
     data: {
       tenantId: tenant.id,
-      name: 'Học kỳ 1 - 2024-2025',
+      name: 'Học kỳ 1',
       year: '2024-2025',
       semesterNum: 1,
+      startDate: new Date('2024-09-01'),
+      endDate: new Date('2025-01-15'),
       isActive: true
     }
   })
   console.log('✅ Created semester:', semester.name)
 
-  // Create sample students
+  // 14. Create sample students
   const studentData = [
-    { fullName: 'Nguyễn Văn An', gender: 'MALE', dateOfBirth: new Date('2009-03-15'), address: '123 Đường ABC, Quận 1, HCM' },
-    { fullName: 'Trần Thị Bình', gender: 'FEMALE', dateOfBirth: new Date('2009-07-20'), address: '456 Đường XYZ, Quận 2, HCM' },
-    { fullName: 'Lê Hoàng Cường', gender: 'MALE', dateOfBirth: new Date('2009-01-10'), address: '789 Đường DEF, Quận 3, HCM' },
-    { fullName: 'Phạm Thị Dung', gender: 'FEMALE', dateOfBirth: new Date('2009-05-25'), address: '321 Đường GHI, Quận 4, HCM' },
-    { fullName: 'Hoàng Văn Em', gender: 'MALE', dateOfBirth: new Date('2009-09-08'), address: '654 Đường JKL, Quận 5, HCM' }
+    { fullName: 'Nguyễn Văn An', gender: 'MALE', dateOfBirth: new Date('2009-03-15'), address: '123 Đường ABC, Quận 1, HCM', parentName: 'Nguyễn Văn Phụ Huynh', parentPhone: '0901234567' },
+    { fullName: 'Trần Thị Bình', gender: 'FEMALE', dateOfBirth: new Date('2009-07-20'), address: '456 Đường XYZ, Quận 2, HCM', parentName: 'Trần Văn Ba', parentPhone: '0912345678' },
+    { fullName: 'Lê Hoàng Cường', gender: 'MALE', dateOfBirth: new Date('2009-01-10'), address: '789 Đường DEF, Quận 3, HCM', parentName: 'Lê Thị Mẹ', parentPhone: '0909876543' },
+    { fullName: 'Phạm Thị Dung', gender: 'FEMALE', dateOfBirth: new Date('2009-05-25'), address: '321 Đường GHI, Quận 4, HCM', parentName: 'Phạm Văn Cha', parentPhone: '0923456789' },
+    { fullName: 'Hoàng Văn Em', gender: 'MALE', dateOfBirth: new Date('2009-09-08'), address: '654 Đường JKL, Quận 5, HCM', parentName: 'Hoàng Thị Mẹ', parentPhone: '0987654321' }
   ]
 
-  let studentCode = 1
+  let codeNum = 1
   const students = await Promise.all(
     studentData.map(data =>
       prisma.student.create({
         data: {
           tenantId: tenant.id,
-          classId: classes[0].id, // 10A1
-          studentCode: `HS${String(studentCode++).padStart(6, '0')}`,
-          ...data,
-          email: `${data.fullName.toLowerCase().replace(/\s/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')}@student.demo.school.vn`
+          classId: classes[0].id,
+          studentCode: `HS24${String(codeNum++).padStart(4, '0')}`,
+          fullName: data.fullName,
+          gender: data.gender,
+          dateOfBirth: data.dateOfBirth,
+          address: data.address,
+          parentName: data.parentName,
+          parentPhone: data.parentPhone
         }
       })
     )
   )
   console.log('✅ Created students:', students.length)
 
-  // Create sample scores
-  const scoreTypes = ['QUIZ_15', 'QUIZ_45', 'FINAL']
+  // 15. Create sample scores for first 3 subjects
   for (const student of students) {
-    for (const subject of subjects.slice(0, 3)) { // First 3 subjects
-      for (const scoreType of scoreTypes) {
+    for (const subject of subjects.slice(0, 3)) {
+      const components = scoreComponents[subject.id]
+      for (const sc of components) {
         await prisma.score.create({
           data: {
             tenantId: tenant.id,
             studentId: student.id,
             subjectId: subject.id,
             semesterId: semester.id,
-            scoreType,
-            value: Math.round((Math.random() * 4 + 6) * 100) / 100 // Random score 6-10
+            scoreComponentId: sc.id,
+            value: Math.round((Math.random() * 4 + 6) * 100) / 100
           }
         })
       }
@@ -144,9 +232,9 @@ async function main() {
   }
   console.log('✅ Created sample scores')
 
-  // Create sample parent accounts
+  // 16. Create parent accounts
   const parentHash = await bcrypt.hash('parent123', 10)
-  const parent1 = await prisma.user.create({
+  await prisma.user.create({
     data: {
       tenantId: tenant.id,
       email: 'parent1@demo.school.vn',
@@ -162,8 +250,8 @@ async function main() {
       }
     }
   })
-  
-  const parent2 = await prisma.user.create({
+
+  await prisma.user.create({
     data: {
       tenantId: tenant.id,
       email: 'parent2@demo.school.vn',
@@ -178,14 +266,19 @@ async function main() {
       }
     }
   })
-  console.log('✅ Created parent accounts: parent1@demo.school.vn, parent2@demo.school.vn')
+  console.log('✅ Created parent accounts')
 
   console.log('\n🎉 Database seed completed!')
   console.log('\n📧 Login credentials:')
-  console.log('   Admin: admin@demo.school.vn / admin123')
+  console.log('   ── Platform Admin ──')
+  console.log('   Email: admin@cloudschool.vn / Password: admin123')
+  console.log('')
+  console.log('   ── Demo School (Mã trường: THPT-DEMO) ──')
+  console.log('   Admin:   admin@demo.school.vn / admin123')
+  console.log('   Staff:   staff@demo.school.vn / staff123')
   console.log('   Teacher: teacher@demo.school.vn / teacher123')
-  console.log('   Parent 1: parent1@demo.school.vn / parent123')
-  console.log('   Parent 2: parent2@demo.school.vn / parent123')
+  console.log('   Parent1: parent1@demo.school.vn / parent123')
+  console.log('   Parent2: parent2@demo.school.vn / parent123')
 }
 
 main()
