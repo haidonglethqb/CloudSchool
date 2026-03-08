@@ -33,8 +33,9 @@ api.interceptors.response.use(
 export const authApi = {
   login: (data: { email: string; password: string; tenantCode?: string }) =>
     api.post('/auth/login', data),
-  registerSchool: (data: { schoolName: string; adminEmail: string; adminPassword: string; adminName: string }) =>
+  registerSchool: (data: { schoolName: string; adminEmail: string; adminPassword: string; adminName: string; planId?: string }) =>
     api.post('/auth/register-school', data),
+  getPlans: () => api.get('/auth/plans'),
   me: () => api.get('/auth/me'),
   logout: () => api.post('/auth/logout'),
 }
@@ -190,6 +191,10 @@ export const settingsApi = {
   createGrade: (data: { name: string; level: number }) => api.post('/settings/grades', data),
   updateGrade: (id: string, data: { name?: string; level?: number }) => api.put(`/settings/grades/${id}`, data),
   deleteGrade: (id: string) => api.delete(`/settings/grades/${id}`),
+  // Role Permissions
+  getRolePermissions: () => api.get('/settings/role-permissions'),
+  updateRolePermissions: (permissions: Record<string, string[]>) =>
+    api.put('/settings/role-permissions', { permissions }),
 }
 
 // ==================== Tenant ====================
@@ -220,7 +225,7 @@ export const parentApi = {
 
 // ==================== Export ====================
 export const exportApi = {
-  students: (params?: { format?: string; classId?: string }) =>
+  students: (params?: { format?: string; classId?: string; gradeId?: string }) =>
     api.get('/export/students', { params, responseType: 'blob' }),
   classes: (params?: { format?: string }) =>
     api.get('/export/classes', { params, responseType: 'blob' }),
@@ -236,6 +241,21 @@ export const monitoringApi = {
   activityLogs: (params?: { page?: number; limit?: number; action?: string; entity?: string; tenantId?: string }) =>
     api.get('/monitoring/activity-logs', { params }),
   schoolStats: (schoolId: string) => api.get(`/monitoring/school-stats/${schoolId}`),
+}
+
+// ==================== Fees ====================
+export const feeApi = {
+  list: (params?: { category?: string; isActive?: string }) =>
+    api.get('/fees', { params }),
+  get: (id: string) => api.get(`/fees/${id}`),
+  create: (data: Record<string, unknown>) => api.post('/fees', data),
+  update: (id: string, data: Record<string, unknown>) => api.put(`/fees/${id}`, data),
+  delete: (id: string) => api.delete(`/fees/${id}`),
+  updateStudentPayment: (feeId: string, studentId: string, data: { status?: string; paidAmount?: number; note?: string }) =>
+    api.patch(`/fees/${feeId}/students/${studentId}`, data),
+  assignStudents: (feeId: string, studentIds: string[]) =>
+    api.post(`/fees/${feeId}/assign`, { studentIds }),
+  getParentFees: () => api.get('/fees/parent/my-fees'),
 }
 
 // ==================== Helper: Download blob ====================

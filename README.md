@@ -125,10 +125,12 @@ npx prisma db push
 npm run db:seed
 ```
 
+> Script seed hiện có thể chạy lại an toàn để cập nhật gói dịch vụ mẫu mà không tạo trùng tenant demo.
+
 #### Bước 6: Chạy ứng dụng
 
 ```bash
-# Terminal 1 — Backend (port 5000)
+# Terminal 1 — Backend (port 5000, hoặc 5001 nếu macOS đang chiếm port 5000)
 cd backend
 npm run dev
 
@@ -163,6 +165,8 @@ docker-compose exec backend npm run db:seed
 | Health check | http://localhost:5000/health |
 | Prisma Studio | `cd backend && npx prisma studio` |
 
+> Trên một số máy macOS, port `5000` bị chiếm sẵn bởi hệ thống. Khi đó hãy chạy backend ở port `5001` và đặt `NEXT_PUBLIC_API_URL=http://localhost:5001/api` trong `frontend/.env.local`.
+
 ---
 
 ## Tài khoản Demo
@@ -194,6 +198,7 @@ Sau khi chạy `npm run db:seed`:
 ### Authentication
 ```
 POST /api/auth/login              # Đăng nhập (chung cho tất cả)
+GET  /api/auth/plans              # Lấy danh sách gói công khai cho form đăng ký trường
 POST /api/auth/register-school    # Đăng ký trường mới
 GET  /api/auth/me                 # Lấy thông tin user hiện tại
 POST /api/auth/logout             # Đăng xuất

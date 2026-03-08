@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { reportApi, adminApi, parentApi, classApi } from '@/lib/api'
+import { useRouter } from 'next/navigation'
+import { reportApi, adminApi, classApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
 import { formatDate } from '@/lib/utils'
 import {
@@ -15,7 +16,6 @@ import {
   ArrowRight,
   Loader2,
   User,
-  ChevronRight,
   School,
   CreditCard,
   Shield,
@@ -53,10 +53,6 @@ interface PlatformDashboardData {
   studentGrowth: Array<{ month: string; count: number }>
 }
 
-interface ParentChild {
-  id: string; studentCode: string; fullName: string
-  class: { name: string; grade?: { name: string } } | null
-}
 
 interface TeacherClass {
   id: string
@@ -103,9 +99,6 @@ function PlatformAdminDashboard() {
           <h1 className="text-2xl font-bold text-gray-900">Platform Admin</h1>
           <p className="text-gray-600 mt-1">Tổng quan hệ thống CloudSchool</p>
         </div>
-        <Link href="/admin/monitoring" className="btn-primary text-sm">
-          <Activity className="w-4 h-4 mr-1" /> Giám sát hệ thống
-        </Link>
       </div>
 
       {/* Primary stats */}
@@ -147,16 +140,31 @@ function PlatformAdminDashboard() {
         {/* School Growth Chart */}
         <div className="card p-6">
           <h3 className="font-semibold text-gray-900 mb-4">Tăng trưởng trường học (6 tháng)</h3>
-          <div className="flex items-end gap-2 h-40">
+          <div className="relative h-44">
+            {[0, 25, 50, 75, 100].map(p => (
+              <div key={p} className="absolute left-0 right-0 border-t border-dashed border-gray-100" style={{ bottom: `${p}%` }} />
+            ))}
+            <div className="relative flex items-end gap-2 h-full">
+              {data?.schoolGrowth?.map((g, i) => {
+                const pct = maxSchoolGrowth > 0 ? (g.count / maxSchoolGrowth) * 100 : 0
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center justify-end h-full group">
+                    <span className={`text-xs font-semibold mb-1 ${g.count > 0 ? 'text-blue-600' : 'text-gray-300'}`}>{g.count}</span>
+                    <div
+                      className="w-full rounded-t-md transition-all duration-300 group-hover:opacity-80"
+                      style={{
+                        height: g.count > 0 ? `${Math.max(pct, 10)}%` : '3px',
+                        background: g.count > 0 ? 'linear-gradient(to top, #3b82f6, #60a5fa)' : '#e5e7eb',
+                      }}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+          <div className="flex gap-2 mt-2">
             {data?.schoolGrowth?.map((g, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <span className="text-xs font-medium text-gray-700">{g.count}</span>
-                <div className="w-full bg-blue-100 rounded-t" style={{
-                  height: `${Math.max((g.count / maxSchoolGrowth) * 100, 4)}%`,
-                  minHeight: '4px'
-                }}>
-                  <div className="w-full h-full bg-blue-500 rounded-t" />
-                </div>
+              <div key={i} className="flex-1 text-center">
                 <span className="text-xs text-gray-500">{g.month}</span>
               </div>
             ))}
@@ -166,16 +174,31 @@ function PlatformAdminDashboard() {
         {/* Student Growth Chart */}
         <div className="card p-6">
           <h3 className="font-semibold text-gray-900 mb-4">Tăng trưởng học sinh (6 tháng)</h3>
-          <div className="flex items-end gap-2 h-40">
+          <div className="relative h-44">
+            {[0, 25, 50, 75, 100].map(p => (
+              <div key={p} className="absolute left-0 right-0 border-t border-dashed border-gray-100" style={{ bottom: `${p}%` }} />
+            ))}
+            <div className="relative flex items-end gap-2 h-full">
+              {data?.studentGrowth?.map((g, i) => {
+                const pct = maxStudentGrowth > 0 ? (g.count / maxStudentGrowth) * 100 : 0
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center justify-end h-full group">
+                    <span className={`text-xs font-semibold mb-1 ${g.count > 0 ? 'text-green-600' : 'text-gray-300'}`}>{g.count}</span>
+                    <div
+                      className="w-full rounded-t-md transition-all duration-300 group-hover:opacity-80"
+                      style={{
+                        height: g.count > 0 ? `${Math.max(pct, 10)}%` : '3px',
+                        background: g.count > 0 ? 'linear-gradient(to top, #22c55e, #4ade80)' : '#e5e7eb',
+                      }}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+          <div className="flex gap-2 mt-2">
             {data?.studentGrowth?.map((g, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <span className="text-xs font-medium text-gray-700">{g.count}</span>
-                <div className="w-full bg-green-100 rounded-t" style={{
-                  height: `${Math.max((g.count / maxStudentGrowth) * 100, 4)}%`,
-                  minHeight: '4px'
-                }}>
-                  <div className="w-full h-full bg-green-500 rounded-t" />
-                </div>
+              <div key={i} className="flex-1 text-center">
                 <span className="text-xs text-gray-500">{g.month}</span>
               </div>
             ))}
@@ -188,68 +211,11 @@ function PlatformAdminDashboard() {
 
 /* ====================== Parent Dashboard ====================== */
 function ParentDashboard() {
-  const { user } = useAuthStore()
-  const [children, setChildren] = useState<ParentChild[]>([])
-  const [loading, setLoading] = useState(true)
-
+  const router = useRouter()
   useEffect(() => {
-    parentApi.getMyChildren()
-      .then((res: any) => setChildren(res.data.data || []))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
-
-  if (loading) return <LoadingSpinner />
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Xin chào, {user?.fullName}!</h1>
-        <p className="text-gray-600 mt-1">Cổng thông tin phụ huynh</p>
-      </div>
-
-      <div className="card p-6 bg-gradient-to-r from-primary to-blue-600 text-white">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-            <Users className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-sm text-white/80">Số học sinh liên kết</p>
-            <p className="text-3xl font-bold">{children.length}</p>
-          </div>
-        </div>
-      </div>
-
-      <h2 className="text-lg font-semibold text-gray-900">Học sinh của bạn</h2>
-      {children.length === 0 ? (
-        <div className="card p-12 text-center">
-          <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Chưa có học sinh liên kết</h3>
-          <p className="text-gray-500">Vui lòng liên hệ nhà trường để liên kết tài khoản.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {children.map(child => (
-            <Link key={child.id} href={`/my-children/${child.id}/scores`}
-              className="card p-4 flex items-center gap-4 hover:shadow-md transition-all">
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                <User className="w-6 h-6 text-primary" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-semibold text-gray-900">{child.fullName}</h3>
-                <p className="text-sm text-gray-500">{child.studentCode} - Lớp {child.class?.name || 'Chưa xếp lớp'}</p>
-              </div>
-              <div className="flex items-center gap-2 text-primary">
-                <BookOpen className="w-5 h-5" />
-                <span className="font-medium hidden sm:inline">Xem điểm</span>
-                <ChevronRight className="w-5 h-5" />
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  )
+    router.replace('/my-children')
+  }, [router])
+  return <LoadingSpinner />
 }
 
 /* ===================== Student Dashboard ===================== */

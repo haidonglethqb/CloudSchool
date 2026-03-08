@@ -62,6 +62,71 @@ router.put('/', authenticate, authorize('SUPER_ADMIN'), [
   }
 })
 
+// ==================== ROLE PERMISSIONS ====================
+
+const DEFAULT_PERMISSIONS = {
+  STAFF: ['students', 'classes', 'subjects', 'scores', 'reports', 'parents', 'promotion', 'export'],
+  TEACHER: ['scores', 'classes', 'reports'],
+}
+
+// GET /settings/role-permissions
+router.get('/role-permissions', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+  try {
+    const settings = await prisma.tenantSettings.findUnique({
+      where: { tenantId: req.tenantId }
+    })
+    if (!settings) throw new AppError('Settings not found', 404, 'NOT_FOUND')
+
+    const permissions = settings.rolePermissions && Object.keys(settings.rolePermissions).length > 0
+      ? settings.rolePermissions
+      : DEFAULT_PERMISSIONS
+
+    res.json({ data: permissions })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// PUT /settings/role-permissions
+router.put('/role-permissions', authenticate, authorize('SUPER_ADMIN'), [
+  body('permissions').isObject().withMessage('Permissions must be an object')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: { code: 'VALIDATION_ERROR', details: errors.array() } })
+    }
+
+    const { permissions } = req.body
+    const allowedRoles = ['STAFF', 'TEACHER']
+    const allowedModules = ['students', 'classes', 'subjects', 'scores', 'reports', 'parents', 'promotion', 'export', 'settings']
+
+    // Validate structure
+    for (const [role, modules] of Object.entries(permissions)) {
+      if (!allowedRoles.includes(role)) {
+        throw new AppError(`Invalid role: ${role}`, 400, 'INVALID_ROLE')
+      }
+      if (!Array.isArray(modules)) {
+        throw new AppError(`Permissions for ${role} must be an array`, 400, 'INVALID_FORMAT')
+      }
+      for (const mod of modules) {
+        if (!allowedModules.includes(mod)) {
+          throw new AppError(`Invalid module: ${mod}`, 400, 'INVALID_MODULE')
+        }
+      }
+    }
+
+    const settings = await prisma.tenantSettings.update({
+      where: { tenantId: req.tenantId },
+      data: { rolePermissions: permissions }
+    })
+
+    res.json({ data: settings.rolePermissions })
+  } catch (error) {
+    next(error)
+  }
+})
+
 // ==================== GRADE CRUD ====================
 
 // GET /settings/grades

@@ -1,17 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { studentApi, classApi } from '@/lib/api'
+import { studentApi, classApi, scoreApi, subjectApi } from '@/lib/api'
 import { formatDate, getGenderLabel } from '@/lib/utils'
+import { useAuthStore } from '@/store/auth'
 import {
   ArrowLeft,
   Edit2,
   Trash2,
   Loader2,
   User,
-  Mail,
   Phone,
   MapPin,
   Calendar,
@@ -19,6 +19,11 @@ import {
   GraduationCap,
   ArrowRightLeft,
   History,
+  TrendingUp,
+  Award,
+  CheckCircle,
+  XCircle,
+  ClipboardEdit,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -36,19 +41,50 @@ interface Student {
     name: string
     grade: { id: string; name: string }
   } | null
-  scores: Array<{
-    id: string
-    value: number
-    scoreComponent: { name: string }
-    subject: { name: string }
-    semester: { name: string; year: number }
-  }>
   createdAt: string
+}
+
+interface ScoreEntry {
+  id: string
+  value: number
+  isLocked: boolean
+  studentId: string
+  subjectId: string
+  semesterId: string
+  scoreComponentId: string
+  scoreComponent: { id: string; name: string; weight: number }
+  subject: { id: string; name: string }
+  semester: { id: string; name: string }
+}
+
+interface SubjectScore {
+  subject: { id: string; name: string }
+  scores: ScoreEntry[]
+  average: number | null
+  isPassed: boolean
+}
+
+interface Semester {
+  id: string
+  name: string
+  isActive: boolean
+}
+
+interface ScoreData {
+  subjectScores: SubjectScore[]
+  overallAverage: number | null
+  ranking: number | null
+  totalStudents: number | null
 }
 
 export default function StudentDetailPage() {
   const { id } = useParams()
   const router = useRouter()
+  const user = useAuthStore(s => s.user)
+  const isAdmin = user?.role === 'SUPER_ADMIN'
+  const isAdminOrStaff = isAdmin || user?.role === 'STAFF'
+  const canEditScores = isAdminOrStaff || user?.role === 'TEACHER'
+
   const [student, setStudent] = useState<Student | null>(null)
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
@@ -62,15 +98,25 @@ export default function StudentDetailPage() {
     fromClass: { name: string } | null; toClass: { name: string } | null;
   }>>([])
 
+  const [semesters, setSemesters] = useState<Semester[]>([])
+  const [selectedSemester, setSelectedSemester] = useState('')
+  const [scoreData, setScoreData] = useState<ScoreData | null>(null)
+  const [loadingScores, setLoadingScores] = useState(false)
+
   useEffect(() => {
     const fetchStudent = async () => {
       try {
-        const [response, historyRes] = await Promise.all([
+        const [response, historyRes, semRes] = await Promise.all([
           studentApi.get(id as string),
           studentApi.getTransferHistory(id as string).catch(() => ({ data: { data: [] } })),
+          subjectApi.getSemesters().catch(() => ({ data: { data: [] } })),
         ])
         setStudent(response.data.data)
         setTransferHistory(historyRes.data.data || [])
+        const sems = semRes.data.data || []
+        setSemesters(sems)
+        const active = sems.find((s: Semester) => s.isActive)
+        if (active) setSelectedSemester(active.id)
       } catch (error: any) {
         console.error('Failed to fetch student:', error)
         if (error.response?.status === 404) {
@@ -83,6 +129,23 @@ export default function StudentDetailPage() {
     }
     if (id) fetchStudent()
   }, [id, router])
+
+  const fetchScores = useCallback(async () => {
+    if (!id) return
+    setLoadingScores(true)
+    try {
+      const res = await scoreApi.getByStudent(id as string, selectedSemester || undefined)
+      setScoreData(res.data.data)
+    } catch {
+      setScoreData(null)
+    } finally {
+      setLoadingScores(false)
+    }
+  }, [id, selectedSemester])
+
+  useEffect(() => {
+    if (student) fetchScores()
+  }, [student, fetchScores])
 
   const handleTransfer = async () => {
     if (!transferClassId) { toast.error('Vui lòng chọn lớp'); return }
@@ -136,16 +199,32 @@ export default function StudentDetailPage() {
 
   if (!student) return null
 
-  // Group scores by subject
-  const scoresBySubject = student.scores.reduce(
-    (acc, score) => {
-      const key = score.subject.name
-      if (!acc[key]) acc[key] = []
-      acc[key].push(score)
-      return acc
-    },
-    {} as Record<string, typeof student.scores>
-  )
+  const getGradeLabel = (avg: number | null) => {
+    if (avg === null) return { label: '-', cls: 'text-gray-400' }
+    if (avg >= 8.5) return { label: 'Giỏi', cls: 'text-green-600' }
+    if (avg >= 6.5) return { label: 'Khá', cls: 'text-blue-600' }
+    if (avg >= 5.0) return { label: 'Trung bình', cls: 'text-yellow-600' }
+    return { label: 'Yếu', cls: 'text-red-600' }
+  }
+
+  const subjectScores = scoreData?.subjectScores || []
+  const passedCount = subjectScores.filter(s => s.isPassed).length
+  const failedCount = subjectScores.filter(s => !s.isPassed && s.average !== null).length
+
+  // Collect all unique score component names across all subjects for consistent columns
+  const allComponentNames = (() => {
+    const seen = new Map<string, number>()
+    subjectScores.forEach(item => {
+      item.scores.forEach(s => {
+        if (!seen.has(s.scoreComponent.name)) {
+          seen.set(s.scoreComponent.name, s.scoreComponent.weight)
+        }
+      })
+    })
+    return Array.from(seen.entries())
+      .sort((a, b) => a[1] - b[1])
+      .map(([name]) => name)
+  })()
 
   return (
     <div className="space-y-6">
@@ -166,31 +245,35 @@ export default function StudentDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          {student.class && (
+          {isAdminOrStaff && student.class && (
             <button onClick={openTransfer} className="btn-outline">
               <ArrowRightLeft className="w-4 h-4 mr-2" />
               Chuyển lớp
             </button>
           )}
-          <Link
-            href={`/students/${student.id}/edit`}
-            className="btn-outline"
-          >
-            <Edit2 className="w-4 h-4 mr-2" />
-            Chỉnh sửa
-          </Link>
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="inline-flex items-center px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
-          >
-            {deleting ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <Trash2 className="w-4 h-4 mr-2" />
-            )}
-            Xóa
-          </button>
+          {isAdminOrStaff && (
+            <Link
+              href={`/students/${student.id}/edit`}
+              className="btn-outline"
+            >
+              <Edit2 className="w-4 h-4 mr-2" />
+              Chỉnh sửa
+            </Link>
+          )}
+          {isAdmin && (
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="inline-flex items-center px-4 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              {deleting ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4 mr-2" />
+              )}
+              Xóa
+            </button>
+          )}
         </div>
       </div>
 
@@ -350,56 +433,172 @@ export default function StudentDetailPage() {
             </div>
           )}
 
+          {/* Score Section */}
           <div className="card overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100">
+            <div className="px-6 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-primary" />
                 Bảng điểm
               </h3>
+              <div className="flex items-center gap-3">
+                <select
+                  className="input py-1.5 text-sm w-48"
+                  value={selectedSemester}
+                  onChange={e => setSelectedSemester(e.target.value)}
+                >
+                  <option value="">Tất cả học kỳ</option>
+                  {semesters.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}{s.isActive ? ' (Hiện tại)' : ''}
+                    </option>
+                  ))}
+                </select>
+                {canEditScores && selectedSemester && (
+                  <Link href={`/students/${id}/scores?semester=${selectedSemester}`} className="btn-outline py-1.5 text-sm whitespace-nowrap">
+                    <ClipboardEdit className="w-4 h-4 mr-1.5" />
+                    Sửa điểm
+                  </Link>
+                )}
+              </div>
             </div>
 
-            {student.scores.length === 0 ? (
+            {loadingScores ? (
+              <div className="p-12 flex justify-center">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+              </div>
+            ) : subjectScores.length === 0 ? (
               <div className="p-12 text-center">
                 <BookOpen className="w-12 h-12 mx-auto text-gray-300 mb-3" />
                 <p className="text-gray-500">Chưa có dữ liệu điểm</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="table-header">Môn học</th>
-                      <th className="table-header">Học kỳ</th>
-                      <th className="table-header">Loại điểm</th>
-                      <th className="table-header text-center">Giá trị</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {student.scores
-                      .sort((a, b) => a.subject.name.localeCompare(b.subject.name))
-                      .map((score) => (
-                        <tr key={score.id} className="hover:bg-gray-50">
-                          <td className="table-cell font-medium">{score.subject.name}</td>
-                          <td className="table-cell text-gray-500">
-                            {score.semester.name} ({score.semester.year})
-                          </td>
-                          <td className="table-cell">
-                            <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                              {score.scoreComponent.name}
-                            </span>
-                          </td>
-                          <td className="table-cell text-center">
-                            <span className={`font-semibold ${
-                              score.value >= 5 ? 'text-green-600' : 'text-red-600'
-                            }`}>
-                              {score.value.toFixed(1)}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                {/* Summary Cards */}
+                <div className="px-6 py-4 border-b border-gray-100">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="rounded-lg bg-blue-50 p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <TrendingUp className="w-4 h-4 text-blue-500" />
+                        <span className="text-xs text-blue-600 font-medium">TB chung</span>
+                      </div>
+                      <p className="text-xl font-bold text-blue-700">
+                        {scoreData?.overallAverage !== null && scoreData?.overallAverage !== undefined
+                          ? scoreData.overallAverage.toFixed(2)
+                          : '-'}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-purple-50 p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Award className="w-4 h-4 text-purple-500" />
+                        <span className="text-xs text-purple-600 font-medium">Xếp loại</span>
+                      </div>
+                      <p className={`text-xl font-bold ${getGradeLabel(scoreData?.overallAverage ?? null).cls}`}>
+                        {getGradeLabel(scoreData?.overallAverage ?? null).label}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-green-50 p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                        <span className="text-xs text-green-600 font-medium">Môn đạt</span>
+                      </div>
+                      <p className="text-xl font-bold text-green-700">
+                        {passedCount}/{subjectScores.length}
+                      </p>
+                    </div>
+                    {scoreData?.ranking && selectedSemester ? (
+                      <div className="rounded-lg bg-amber-50 p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Award className="w-4 h-4 text-amber-500" />
+                          <span className="text-xs text-amber-600 font-medium">Xếp hạng</span>
+                        </div>
+                        <p className="text-xl font-bold text-amber-700">
+                          {scoreData.ranking}/{scoreData.totalStudents}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg bg-red-50 p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <XCircle className="w-4 h-4 text-red-500" />
+                          <span className="text-xs text-red-600 font-medium">Môn chưa đạt</span>
+                        </div>
+                        <p className="text-xl font-bold text-red-700">
+                          {failedCount}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Score Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="table-header whitespace-nowrap">Môn học</th>
+                        {selectedSemester && allComponentNames.map(name => (
+                          <th key={name} className="table-header text-center whitespace-nowrap">{name}</th>
+                        ))}
+                        <th className="table-header text-center whitespace-nowrap">TB môn</th>
+                        <th className="table-header text-center whitespace-nowrap">Kết quả</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {subjectScores.map(item => {
+                        const scoreMap = selectedSemester
+                          ? new Map(item.scores.map(s => [s.scoreComponent.name, s.value]))
+                          : null
+                        return (
+                          <tr key={item.subject.id} className="hover:bg-gray-50">
+                            <td className="table-cell font-medium text-gray-900 whitespace-nowrap">
+                              {item.subject.name}
+                            </td>
+                            {selectedSemester && scoreMap && allComponentNames.map(name => {
+                              const value = scoreMap.get(name)
+                              return (
+                                <td key={name} className="table-cell text-center">
+                                  {value !== undefined ? (
+                                    <span className={`font-semibold ${value >= 5 ? 'text-gray-900' : 'text-red-600'}`}>
+                                      {value.toFixed(1)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-300">-</span>
+                                  )}
+                                </td>
+                              )
+                            })}
+                            <td className="table-cell text-center">
+                              {item.average !== null ? (
+                                <span className={`text-base font-bold ${item.isPassed ? 'text-green-600' : 'text-red-600'}`}>
+                                  {item.average.toFixed(2)}
+                                </span>
+                              ) : (
+                                <span className="text-gray-300">-</span>
+                              )}
+                            </td>
+                            <td className="table-cell text-center">
+                              {item.average !== null ? (
+                                item.isPassed ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                    <CheckCircle className="w-3 h-3" />
+                                    Đạt
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                                    <XCircle className="w-3 h-3" />
+                                    Chưa đạt
+                                  </span>
+                                )
+                              ) : (
+                                <span className="text-xs text-gray-400">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </div>

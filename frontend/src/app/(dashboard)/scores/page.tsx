@@ -63,7 +63,7 @@ export default function ScoresPage() {
     Map<string, { studentId: string; scoreComponentId: string; value: number }>
   >(new Map())
   const user = useAuthStore(s => s.user)
-  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'PLATFORM_ADMIN'
+  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'PLATFORM_ADMIN' || user?.role === 'STAFF'
 
   useEffect(() => {
     const fetchInitialData = async () => {

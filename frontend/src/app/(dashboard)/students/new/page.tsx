@@ -47,6 +47,7 @@ export default function NewStudentPage() {
     register,
     handleSubmit,
     watch,
+    reset,
     formState: { errors },
   } = useForm<StudentFormData>({
     resolver: zodResolver(studentSchema),
@@ -118,8 +119,8 @@ export default function NewStudentPage() {
         parentName: data.parentName || undefined,
         parentPhone: data.parentPhone || undefined,
       })
-      toast.success('Tiếp nhận học sinh thành công!')
-      router.push('/students')
+      toast.success('Tiếp nhận học sinh thành công! Bạn có thể tiếp tục nhập học sinh mới.')
+      reset()
     } catch (error: any) {
       const message =
         error.response?.data?.error?.message || 'Tiếp nhận học sinh thất bại'

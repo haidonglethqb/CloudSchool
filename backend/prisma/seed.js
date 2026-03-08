@@ -8,30 +8,106 @@ async function main () {
 
   // 1. Create Platform Admin
   const platformAdminPassword = await bcrypt.hash('admin123', 10)
-  const platformAdmin = await prisma.user.create({
-    data: {
-      email: 'admin@cloudschool.vn',
-      password: platformAdminPassword,
-      fullName: 'Platform Admin',
-      role: 'PLATFORM_ADMIN',
-      tenantId: null
+  const existingPlatformAdmin = await prisma.user.findFirst({
+    where: {
+      tenantId: null,
+      email: 'admin@cloudschool.vn'
     }
   })
+
+  const platformAdmin = existingPlatformAdmin
+    ? await prisma.user.update({
+      where: { id: existingPlatformAdmin.id },
+      data: {
+        password: platformAdminPassword,
+        fullName: 'Platform Admin',
+        role: 'PLATFORM_ADMIN',
+        tenantId: null
+      }
+    })
+    : await prisma.user.create({
+      data: {
+        email: 'admin@cloudschool.vn',
+        password: platformAdminPassword,
+        fullName: 'Platform Admin',
+        role: 'PLATFORM_ADMIN',
+        tenantId: null
+      }
+    })
   console.log('✅ Created platform admin:', platformAdmin.email)
 
-  // 2. Create a subscription plan
-  const plan = await prisma.subscriptionPlan.create({
-    data: {
-      name: 'Basic',
+  // 2. Create subscription plans
+  const planData = [
+    {
+      name: 'Miễn phí',
       price: 0,
+      studentLimit: 50,
+      teacherLimit: 10,
+      classLimit: 5,
+      description: 'Dùng thử cho trường nhỏ',
+      features: ['Quản lý học sinh', 'Nhập điểm cơ bản', 'Báo cáo tổng hợp']
+    },
+    {
+      name: 'Tiêu chuẩn',
+      price: 500000,
+      studentLimit: 200,
+      teacherLimit: 30,
+      classLimit: 15,
+      description: 'Phù hợp trường quy mô vừa',
+      features: ['Quản lý học sinh', 'Nhập điểm', 'Báo cáo chi tiết', 'Quản lý phụ huynh', 'Xuất Excel']
+    },
+    {
+      name: 'Nâng cao',
+      price: 1000000,
       studentLimit: 500,
-      teacherLimit: 50,
+      teacherLimit: 60,
       classLimit: 30,
-      description: 'Gói miễn phí cho trường demo',
-      features: ['Quản lý học sinh', 'Nhập điểm', 'Báo cáo cơ bản']
+      description: 'Đầy đủ tính năng cho trường lớn',
+      features: ['Quản lý học sinh', 'Nhập điểm', 'Báo cáo chi tiết', 'Quản lý phụ huynh', 'Xuất Excel', 'Xếp loại tự động', 'Hỗ trợ ưu tiên']
+    },
+    {
+      name: 'Doanh nghiệp',
+      price: 2000000,
+      studentLimit: 2000,
+      teacherLimit: 200,
+      classLimit: 100,
+      description: 'Không giới hạn, hỗ trợ 24/7',
+      features: ['Quản lý học sinh', 'Nhập điểm', 'Báo cáo chi tiết', 'Quản lý phụ huynh', 'Xuất Excel', 'Xếp loại tự động', 'Hỗ trợ 24/7', 'API tích hợp', 'Tùy chỉnh thương hiệu']
     }
+  ]
+
+  const plans = await Promise.all(
+    planData.map(d => prisma.subscriptionPlan.upsert({
+      where: { name: d.name },
+      update: d,
+      create: d
+    }))
+  )
+  const plan = plans[0] // Free plan for demo tenant
+
+  const existingTenant = await prisma.tenant.findUnique({
+    where: { code: 'THPT-DEMO' },
+    select: { id: true, code: true }
   })
-  console.log('✅ Created subscription plan:', plan.name)
+
+  if (existingTenant) {
+    await prisma.tenant.update({
+      where: { id: existingTenant.id },
+      data: { planId: plan.id }
+    })
+
+    await prisma.subscriptionPlan.deleteMany({
+      where: {
+        name: 'Basic',
+        tenants: { none: {} }
+      }
+    })
+
+    console.log('ℹ️ Demo tenant already exists, updated plan mapping and skipped duplicate demo data creation')
+    return
+  }
+
+  console.log('✅ Created subscription plans:', plans.map(p => p.name).join(', '))
 
   // 3. Create demo tenant
   const tenant = await prisma.tenant.create({

@@ -385,10 +385,33 @@ function StatsTab({ stats, loading }: { stats: any; loading: boolean }) {
 }
 
 function SubscriptionTab({ school }: { school: any }) {
+  const [plans, setPlans] = useState<any[]>([])
+  const [changingPlan, setChangingPlan] = useState(false)
+  const [selectedPlanId, setSelectedPlanId] = useState(school.plan?.id || '')
+
+  useEffect(() => {
+    adminApi.listSubscriptions()
+      .then(res => setPlans((res.data.data || []).filter((p: any) => p.isActive)))
+      .catch(() => {})
+  }, [])
+
+  const handleChangePlan = async () => {
+    try {
+      setChangingPlan(true)
+      await adminApi.updateSchool(school.id, { planId: selectedPlanId || null })
+      toast.success('Đã cập nhật gói dịch vụ')
+      window.location.reload()
+    } catch (err: any) {
+      toast.error(err.response?.data?.error?.message || 'Lỗi cập nhật gói')
+    } finally {
+      setChangingPlan(false)
+    }
+  }
+
   return (
-    <div className="card p-6">
+    <div className="space-y-6">
       {school.plan ? (
-        <div className="space-y-4">
+        <div className="card p-6 space-y-4">
           <h3 className="font-semibold text-gray-900 text-lg">{school.plan.name}</h3>
           {school.plan.description && <p className="text-gray-600">{school.plan.description}</p>}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -421,11 +444,29 @@ function SubscriptionTab({ school }: { school: any }) {
           )}
         </div>
       ) : (
-        <div className="text-center py-8">
+        <div className="card p-8 text-center">
           <CreditCard className="w-12 h-12 text-gray-400 mx-auto mb-3" />
           <p className="text-gray-500">Trường chưa có gói dịch vụ</p>
         </div>
       )}
+
+      {/* Change plan */}
+      <div className="card p-6">
+        <h4 className="font-medium text-gray-900 mb-3">Đổi gói dịch vụ</h4>
+        <div className="flex gap-3 items-end">
+          <div className="flex-1">
+            <select className="input" value={selectedPlanId} onChange={e => setSelectedPlanId(e.target.value)}>
+              <option value="">— Không có gói —</option>
+              {plans.map(p => (
+                <option key={p.id} value={p.id}>{p.name} — {p.price?.toLocaleString('vi-VN')}đ</option>
+              ))}
+            </select>
+          </div>
+          <button onClick={handleChangePlan} disabled={changingPlan || selectedPlanId === (school.plan?.id || '')} className="btn-primary text-sm disabled:opacity-50">
+            {changingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Cập nhật'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

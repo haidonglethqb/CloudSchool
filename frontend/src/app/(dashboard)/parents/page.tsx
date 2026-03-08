@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { parentApi, studentApi } from '@/lib/api'
-import { Plus, Search, Edit2, Trash2, UserPlus, Eye } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, UserPlus, Eye, Link2, Unlink, X } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 
@@ -37,6 +37,10 @@ export default function ParentsPage() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+
+  // Link student modal state
+  const [linkModal, setLinkModal] = useState<{ parentId: string; parentName: string } | null>(null)
+  const [linkStudentId, setLinkStudentId] = useState('')
 
   const fetchParents = async () => {
     try {
@@ -105,6 +109,30 @@ export default function ParentsPage() {
         ? prev.studentIds.filter(id => id !== studentId)
         : [...prev.studentIds, studentId]
     }))
+  }
+
+  const handleUnlinkStudent = async (parentId: string, studentId: string) => {
+    if (!confirm('Hủy liên kết phụ huynh với học sinh này?')) return
+    try {
+      await parentApi.unlinkStudent(parentId, studentId)
+      toast.success('Đã hủy liên kết')
+      fetchParents()
+    } catch {
+      toast.error('Lỗi hủy liên kết')
+    }
+  }
+
+  const handleLinkStudent = async () => {
+    if (!linkModal || !linkStudentId) return
+    try {
+      await parentApi.linkStudent(linkModal.parentId, linkStudentId)
+      toast.success('Đã liên kết học sinh')
+      setLinkModal(null)
+      setLinkStudentId('')
+      fetchParents()
+    } catch (err: any) {
+      toast.error(err.response?.data?.error?.message || 'Lỗi liên kết')
+    }
   }
 
   if (loading) {
@@ -187,9 +215,16 @@ export default function ParentsPage() {
                     <td className="px-6 py-4">
                       <div className="space-y-1">
                         {parent.children.map((child) => (
-                          <div key={child.id} className="text-sm">
+                          <div key={child.id} className="flex items-center gap-2 text-sm">
                             <span className="font-medium">{child.fullName}</span>
-                            <span className="text-gray-500"> ({child.studentCode}) - {child.className}</span>
+                            <span className="text-gray-500">({child.studentCode}) - {child.className}</span>
+                            <button
+                              onClick={() => handleUnlinkStudent(parent.id, child.id)}
+                              className="p-0.5 text-red-400 hover:text-red-600"
+                              title="Hủy liên kết"
+                            >
+                              <Unlink className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -203,6 +238,13 @@ export default function ParentsPage() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setLinkModal({ parentId: parent.id, parentName: parent.fullName })}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Liên kết học sinh"
+                        >
+                          <Link2 className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => handleDeleteParent(parent.id)}
                           className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -331,6 +373,37 @@ export default function ParentsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Link Student Modal */}
+      {linkModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Liên kết học sinh cho {linkModal.parentName}</h2>
+              <button onClick={() => { setLinkModal(null); setLinkStudentId('') }}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Chọn học sinh</label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                  value={linkStudentId}
+                  onChange={e => setLinkStudentId(e.target.value)}
+                >
+                  <option value="">— Chọn học sinh —</option>
+                  {students.map(s => (
+                    <option key={s.id} value={s.id}>{s.fullName} ({s.studentCode}) - {s.class?.name || 'Chưa xếp lớp'}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => { setLinkModal(null); setLinkStudentId('') }} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Hủy</button>
+                <button onClick={handleLinkStudent} disabled={!linkStudentId} className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 disabled:opacity-50">Liên kết</button>
+              </div>
+            </div>
           </div>
         </div>
       )}

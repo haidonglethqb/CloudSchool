@@ -50,7 +50,9 @@ const superAdminMenu = [
   { href: '/promotion', icon: ArrowUpDown, label: 'Xét lên lớp' },
   { href: '/reports', icon: BarChart3, label: 'Báo cáo' },
   { href: '/parents', icon: UserCheck, label: 'Quản lý Phụ huynh' },
+  { href: '/fees', icon: CreditCard, label: 'Quản lý học phí' },
   { href: '/settings', icon: Settings, label: 'Quy định' },
+  { href: '/settings/permissions', icon: Layers, label: 'Phân quyền' },
 ]
 
 // Staff menu
@@ -63,6 +65,7 @@ const staffMenu = [
   { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm' },
   { href: '/reports', icon: BarChart3, label: 'Báo cáo' },
   { href: '/parents', icon: UserCheck, label: 'Quản lý Phụ huynh' },
+  { href: '/fees', icon: CreditCard, label: 'Quản lý học phí' },
 ]
 
 // Teacher menu
@@ -82,9 +85,8 @@ const studentMenu = [
 
 // Parent menu
 const parentMenu = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
-  { href: '/my-children', icon: Users, label: 'Học sinh của tôi' },
-  { href: '/my-children/scores', icon: BookOpen, label: 'Xem điểm' },
+  { href: '/my-children', icon: GraduationCap, label: 'Con em của tôi' },
+  { href: '/my-children/fees', icon: CreditCard, label: 'Học phí' },
 ]
 
 export default function DashboardLayout({
@@ -160,7 +162,7 @@ export default function DashboardLayout({
       >
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="flex items-center gap-3 px-6 py-6 border-b border-sidebar-light">
+          <div className="flex items-center gap-3 px-6 py-6 border-b border-sidebar-light flex-shrink-0">
             <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
               <GraduationCap className="w-6 h-6 text-white" />
             </div>
@@ -205,7 +207,7 @@ export default function DashboardLayout({
           </nav>
 
           {/* User info & Logout */}
-          <div className="p-4 border-t border-sidebar-light">
+          <div className="p-4 border-t border-sidebar-light flex-shrink-0">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-9 h-9 rounded-full bg-primary-600 flex items-center justify-center text-white font-medium">
                 {user?.fullName?.charAt(0) || 'U'}

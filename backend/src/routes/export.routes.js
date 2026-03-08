@@ -189,10 +189,22 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), async
 
     const headers = ['STT', 'Mã HS', 'Họ tên', ...scoreComponents.map(sc => `${sc.name} (${sc.weight}%)`), 'ĐTB']
 
-    const rows = await Promise.all(students.map(async (student, idx) => {
-      const scores = await prisma.score.findMany({
-        where: { studentId: student.id, subjectId, semesterId }
-      })
+    // Batch fetch all scores for this class/subject/semester to avoid N+1
+    const allScores = await prisma.score.findMany({
+      where: {
+        studentId: { in: students.map(s => s.id) },
+        subjectId,
+        semesterId
+      }
+    })
+    const scoresByStudent = {}
+    for (const score of allScores) {
+      if (!scoresByStudent[score.studentId]) scoresByStudent[score.studentId] = []
+      scoresByStudent[score.studentId].push(score)
+    }
+
+    const rows = students.map((student, idx) => {
+      const scores = scoresByStudent[student.id] || []
 
       let weightedSum = 0
       let totalWeight = 0
@@ -208,7 +220,7 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), async
       const avg = totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) / 100 : ''
 
       return [idx + 1, student.studentCode, student.fullName, ...scoreValues, avg]
-    }))
+    })
 
     const filename = `scores_${classInfo?.name || 'class'}_${subject?.name || 'subject'}_${new Date().toISOString().split('T')[0]}`
     if (format === 'xlsx') {

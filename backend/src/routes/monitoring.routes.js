@@ -1,5 +1,6 @@
 const express = require('express')
 const router = express.Router()
+const os = require('os')
 const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 
@@ -41,8 +42,8 @@ router.get('/system-stats', async (req, res, next) => {
         where: { createdAt: { gte: start, lt: end } }
       })
       schoolGrowth.push({
-        month: start.toISOString().slice(0, 7),
-        label: start.toLocaleDateString('vi-VN', { month: 'short', year: 'numeric' }),
+        month: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`,
+        label: `T${start.getMonth() + 1}/${start.getFullYear() % 100}`,
         count
       })
     }
@@ -56,8 +57,8 @@ router.get('/system-stats', async (req, res, next) => {
         where: { createdAt: { gte: start, lt: end } }
       })
       studentGrowth.push({
-        month: start.toISOString().slice(0, 7),
-        label: start.toLocaleDateString('vi-VN', { month: 'short', year: 'numeric' }),
+        month: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`,
+        label: `T${start.getMonth() + 1}/${start.getFullYear() % 100}`,
         count
       })
     }
@@ -73,10 +74,42 @@ router.get('/system-stats', async (req, res, next) => {
       take: 10
     })
 
-    // System health (basic — real monitoring would use Redis/external tools)
+    // Real system health metrics
     const dbStart = Date.now()
-    await prisma.$queryRaw`SELECT 1`
+    let dbStatus = 'healthy'
+    let dbVersion = ''
+    try {
+      const versionResult = await prisma.$queryRaw`SELECT version()`
+      dbVersion = versionResult[0]?.version || ''
+      const tableCountResult = await prisma.$queryRaw`SELECT count(*) as count FROM information_schema.tables WHERE table_schema = 'public'`
+      const activeConnResult = await prisma.$queryRaw`SELECT count(*) as count FROM pg_stat_activity WHERE state = 'active'`
+      var dbTableCount = Number(tableCountResult[0]?.count || 0)
+      var dbActiveConnections = Number(activeConnResult[0]?.count || 0)
+    } catch {
+      dbStatus = 'unhealthy'
+      var dbTableCount = 0
+      var dbActiveConnections = 0
+    }
     const dbLatency = Date.now() - dbStart
+
+    // OS-level metrics
+    const cpus = os.cpus()
+    const cpuCount = cpus.length
+    const cpuModel = cpus[0]?.model || 'Unknown'
+    const totalMem = os.totalmem()
+    const freeMem = os.freemem()
+    const usedMem = totalMem - freeMem
+    const loadAvg = os.loadavg()
+
+    // Node.js process metrics
+    const memUsage = process.memoryUsage()
+    const uptime = process.uptime()
+    const nodeVersion = process.version
+    const platform = `${os.type()} ${os.release()}`
+    const hostname = os.hostname()
+
+    // CPU usage percentage (average across all cores from last sample)
+    const cpuUsagePercent = Math.round((loadAvg[0] / cpuCount) * 100 * 10) / 10
 
     res.json({
       data: {
@@ -106,9 +139,46 @@ router.get('/system-stats', async (req, res, next) => {
           classes: s._count.classes
         })),
         health: {
-          database: { status: 'healthy', latencyMs: dbLatency },
-          server: { status: 'healthy', uptime: process.uptime(), memoryUsage: process.memoryUsage() },
-          timestamp: new Date().toISOString()
+          server: {
+            status: 'healthy',
+            uptime,
+            nodeVersion,
+            platform,
+            hostname,
+            pid: process.pid,
+          },
+          cpu: {
+            model: cpuModel,
+            cores: cpuCount,
+            usagePercent: cpuUsagePercent,
+            loadAvg: {
+              '1m': Math.round(loadAvg[0] * 100) / 100,
+              '5m': Math.round(loadAvg[1] * 100) / 100,
+              '15m': Math.round(loadAvg[2] * 100) / 100,
+            },
+          },
+          memory: {
+            system: {
+              total: totalMem,
+              used: usedMem,
+              free: freeMem,
+              usagePercent: Math.round((usedMem / totalMem) * 1000) / 10,
+            },
+            process: {
+              rss: memUsage.rss,
+              heapUsed: memUsage.heapUsed,
+              heapTotal: memUsage.heapTotal,
+              external: memUsage.external,
+            },
+          },
+          database: {
+            status: dbStatus,
+            latencyMs: dbLatency,
+            version: dbVersion,
+            tables: dbTableCount,
+            activeConnections: dbActiveConnections,
+          },
+          timestamp: new Date().toISOString(),
         }
       }
     })

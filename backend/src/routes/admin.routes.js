@@ -44,7 +44,7 @@ router.get('/dashboard', async (req, res, next) => {
         where: { createdAt: { gte: start, lt: end } }
       })
       schoolGrowth.push({
-        month: start.toLocaleDateString('vi-VN', { month: 'short' }),
+        month: `T${start.getMonth() + 1}`,
         count
       })
     }
@@ -58,7 +58,7 @@ router.get('/dashboard', async (req, res, next) => {
         where: { createdAt: { gte: start, lt: end } }
       })
       studentGrowth.push({
-        month: start.toLocaleDateString('vi-VN', { month: 'short' }),
+        month: `T${start.getMonth() + 1}`,
         count
       })
     }

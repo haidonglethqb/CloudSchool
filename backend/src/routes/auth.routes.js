@@ -106,6 +106,24 @@ router.post('/login', [
   }
 })
 
+// GET /auth/plans — Public (no auth required)
+router.get('/plans', async (req, res, next) => {
+  try {
+    const plans = await prisma.subscriptionPlan.findMany({
+      where: { isActive: true },
+      orderBy: { price: 'asc' },
+      select: {
+        id: true, name: true, price: true, description: true,
+        studentLimit: true, teacherLimit: true, classLimit: true,
+        features: true
+      }
+    })
+    res.json({ data: plans })
+  } catch (error) {
+    next(error)
+  }
+})
+
 // POST /auth/register-school
 router.post('/register-school', [
   body('schoolName').notEmpty().withMessage('School name is required'),
@@ -126,9 +144,18 @@ router.post('/register-school', [
     const email = req.body.adminEmail || req.body.email
     const password = req.body.adminPassword || req.body.password
     const adminName = req.body.adminName || `Admin - ${schoolName}`
+    const planId = req.body.planId || null
 
     if (!email || !password) {
       throw new AppError('Email and password are required', 400, 'VALIDATION_ERROR')
+    }
+
+    // Validate planId if provided
+    if (planId) {
+      const plan = await prisma.subscriptionPlan.findUnique({ where: { id: planId } })
+      if (!plan || !plan.isActive) {
+        throw new AppError('Invalid or inactive plan', 400, 'INVALID_PLAN')
+      }
     }
 
     const code = schoolName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 8).toUpperCase() +
@@ -143,6 +170,7 @@ router.post('/register-school', [
         email,
         phone,
         address,
+        planId,
         settings: { create: { minAge: 15, maxAge: 20, maxClassSize: 40, passScore: 5.0 } },
         users: {
           create: { email, password: hashedPassword, fullName: adminName, role: 'SUPER_ADMIN' }

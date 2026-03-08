@@ -37,38 +37,45 @@ router.get('/class/:classId', authenticate, async (req, res, next) => {
 
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
 
-    // Get scores for all students
-    const studentsWithScores = await Promise.all(
-      students.map(async (student) => {
-        const scores = await prisma.score.findMany({
-          where: { studentId: student.id, subjectId, semesterId },
-          include: { scoreComponent: true }
-        })
+    // Batch fetch all scores for all students at once (avoid N+1)
+    const studentIds = students.map(s => s.id)
+    const allScores = await prisma.score.findMany({
+      where: { studentId: { in: studentIds }, subjectId, semesterId },
+      include: { scoreComponent: true }
+    })
 
-        // Calculate weighted average
-        let weightedSum = 0
-        let totalWeight = 0
-        const scoreMap = {}
+    // Group scores by student
+    const scoresByStudent = {}
+    for (const score of allScores) {
+      if (!scoresByStudent[score.studentId]) scoresByStudent[score.studentId] = []
+      scoresByStudent[score.studentId].push(score)
+    }
 
-        for (const sc of scoreComponents) {
-          const score = scores.find(s => s.scoreComponentId === sc.id)
-          scoreMap[sc.id] = score || null
-          if (score) {
-            weightedSum += score.value * sc.weight
-            totalWeight += sc.weight
-          }
+    const studentsWithScores = students.map((student) => {
+      const scores = scoresByStudent[student.id] || []
+
+      let weightedSum = 0
+      let totalWeight = 0
+      const scoreMap = {}
+
+      for (const sc of scoreComponents) {
+        const score = scores.find(s => s.scoreComponentId === sc.id)
+        scoreMap[sc.id] = score || null
+        if (score) {
+          weightedSum += score.value * sc.weight
+          totalWeight += sc.weight
         }
+      }
 
-        const average = totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) / 100 : null
+      const average = totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) / 100 : null
 
-        return {
-          student,
-          scores: scoreMap,
-          average,
-          isPassed: average !== null && average >= settings.passScore
-        }
-      })
-    )
+      return {
+        student,
+        scores: scoreMap,
+        average,
+        isPassed: average !== null && average >= settings.passScore
+      }
+    })
 
     const [classInfo, subject, semester] = await Promise.all([
       prisma.class.findUnique({ where: { id: req.params.classId }, include: { grade: true } }),
@@ -209,8 +216,8 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), [
       }
     })
 
-    if (existingScore && existingScore.isLocked && req.user.role !== 'SUPER_ADMIN') {
-      throw new AppError('Score is locked. Only Super Admin can edit locked scores.', 403, 'SCORE_LOCKED')
+    if (existingScore && existingScore.isLocked && req.user.role === 'TEACHER') {
+      throw new AppError('Score is locked. Only Admin/Staff can edit locked scores.', 403, 'SCORE_LOCKED')
     }
 
     // Teacher can only enter scores for assigned classes
@@ -254,12 +261,56 @@ router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER')
       throw new AppError('Scores array is required', 400, 'INVALID_INPUT')
     }
 
+    for (const s of scores) {
+      if (s.value < 0 || s.value > 10) {
+        throw new AppError(`Invalid score: ${s.value}`, 400, 'INVALID_SCORE')
+      }
+    }
+
+    if (req.user.role === 'TEACHER') {
+      // Collect unique studentId+subjectId pairs to validate assignments
+      const pairsToCheck = new Map()
+      for (const s of scores) {
+        const key = `${s.studentId}::${s.subjectId}`
+        if (!pairsToCheck.has(key)) {
+          pairsToCheck.set(key, { studentId: s.studentId, subjectId: s.subjectId })
+        }
+      }
+
+      for (const { studentId, subjectId } of pairsToCheck.values()) {
+        const student = await prisma.student.findUnique({ where: { id: studentId } })
+        if (!student || !student.classId) {
+          throw new AppError('Student not found or not assigned to a class', 400, 'INVALID_STUDENT')
+        }
+        const assignment = await prisma.teacherAssignment.findFirst({
+          where: { teacherId: req.user.id, classId: student.classId, subjectId }
+        })
+        if (!assignment) {
+          throw new AppError('Not assigned to this class/subject', 403, 'FORBIDDEN')
+        }
+      }
+
+      // Check locked scores
+      const existingScores = await prisma.score.findMany({
+        where: {
+          OR: scores.map(s => ({
+            studentId: s.studentId,
+            subjectId: s.subjectId,
+            semesterId: s.semesterId,
+            scoreComponentId: s.scoreComponentId,
+          }))
+        },
+        select: { studentId: true, subjectId: true, semesterId: true, scoreComponentId: true, isLocked: true }
+      })
+
+      const lockedScore = existingScores.find(s => s.isLocked)
+      if (lockedScore) {
+        throw new AppError('One or more scores are locked. Only Admin/Staff can edit locked scores.', 403, 'SCORE_LOCKED')
+      }
+    }
+
     const results = await Promise.all(
       scores.map(({ studentId, subjectId, semesterId, scoreComponentId, value }) => {
-        if (value < 0 || value > 10) {
-          throw new AppError(`Invalid score: ${value}`, 400, 'INVALID_SCORE')
-        }
-
         return prisma.score.upsert({
           where: {
             studentId_subjectId_semesterId_scoreComponentId: {
@@ -279,7 +330,7 @@ router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER')
 })
 
 // PATCH /scores/:id/lock
-router.patch('/:id/lock', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+router.patch('/:id/lock', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const score = await prisma.score.update({
       where: { id: req.params.id },
@@ -291,8 +342,8 @@ router.patch('/:id/lock', authenticate, authorize('SUPER_ADMIN'), async (req, re
   }
 })
 
-// PATCH /scores/:id/unlock — Unlock score (SUPER_ADMIN only)
-router.patch('/:id/unlock', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+// PATCH /scores/:id/unlock
+router.patch('/:id/unlock', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const score = await prisma.score.update({
       where: { id: req.params.id },
@@ -305,7 +356,7 @@ router.patch('/:id/unlock', authenticate, authorize('SUPER_ADMIN'), async (req, 
 })
 
 // POST /scores/class/:classId/lock — Lock all scores for a class+subject+semester
-router.post('/class/:classId/lock', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+router.post('/class/:classId/lock', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const { subjectId, semesterId } = req.body
 
@@ -335,7 +386,7 @@ router.post('/class/:classId/lock', authenticate, authorize('SUPER_ADMIN'), asyn
 })
 
 // POST /scores/class/:classId/unlock — Unlock all scores for a class+subject+semester
-router.post('/class/:classId/unlock', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+router.post('/class/:classId/unlock', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const { subjectId, semesterId } = req.body
 

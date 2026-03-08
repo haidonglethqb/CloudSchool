@@ -9,6 +9,16 @@ import {
   Pause, Play, Trash2, Eye, X, Download,
 } from 'lucide-react'
 
+interface Plan {
+  id: string
+  name: string
+  price: number
+  studentLimit: number
+  teacherLimit: number
+  classLimit: number
+  isActive: boolean
+}
+
 interface School {
   id: string
   name: string
@@ -17,7 +27,7 @@ interface School {
   phone: string | null
   email: string | null
   status: 'ACTIVE' | 'SUSPENDED' | 'INACTIVE'
-  plan: { name: string } | null
+  plan: { id: string; name: string } | null
   _count?: { users: number; students: number; classes: number }
   createdAt: string
 }
@@ -30,12 +40,13 @@ const statusMap: Record<string, { label: string; cls: string }> = {
 
 export default function SchoolsPage() {
   const [schools, setSchools] = useState<School[]>([])
+  const [plans, setPlans] = useState<Plan[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [form, setForm] = useState({ name: '', address: '', phone: '', email: '', adminEmail: '', adminName: '', adminPassword: '' })
+  const [form, setForm] = useState({ name: '', address: '', phone: '', email: '', adminEmail: '', adminName: '', adminPassword: '', planId: '' })
 
   const fetchSchools = useCallback(() => {
     setLoading(true)
@@ -46,6 +57,12 @@ export default function SchoolsPage() {
   }, [search, statusFilter])
 
   useEffect(() => { fetchSchools() }, [fetchSchools])
+
+  useEffect(() => {
+    adminApi.listSubscriptions()
+      .then(res => setPlans((res.data.data || []).filter((p: Plan) => p.isActive)))
+      .catch(() => {})
+  }, [])
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -63,10 +80,11 @@ export default function SchoolsPage() {
         adminEmail: form.adminEmail,
         adminName: form.adminName,
         adminPassword: form.adminPassword || undefined,
+        planId: form.planId || undefined,
       })
       toast.success('Tạo trường thành công!')
       setShowCreate(false)
-      setForm({ name: '', address: '', phone: '', email: '', adminEmail: '', adminName: '', adminPassword: '' })
+      setForm({ name: '', address: '', phone: '', email: '', adminEmail: '', adminName: '', adminPassword: '', planId: '' })
       fetchSchools()
     } catch (err: any) {
       toast.error(err.response?.data?.error?.message || 'Lỗi tạo trường')
@@ -247,6 +265,16 @@ export default function SchoolsPage() {
               <div>
                 <label className="label">Mật khẩu (mặc định: Admin@123)</label>
                 <input type="password" className="input" value={form.adminPassword} onChange={e => setForm({ ...form, adminPassword: e.target.value })} placeholder="Admin@123" />
+              </div>
+              <hr />
+              <div>
+                <label className="label">Gói dịch vụ</label>
+                <select className="input" value={form.planId} onChange={e => setForm({ ...form, planId: e.target.value })}>
+                  <option value="">— Không chọn —</option>
+                  {plans.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} — {p.price.toLocaleString('vi-VN')}đ (HS: {p.studentLimit}, GV: {p.teacherLimit}, Lớp: {p.classLimit})</option>
+                  ))}
+                </select>
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Hủy</button>
