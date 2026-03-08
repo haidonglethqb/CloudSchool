@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { adminApi } from '@/lib/api'
+import Link from 'next/link'
+import { adminApi, exportApi, downloadBlob } from '@/lib/api'
 import toast from 'react-hot-toast'
 import {
   Search, Plus, Building2, Loader2, MoreVertical,
-  Pause, Play, Trash2, Eye, X,
+  Pause, Play, Trash2, Eye, X, Download,
 } from 'lucide-react'
 
 interface School {
@@ -112,6 +113,15 @@ export default function SchoolsPage() {
         <button onClick={() => setShowCreate(true)} className="btn-primary">
           <Plus className="w-4 h-4 mr-2" /> Thêm trường
         </button>
+        <button onClick={async () => {
+          try {
+            const res = await exportApi.schools({ format: 'xlsx' })
+            downloadBlob(res.data, 'schools.xlsx')
+            toast.success('Đã xuất file')
+          } catch { toast.error('Lỗi xuất file') }
+        }} className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1">
+          <Download className="w-4 h-4" /> Xuất Excel
+        </button>
       </div>
 
       {/* Filters */}
@@ -145,6 +155,8 @@ export default function SchoolsPage() {
                 <th className="table-header">Trường</th>
                 <th className="table-header">Mã</th>
                 <th className="table-header">Gói</th>
+                <th className="table-header text-center">HS</th>
+                <th className="table-header text-center">Lớp</th>
                 <th className="table-header">Trạng thái</th>
                 <th className="table-header text-right">Thao tác</th>
               </tr>
@@ -160,6 +172,8 @@ export default function SchoolsPage() {
                   </td>
                   <td className="table-cell font-mono text-sm">{s.code}</td>
                   <td className="table-cell">{s.plan?.name || '—'}</td>
+                  <td className="table-cell text-center">{s._count?.students ?? 0}</td>
+                  <td className="table-cell text-center">{s._count?.classes ?? 0}</td>
                   <td className="table-cell">
                     <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${statusMap[s.status]?.cls}`}>
                       {statusMap[s.status]?.label}
@@ -167,6 +181,9 @@ export default function SchoolsPage() {
                   </td>
                   <td className="table-cell text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <Link href={`/admin/schools/${s.id}`} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Chi tiết">
+                        <Eye className="w-4 h-4" />
+                      </Link>
                       {s.status === 'ACTIVE' ? (
                         <button onClick={() => handleSuspend(s.id)} className="p-1.5 text-orange-600 hover:bg-orange-50 rounded" title="Tạm ngưng">
                           <Pause className="w-4 h-4" />

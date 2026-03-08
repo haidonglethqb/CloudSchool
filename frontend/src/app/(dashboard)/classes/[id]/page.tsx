@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { classApi, settingsApi } from '@/lib/api'
+import { classApi, settingsApi, exportApi, downloadBlob } from '@/lib/api'
 import { formatDate, getGenderLabel } from '@/lib/utils'
 import {
   ArrowLeft,
@@ -14,6 +14,7 @@ import {
   Edit2,
   Eye,
   UserPlus,
+  Download,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -159,6 +160,19 @@ export default function ClassDetailPage() {
         </div>
         {!editing && (
           <div className="flex gap-2">
+            <button
+              onClick={async () => {
+                try {
+                  const res = await exportApi.classes({ format: 'excel' })
+                  downloadBlob(res.data, `lop-${classData?.name || 'danh-sach'}.xlsx`)
+                  toast.success('Xuất file thành công')
+                } catch { toast.error('Xuất file thất bại') }
+              }}
+              className="btn-outline"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Xuất Excel
+            </button>
             <button onClick={() => setEditing(true)} className="btn-outline">
               <Edit2 className="w-4 h-4 mr-2" />
               Chỉnh sửa

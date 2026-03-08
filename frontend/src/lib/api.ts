@@ -52,6 +52,12 @@ export const adminApi = {
   deleteSchool: (id: string) => api.delete(`/admin/schools/${id}`),
   suspendSchool: (id: string) => api.patch(`/admin/schools/${id}/suspend`),
   activateSchool: (id: string) => api.patch(`/admin/schools/${id}/activate`),
+  // School detail tabs
+  getSchoolUsers: (id: string, params?: { search?: string; role?: string; page?: number; limit?: number }) =>
+    api.get(`/admin/schools/${id}/users`, { params }),
+  getSchoolStats: (id: string) => api.get(`/admin/schools/${id}/stats`),
+  getSchoolActivity: (id: string, params?: { page?: number; limit?: number }) =>
+    api.get(`/admin/schools/${id}/activity`, { params }),
   // Subscriptions
   listSubscriptions: () => api.get('/admin/subscriptions'),
   createSubscription: (data: { name: string; maxStudents: number; maxTeachers: number; maxClasses: number; price: number; features?: string[] }) =>
@@ -74,14 +80,16 @@ export const userApi = {
 
 // ==================== Students ====================
 export const studentApi = {
-  list: (params?: { search?: string; classId?: string; gradeId?: string }) =>
+  list: (params?: { search?: string; classId?: string; gradeId?: string; page?: number; limit?: number }) =>
     api.get('/students', { params }),
   get: (id: string) => api.get(`/students/${id}`),
-  create: (data: { fullName: string; gender: string; dateOfBirth: string; address?: string; classId: string; parentName?: string; parentPhone?: string }) =>
+  create: (data: { fullName: string; gender: string; dateOfBirth: string; address?: string; phone?: string; classId: string; parentName?: string; parentPhone?: string }) =>
     api.post('/students', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/students/${id}`, data),
   delete: (id: string) => api.delete(`/students/${id}`),
-  transfer: (id: string, newClassId: string) => api.post(`/students/${id}/transfer`, { newClassId }),
+  transfer: (id: string, data: { classId: string; reason?: string }) =>
+    api.post(`/students/${id}/transfer`, data),
+  getTransferHistory: (id: string) => api.get(`/students/${id}/transfer-history`),
 }
 
 // ==================== Classes ====================
@@ -145,6 +153,11 @@ export const scoreApi = {
   batchSave: (scores: Array<{ studentId: string; subjectId: string; semesterId: string; scoreComponentId: string; value: number }>) =>
     api.post('/scores/batch', { scores }),
   lock: (id: string) => api.patch(`/scores/${id}/lock`),
+  unlock: (id: string) => api.patch(`/scores/${id}/unlock`),
+  lockClass: (classId: string, data: { subjectId: string; semesterId: string }) =>
+    api.post(`/scores/class/${classId}/lock`, data),
+  unlockClass: (classId: string, data: { subjectId: string; semesterId: string }) =>
+    api.post(`/scores/class/${classId}/unlock`, data),
   delete: (id: string) => api.delete(`/scores/${id}`),
 }
 
@@ -203,4 +216,36 @@ export const parentApi = {
   getChildScores: (studentId: string, semesterId?: string) =>
     api.get(`/parents/my-children/${studentId}/scores`, { params: { semesterId } }),
   getSemesters: () => api.get('/parents/semesters'),
+}
+
+// ==================== Export ====================
+export const exportApi = {
+  students: (params?: { format?: string; classId?: string }) =>
+    api.get('/export/students', { params, responseType: 'blob' }),
+  classes: (params?: { format?: string }) =>
+    api.get('/export/classes', { params, responseType: 'blob' }),
+  scores: (params: { classId: string; subjectId: string; semesterId: string; format?: string }) =>
+    api.get('/export/scores', { params, responseType: 'blob' }),
+  schools: (params?: { format?: string }) =>
+    api.get('/export/schools', { params, responseType: 'blob' }),
+}
+
+// ==================== Monitoring ====================
+export const monitoringApi = {
+  systemStats: () => api.get('/monitoring/system-stats'),
+  activityLogs: (params?: { page?: number; limit?: number; action?: string; entity?: string; tenantId?: string }) =>
+    api.get('/monitoring/activity-logs', { params }),
+  schoolStats: (schoolId: string) => api.get(`/monitoring/school-stats/${schoolId}`),
+}
+
+// ==================== Helper: Download blob ====================
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  window.URL.revokeObjectURL(url)
 }

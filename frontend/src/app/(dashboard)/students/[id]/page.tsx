@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { studentApi } from '@/lib/api'
+import { studentApi, classApi } from '@/lib/api'
 import { formatDate, getGenderLabel } from '@/lib/utils'
 import {
   ArrowLeft,
@@ -17,6 +17,8 @@ import {
   Calendar,
   BookOpen,
   GraduationCap,
+  ArrowRightLeft,
+  History,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -50,12 +52,25 @@ export default function StudentDetailPage() {
   const [student, setStudent] = useState<Student | null>(null)
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
+  const [showTransfer, setShowTransfer] = useState(false)
+  const [transferClassId, setTransferClassId] = useState('')
+  const [transferReason, setTransferReason] = useState('')
+  const [transferring, setTransferring] = useState(false)
+  const [allClasses, setAllClasses] = useState<Array<{ id: string; name: string; grade: { name: string } }>>([])
+  const [transferHistory, setTransferHistory] = useState<Array<{
+    id: string; reason: string | null; createdAt: string;
+    fromClass: { name: string } | null; toClass: { name: string } | null;
+  }>>([])
 
   useEffect(() => {
     const fetchStudent = async () => {
       try {
-        const response = await studentApi.get(id as string)
+        const [response, historyRes] = await Promise.all([
+          studentApi.get(id as string),
+          studentApi.getTransferHistory(id as string).catch(() => ({ data: { data: [] } })),
+        ])
         setStudent(response.data.data)
+        setTransferHistory(historyRes.data.data || [])
       } catch (error: any) {
         console.error('Failed to fetch student:', error)
         if (error.response?.status === 404) {
@@ -68,6 +83,34 @@ export default function StudentDetailPage() {
     }
     if (id) fetchStudent()
   }, [id, router])
+
+  const handleTransfer = async () => {
+    if (!transferClassId) { toast.error('Vui lòng chọn lớp'); return }
+    try {
+      setTransferring(true)
+      await studentApi.transfer(id as string, { classId: transferClassId, reason: transferReason })
+      toast.success('Chuyển lớp thành công')
+      setShowTransfer(false)
+      setTransferClassId('')
+      setTransferReason('')
+      const [res, hRes] = await Promise.all([
+        studentApi.get(id as string),
+        studentApi.getTransferHistory(id as string).catch(() => ({ data: { data: [] } })),
+      ])
+      setStudent(res.data.data)
+      setTransferHistory(hRes.data.data || [])
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Chuyển lớp thất bại')
+    } finally { setTransferring(false) }
+  }
+
+  const openTransfer = async () => {
+    try {
+      const res = await classApi.list()
+      setAllClasses(res.data.data || [])
+    } catch {}
+    setShowTransfer(true)
+  }
 
   const handleDelete = async () => {
     if (!confirm('Bạn có chắc muốn xóa học sinh này?')) return
@@ -123,6 +166,12 @@ export default function StudentDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          {student.class && (
+            <button onClick={openTransfer} className="btn-outline">
+              <ArrowRightLeft className="w-4 h-4 mr-2" />
+              Chuyển lớp
+            </button>
+          )}
           <Link
             href={`/students/${student.id}/edit`}
             className="btn-outline"
@@ -235,7 +284,72 @@ export default function StudentDetailPage() {
         </div>
 
         {/* Scores Section */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6">
+          {/* Transfer Modal */}
+          {showTransfer && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="card p-6 w-full max-w-md">
+                <h2 className="text-lg font-semibold mb-4">Chuyển lớp</h2>
+                <div className="space-y-4">
+                  <div>
+                    <label className="label">Lớp hiện tại</label>
+                    <input type="text" className="input bg-gray-50" readOnly
+                      value={student.class ? `${student.class.name} (${student.class.grade.name})` : 'Chưa xếp lớp'} />
+                  </div>
+                  <div>
+                    <label className="label">Chuyển đến lớp</label>
+                    <select className="input" value={transferClassId} onChange={e => setTransferClassId(e.target.value)}>
+                      <option value="">Chọn lớp</option>
+                      {allClasses.filter(c => c.id !== student.class?.id).map(c => (
+                        <option key={c.id} value={c.id}>{c.name} ({c.grade?.name})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Lý do chuyển</label>
+                    <textarea className="input" rows={2} placeholder="Nhập lý do..."
+                      value={transferReason} onChange={e => setTransferReason(e.target.value)} />
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button type="button" onClick={() => setShowTransfer(false)} className="btn-outline flex-1">Hủy</button>
+                    <button onClick={handleTransfer} disabled={transferring} className="btn-primary flex-1">
+                      {transferring && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      Chuyển lớp
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Transfer History */}
+          {transferHistory.length > 0 && (
+            <div className="card overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <History className="w-5 h-5 text-primary" />
+                  Lịch sử chuyển lớp
+                </h3>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {transferHistory.map(h => (
+                  <div key={h.id} className="px-6 py-3 flex items-center gap-3">
+                    <ArrowRightLeft className="w-4 h-4 text-purple-500 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm">
+                        <span className="font-medium">{h.fromClass?.name || '?'}</span>
+                        {' → '}
+                        <span className="font-medium">{h.toClass?.name || '?'}</span>
+                      </p>
+                      {h.reason && <p className="text-xs text-gray-500">{h.reason}</p>}
+                    </div>
+                    <span className="text-xs text-gray-400">{formatDate(h.createdAt)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="card overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100">
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">

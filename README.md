@@ -65,28 +65,24 @@ CloudSchool là nền tảng SaaS cho phép:
 
 ### Yêu cầu
 
+- **Docker** + **Docker Compose** (bắt buộc cho PostgreSQL)
 - **Node.js** >= 18
-- **PostgreSQL** >= 14 (hoặc dùng Docker)
 - **npm** hoặc **yarn**
 
-### Bước 1: Clone & cài dependencies
+---
+
+### 🚀 Development (Khuyến nghị)
+
+#### Bước 1: Clone repo
 
 ```bash
 git clone <repo-url> cloudschool
 cd cloudschool
-
-# Cài backend
-cd backend
-npm install
-
-# Cài frontend
-cd ../frontend
-npm install
 ```
 
-### Bước 2: Cấu hình biến môi trường
+#### Bước 2: Cấu hình biến môi trường
 
-**Backend** — tạo file `backend/.env`:
+Tạo file **`backend/.env`**:
 
 ```env
 PORT=5000
@@ -97,57 +93,75 @@ CORS_ORIGIN=http://localhost:3000
 NODE_ENV=development
 ```
 
-**Frontend** — tạo file `frontend/.env.local`:
+Tạo file **`frontend/.env.local`**:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:5000/api
 ```
 
-### Bước 3: Khởi tạo database
+#### Bước 3: Khởi động PostgreSQL bằng Docker
 
 ```bash
+docker-compose -f docker-compose.dev.yml up -d
+```
+
+> Lệnh này khởi chạy PostgreSQL 16 trên port `5432` với user/pass/db khớp với `DATABASE_URL` ở bước 2.
+
+#### Bước 4: Cài dependencies
+
+```bash
+# Backend
 cd backend
+npm install
+
+# Frontend
+cd ../frontend
+npm install
+```
+
+#### Bước 5: Khởi tạo database
+
+```bash
+cd ../backend
 
 # Tạo Prisma client
 npx prisma generate
 
-# Tạo database tables (development)
+# Tạo database tables
 npx prisma db push
 
 # Seed dữ liệu mẫu
 npm run db:seed
 ```
 
-### Bước 4: Chạy ứng dụng
+#### Bước 6: Chạy ứng dụng
 
 ```bash
-# Terminal 1 - Backend (port 5000)
+# Terminal 1 — Backend (port 5000)
 cd backend
 npm run dev
 
-# Terminal 2 - Frontend (port 3000)
+# Terminal 2 — Frontend (port 3000)
 cd frontend
 npm run dev
 ```
 
-### Sử dụng Docker Compose (Development)
+---
+
+### 🐳 Production (Docker Compose — full stack)
+
+Không cần cài Node.js, tất cả chạy trong container.
 
 ```bash
-# Chạy PostgreSQL
-docker-compose -f docker-compose.dev.yml up -d
-
-# Sau đó làm Bước 3 & 4 ở trên
-```
-
-### Sử dụng Docker Compose (Production)
-
-```bash
+# Build & chạy tất cả (DB + Backend + Frontend)
 docker-compose up -d --build
 
 # Chạy migration & seed lần đầu
 docker-compose exec backend npx prisma migrate deploy
 docker-compose exec backend npm run db:seed
 ```
+
+---
 
 ### Truy cập
 
@@ -196,18 +210,28 @@ POST /api/auth/logout             # Đăng xuất
 
 ### Platform Admin
 ```
-GET    /api/admin/dashboard        # Dashboard tổng quan
-GET    /api/admin/schools          # Danh sách trường
-POST   /api/admin/schools          # Tạo trường
-GET    /api/admin/schools/:id      # Chi tiết trường
-PUT    /api/admin/schools/:id      # Sửa trường
-DELETE /api/admin/schools/:id      # Xóa trường
-PATCH  /api/admin/schools/:id/suspend   # Tạm ngưng
-PATCH  /api/admin/schools/:id/activate  # Kích hoạt
-GET    /api/admin/subscriptions    # Danh sách gói
-POST   /api/admin/subscriptions    # Tạo gói
-PUT    /api/admin/subscriptions/:id # Sửa gói
-DELETE /api/admin/subscriptions/:id # Xóa gói
+GET    /api/admin/dashboard               # Dashboard tổng quan (growth charts)
+GET    /api/admin/schools                  # Danh sách trường
+POST   /api/admin/schools                  # Tạo trường
+GET    /api/admin/schools/:id              # Chi tiết trường
+PUT    /api/admin/schools/:id              # Sửa trường
+DELETE /api/admin/schools/:id              # Xóa trường
+PATCH  /api/admin/schools/:id/suspend      # Tạm ngưng
+PATCH  /api/admin/schools/:id/activate     # Kích hoạt
+GET    /api/admin/schools/:id/users        # DS users của trường
+GET    /api/admin/schools/:id/stats        # Thống kê trường
+GET    /api/admin/schools/:id/activity     # Nhật ký hoạt động trường
+GET    /api/admin/subscriptions            # Danh sách gói
+POST   /api/admin/subscriptions            # Tạo gói
+PUT    /api/admin/subscriptions/:id        # Sửa gói
+DELETE /api/admin/subscriptions/:id        # Xóa gói
+```
+
+### Monitoring (Platform Admin)
+```
+GET /api/monitoring/system-stats           # Thống kê hệ thống + biểu đồ tăng trưởng
+GET /api/monitoring/activity-logs          # Nhật ký hoạt động (phân trang, lọc)
+GET /api/monitoring/school-stats/:schoolId # Thống kê chi tiết 1 trường
 ```
 
 ### Users
@@ -227,7 +251,8 @@ GET    /api/students/:id           # Chi tiết HS
 POST   /api/students               # Thêm HS
 PUT    /api/students/:id           # Sửa HS
 DELETE /api/students/:id           # Xóa HS
-POST   /api/students/:id/transfer  # Chuyển lớp
+POST   /api/students/:id/transfer  # Chuyển lớp (ghi lịch sử)
+GET    /api/students/:id/transfer-history # Lịch sử chuyển lớp
 ```
 
 ### Classes
@@ -268,12 +293,23 @@ DELETE /api/score-components/:id    # Xóa đầu điểm
 
 ### Scores
 ```
-GET  /api/scores/class/:classId     # Bảng điểm lớp
-GET  /api/scores/student/:studentId # Điểm 1 HS
-POST /api/scores                    # Nhập 1 điểm
-POST /api/scores/batch              # Nhập nhiều điểm
-PATCH /api/scores/:id/lock          # Khóa điểm
-DELETE /api/scores/:id              # Xóa điểm
+GET    /api/scores/class/:classId     # Bảng điểm lớp
+GET    /api/scores/student/:studentId # Điểm 1 HS
+POST   /api/scores                    # Nhập 1 điểm
+POST   /api/scores/batch              # Nhập nhiều điểm
+PATCH  /api/scores/:id/lock           # Khóa điểm
+PATCH  /api/scores/:id/unlock         # Mở khóa điểm (Admin)
+POST   /api/scores/class/:classId/lock    # Khóa điểm cả lớp
+POST   /api/scores/class/:classId/unlock  # Mở khóa điểm cả lớp
+DELETE /api/scores/:id                # Xóa điểm
+```
+
+### Export
+```
+GET /api/export/students     # Xuất DS học sinh (CSV/Excel)
+GET /api/export/classes      # Xuất DS lớp (CSV/Excel)
+GET /api/export/scores       # Xuất bảng điểm (CSV/Excel)
+GET /api/export/schools      # Xuất DS trường (Platform Admin, CSV/Excel)
 ```
 
 ### Promotion
@@ -340,16 +376,18 @@ cloudschool/
 │   │       ├── auth.routes.js     # Login, register, me, logout
 │   │       ├── admin.routes.js    # Platform admin: schools & subscriptions
 │   │       ├── user.routes.js     # User CRUD
-│   │       ├── student.routes.js  # Student CRUD + transfer
+│   │       ├── student.routes.js  # Student CRUD + transfer + history
 │   │       ├── class.routes.js    # Class CRUD + teacher assignments
 │   │       ├── subject.routes.js  # Subject CRUD + semester CRUD
 │   │       ├── score-component.routes.js  # Score component CRUD
-│   │       ├── score.routes.js    # Score entry + batch + lock
+│   │       ├── score.routes.js    # Score entry + batch + lock/unlock
 │   │       ├── promotion.routes.js # Promotion calculate + override
 │   │       ├── report.routes.js   # Reports
 │   │       ├── parent.routes.js   # Parent CRUD + self-service
 │   │       ├── settings.routes.js # Settings + grade CRUD
-│   │       └── tenant.routes.js   # Tenant info & stats
+│   │       ├── tenant.routes.js   # Tenant info & stats
+│   │       ├── export.routes.js   # CSV/Excel export (students, classes, scores, schools)
+│   │       └── monitoring.routes.js # System monitoring + activity logs
 │   └── package.json
 ├── frontend/
 │   ├── src/
@@ -361,6 +399,8 @@ cloudschool/
 │   │   │       ├── dashboard/     # Dashboard 6 roles
 │   │   │       ├── admin/schools/ # Quản lý trường (Platform Admin)
 │   │   │       ├── admin/subscriptions/ # Gói dịch vụ
+│   │   │       ├── admin/monitoring/ # Giám sát hệ thống
+│   │   │       ├── admin/activity-logs/ # Nhật ký hoạt động
 │   │   │       ├── users/         # Quản lý người dùng
 │   │   │       ├── students/      # CRUD học sinh
 │   │   │       ├── classes/       # CRUD lớp + phân công

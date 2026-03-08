@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { classApi, subjectApi, scoreApi, scoreComponentApi, settingsApi } from '@/lib/api'
+import { classApi, subjectApi, scoreApi, scoreComponentApi, settingsApi, exportApi, downloadBlob } from '@/lib/api'
 import { getPassStatus } from '@/lib/utils'
-import { Save, Loader2, AlertCircle, CheckCircle, Lock } from 'lucide-react'
+import { useAuthStore } from '@/store/auth'
+import { Save, Loader2, AlertCircle, CheckCircle, Lock, Unlock, Download } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface Class {
@@ -61,6 +62,8 @@ export default function ScoresPage() {
   const [editedScores, setEditedScores] = useState<
     Map<string, { studentId: string; scoreComponentId: string; value: number }>
   >(new Map())
+  const user = useAuthStore(s => s.user)
+  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'PLATFORM_ADMIN'
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -191,6 +194,32 @@ export default function ScoresPage() {
     } catch { toast.error('Lỗi khóa điểm') }
   }
 
+  const handleUnlock = async (scoreId: string) => {
+    try {
+      await scoreApi.unlock(scoreId)
+      toast.success('Đã mở khóa điểm')
+      fetchScores()
+    } catch { toast.error('Lỗi mở khóa điểm') }
+  }
+
+  const handleLockClass = async () => {
+    if (!selectedClass) return
+    try {
+      await scoreApi.lockClass(selectedClass, { subjectId: selectedSubject, semesterId: selectedSemester })
+      toast.success('Đã khóa điểm cả lớp')
+      fetchScores()
+    } catch { toast.error('Lỗi khóa điểm lớp') }
+  }
+
+  const handleUnlockClass = async () => {
+    if (!selectedClass) return
+    try {
+      await scoreApi.unlockClass(selectedClass, { subjectId: selectedSubject, semesterId: selectedSemester })
+      toast.success('Đã mở khóa điểm cả lớp')
+      fetchScores()
+    } catch { toast.error('Lỗi mở khóa điểm lớp') }
+  }
+
   if (loading) {
     return <div className="flex items-center justify-center h-[60vh]"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
   }
@@ -206,10 +235,36 @@ export default function ScoresPage() {
           <h1 className="text-2xl font-bold text-gray-900">Nhập điểm môn học</h1>
           <p className="text-gray-600 text-sm mt-1">Nhập và quản lý điểm theo cột điểm (ScoreComponent)</p>
         </div>
-        <button onClick={handleSave} disabled={!hasChanges || saving} className="btn-primary">
-          {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-          Lưu điểm ({editedScores.size})
-        </button>
+        <div className="flex gap-2">
+          {isAdmin && selectedClass && selectedSubject && selectedSemester && (
+            <>
+              <button onClick={handleLockClass} className="btn-outline text-yellow-600 border-yellow-300 hover:bg-yellow-50">
+                <Lock className="w-4 h-4 mr-1" /> Khóa lớp
+              </button>
+              <button onClick={handleUnlockClass} className="btn-outline text-green-600 border-green-300 hover:bg-green-50">
+                <Unlock className="w-4 h-4 mr-1" /> Mở khóa lớp
+              </button>
+            </>
+          )}
+          {selectedClass && selectedSubject && selectedSemester && (
+            <button
+              onClick={async () => {
+                try {
+                  const res = await exportApi.scores({ format: 'excel', classId: selectedClass, subjectId: selectedSubject, semesterId: selectedSemester })
+                  downloadBlob(res.data, 'bang-diem.xlsx')
+                  toast.success('Xuất file thành công')
+                } catch { toast.error('Xuất file thất bại') }
+              }}
+              className="btn-outline"
+            >
+              <Download className="w-4 h-4 mr-1" /> Xuất
+            </button>
+          )}
+          <button onClick={handleSave} disabled={!hasChanges || saving} className="btn-primary">
+            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+            Lưu điểm ({editedScores.size})
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -305,7 +360,12 @@ export default function ScoresPage() {
                                   <Lock className="w-3 h-3" />
                                 </button>
                               )}
-                              {isLocked && <Lock className="w-3 h-3 text-yellow-500" />}
+                              {isLocked && isAdmin && entry?.id && (
+                                <button onClick={() => handleUnlock(entry.id!)} className="p-0.5 text-yellow-500 hover:text-green-500" title="Mở khóa điểm">
+                                  <Unlock className="w-3 h-3" />
+                                </button>
+                              )}
+                              {isLocked && !isAdmin && <Lock className="w-3 h-3 text-yellow-500" />}
                             </div>
                           </td>
                         )

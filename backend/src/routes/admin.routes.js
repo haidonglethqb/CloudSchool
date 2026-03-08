@@ -12,15 +12,71 @@ router.use(authenticate, authorize('PLATFORM_ADMIN'))
 // GET /admin/dashboard
 router.get('/dashboard', async (req, res, next) => {
   try {
-    const [totalSchools, activeSchools, totalUsers, totalStudents] = await Promise.all([
+    const [
+      totalSchools,
+      activeSchools,
+      inactiveSchools,
+      suspendedSchools,
+      totalUsers,
+      totalStudents,
+      totalTeachers,
+      totalClasses,
+      totalPlans
+    ] = await Promise.all([
       prisma.tenant.count(),
       prisma.tenant.count({ where: { status: 'ACTIVE' } }),
+      prisma.tenant.count({ where: { status: 'INACTIVE' } }),
+      prisma.tenant.count({ where: { status: 'SUSPENDED' } }),
       prisma.user.count({ where: { role: { not: 'PLATFORM_ADMIN' } } }),
-      prisma.student.count()
+      prisma.student.count(),
+      prisma.user.count({ where: { role: 'TEACHER' } }),
+      prisma.class.count(),
+      prisma.subscriptionPlan.count({ where: { isActive: true } })
     ])
 
+    // School growth over last 6 months
+    const now = new Date()
+    const schoolGrowth = []
+    for (let i = 5; i >= 0; i--) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
+      const count = await prisma.tenant.count({
+        where: { createdAt: { gte: start, lt: end } }
+      })
+      schoolGrowth.push({
+        month: start.toLocaleDateString('vi-VN', { month: 'short' }),
+        count
+      })
+    }
+
+    // Student growth over last 6 months
+    const studentGrowth = []
+    for (let i = 5; i >= 0; i--) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
+      const count = await prisma.student.count({
+        where: { createdAt: { gte: start, lt: end } }
+      })
+      studentGrowth.push({
+        month: start.toLocaleDateString('vi-VN', { month: 'short' }),
+        count
+      })
+    }
+
     res.json({
-      data: { totalSchools, activeSchools, totalUsers, totalStudents }
+      data: {
+        totalSchools,
+        activeSchools,
+        inactiveSchools,
+        suspendedSchools,
+        totalUsers,
+        totalStudents,
+        totalTeachers,
+        totalClasses,
+        totalPlans,
+        schoolGrowth,
+        studentGrowth
+      }
     })
   } catch (error) {
     next(error)
@@ -302,6 +358,111 @@ router.delete('/subscriptions/:id', async (req, res, next) => {
   try {
     await prisma.subscriptionPlan.delete({ where: { id: req.params.id } })
     res.json({ data: { message: 'Plan deleted' } })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// ==================== SCHOOL DETAIL TABS ====================
+
+// GET /admin/schools/:id/users — Users in a school
+router.get('/schools/:id/users', async (req, res, next) => {
+  try {
+    const { page = 1, limit = 20, role, search } = req.query
+    const skip = (parseInt(page) - 1) * parseInt(limit)
+
+    const where = {
+      tenantId: req.params.id,
+      ...(role && { role }),
+      ...(search && {
+        OR: [
+          { fullName: { contains: search, mode: 'insensitive' } },
+          { email: { contains: search, mode: 'insensitive' } }
+        ]
+      })
+    }
+
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        select: { id: true, email: true, fullName: true, role: true, isActive: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit)
+      }),
+      prisma.user.count({ where })
+    ])
+
+    res.json({
+      data: users,
+      meta: { page: parseInt(page), limit: parseInt(limit), total, totalPages: Math.ceil(total / parseInt(limit)) }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /admin/schools/:id/stats — Statistics for a school
+router.get('/schools/:id/stats', async (req, res, next) => {
+  try {
+    const schoolId = req.params.id
+
+    const [studentCount, teacherCount, classCount, usersByRole, scoreStats, grades] = await Promise.all([
+      prisma.student.count({ where: { tenantId: schoolId } }),
+      prisma.user.count({ where: { tenantId: schoolId, role: 'TEACHER' } }),
+      prisma.class.count({ where: { tenantId: schoolId } }),
+      prisma.user.groupBy({ by: ['role'], where: { tenantId: schoolId }, _count: true }),
+      prisma.score.aggregate({
+        where: { tenantId: schoolId },
+        _avg: { value: true },
+        _min: { value: true },
+        _max: { value: true },
+        _count: true
+      }),
+      prisma.grade.findMany({
+        where: { tenantId: schoolId },
+        include: {
+          classes: { include: { _count: { select: { students: true } } } }
+        },
+        orderBy: { level: 'asc' }
+      })
+    ])
+
+    res.json({
+      data: {
+        studentCount,
+        teacherCount,
+        classCount,
+        usersByRole,
+        scoreStats,
+        grades
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /admin/schools/:id/activity — Activity logs for a school
+router.get('/schools/:id/activity', async (req, res, next) => {
+  try {
+    const { page = 1, limit = 30 } = req.query
+    const skip = (parseInt(page) - 1) * parseInt(limit)
+
+    const [logs, total] = await Promise.all([
+      prisma.activityLog.findMany({
+        where: { tenantId: req.params.id },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit)
+      }),
+      prisma.activityLog.count({ where: { tenantId: req.params.id } })
+    ])
+
+    res.json({
+      data: logs,
+      meta: { page: parseInt(page), limit: parseInt(limit), total, totalPages: Math.ceil(total / parseInt(limit)) }
+    })
   } catch (error) {
     next(error)
   }

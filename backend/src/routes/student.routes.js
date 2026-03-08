@@ -199,7 +199,24 @@ router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, n
 router.post('/:id/transfer', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const classId = req.body.classId || req.body.newClassId
+    const { reason } = req.body
 
+    if (!classId) {
+      throw new AppError('Target class ID is required', 400, 'MISSING_PARAMS')
+    }
+
+    // Get current student
+    const currentStudent = await prisma.student.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!currentStudent) throw new AppError('Student not found', 404, 'NOT_FOUND')
+
+    const fromClassId = currentStudent.classId
+    if (fromClassId === classId) {
+      throw new AppError('Student is already in this class', 400, 'SAME_CLASS')
+    }
+
+    // Check target class
     const cls = await prisma.class.findFirst({
       where: { id: classId, tenantId: req.tenantId },
       include: { _count: { select: { students: true } } }
@@ -209,13 +226,55 @@ router.post('/:id/transfer', authenticate, authorize('SUPER_ADMIN', 'STAFF'), as
       throw new AppError('Target class is full', 400, 'CLASS_FULL')
     }
 
-    const student = await prisma.student.update({
-      where: { id: req.params.id },
-      data: { classId },
-      include: { class: { include: { grade: true } } }
+    // Update student and record transfer history in a transaction
+    const [student, transferRecord] = await prisma.$transaction([
+      prisma.student.update({
+        where: { id: req.params.id },
+        data: { classId },
+        include: { class: { include: { grade: true } } }
+      }),
+      ...(fromClassId ? [prisma.transferHistory.create({
+        data: {
+          tenantId: req.tenantId,
+          studentId: req.params.id,
+          fromClassId,
+          toClassId: classId,
+          reason: reason || null,
+          transferredBy: req.user.id
+        }
+      })] : [])
+    ])
+
+    // Log activity
+    await prisma.activityLog.create({
+      data: {
+        tenantId: req.tenantId,
+        userId: req.user.id,
+        action: 'TRANSFER_STUDENT',
+        entity: 'Student',
+        entityId: req.params.id,
+        details: JSON.stringify({ fromClassId, toClassId: classId, reason })
+      }
     })
 
     res.json({ data: student })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /students/:id/transfer-history
+router.get('/:id/transfer-history', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+  try {
+    const history = await prisma.transferHistory.findMany({
+      where: { studentId: req.params.id, tenantId: req.tenantId },
+      include: {
+        fromClass: { include: { grade: true } },
+        toClass: { include: { grade: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    })
+    res.json({ data: history })
   } catch (error) {
     next(error)
   }

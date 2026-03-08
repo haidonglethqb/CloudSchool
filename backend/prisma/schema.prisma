@@ -85,6 +85,7 @@ model Tenant {
   settings          TenantSettings?
   teacherAssignments TeacherAssignment[]
   activityLogs      ActivityLog[]
+  transferHistories TransferHistory[]
 
   @@map("tenants")
 }
@@ -159,6 +160,8 @@ model Class {
   students           Student[]
   teacherAssignments TeacherAssignment[]
   promotions         Promotion[]
+  transfersFrom      TransferHistory[] @relation("TransferFrom")
+  transfersTo        TransferHistory[] @relation("TransferTo")
 
   @@unique([tenantId, name, academicYear])
   @@map("classes")
@@ -246,6 +249,7 @@ model Student {
   scores     Score[]
   parents    ParentStudent[]
   promotions Promotion[]
+  transferHistories TransferHistory[]
 
   @@unique([tenantId, studentCode])
   @@map("students")
@@ -327,6 +331,25 @@ model Promotion {
   @@map("promotions")
 }
 
+// ==================== TRANSFER HISTORY ====================
+
+model TransferHistory {
+  id            String   @id @default(uuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  fromClassId   String
+  fromClass     Class    @relation("TransferFrom", fields: [fromClassId], references: [id], onDelete: Cascade)
+  toClassId     String
+  toClass       Class    @relation("TransferTo", fields: [toClassId], references: [id], onDelete: Cascade)
+  reason        String?
+  transferredBy String?
+  createdAt     DateTime @default(now())
+
+  @@map("transfer_histories")
+}
+
 // ==================== LOGGING ====================
 
 model ActivityLog {
@@ -338,6 +361,7 @@ model ActivityLog {
   entity    String
   entityId  String?
   details   String?
+  ipAddress String?
   createdAt DateTime @default(now())
 
   @@map("activity_logs")

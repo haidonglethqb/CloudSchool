@@ -20,6 +20,7 @@ import {
   CreditCard,
   Shield,
   ClipboardList,
+  Activity,
 } from 'lucide-react'
 
 /* ============================== Types ============================== */
@@ -41,10 +42,15 @@ interface SchoolDashboardData {
 interface PlatformDashboardData {
   totalSchools: number
   activeSchools: number
+  inactiveSchools: number
   suspendedSchools: number
+  totalUsers: number
   totalStudents: number
   totalTeachers: number
+  totalClasses: number
   totalPlans: number
+  schoolGrowth: Array<{ month: string; count: number }>
+  studentGrowth: Array<{ month: string; count: number }>
 }
 
 interface ParentChild {
@@ -61,7 +67,6 @@ interface TeacherClass {
 
 /* =================== Platform Admin Dashboard =================== */
 function PlatformAdminDashboard() {
-  const { user } = useAuthStore()
   const [data, setData] = useState<PlatformDashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -81,13 +86,29 @@ function PlatformAdminDashboard() {
     { label: 'Gói dịch vụ', value: data?.totalPlans || 0, icon: CreditCard, color: 'bg-purple-500', href: '/admin/subscriptions' },
   ]
 
+  const secondaryStats = [
+    { label: 'Tổng người dùng', value: data?.totalUsers || 0, icon: Users, color: 'bg-indigo-500' },
+    { label: 'Tổng học sinh', value: data?.totalStudents || 0, icon: GraduationCap, color: 'bg-cyan-500' },
+    { label: 'Tổng giáo viên', value: data?.totalTeachers || 0, icon: User, color: 'bg-amber-500' },
+    { label: 'Tổng lớp học', value: data?.totalClasses || 0, icon: BookOpen, color: 'bg-emerald-500' },
+  ]
+
+  const maxSchoolGrowth = Math.max(...(data?.schoolGrowth?.map(g => g.count) || [1]), 1)
+  const maxStudentGrowth = Math.max(...(data?.studentGrowth?.map(g => g.count) || [1]), 1)
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Platform Admin</h1>
-        <p className="text-gray-600 mt-1">Tổng quan hệ thống CloudSchool</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Platform Admin</h1>
+          <p className="text-gray-600 mt-1">Tổng quan hệ thống CloudSchool</p>
+        </div>
+        <Link href="/admin/monitoring" className="btn-primary text-sm">
+          <Activity className="w-4 h-4 mr-1" /> Giám sát hệ thống
+        </Link>
       </div>
 
+      {/* Primary stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map(s => (
           <Link key={s.label} href={s.href} className="card p-4 hover:shadow-md transition-shadow">
@@ -104,14 +125,61 @@ function PlatformAdminDashboard() {
         ))}
       </div>
 
+      {/* Secondary stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {secondaryStats.map(s => (
+          <div key={s.label} className="card p-4">
+            <div className="flex items-center gap-3">
+              <div className={`w-9 h-9 ${s.color} rounded-lg flex items-center justify-center`}>
+                <s.icon className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">{s.label}</p>
+                <p className="text-lg font-bold text-gray-900">{s.value}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Charts */}
       <div className="grid lg:grid-cols-2 gap-6">
+        {/* School Growth Chart */}
         <div className="card p-6">
-          <h3 className="font-semibold text-gray-900 mb-2">Tổng học sinh toàn hệ thống</h3>
-          <p className="text-3xl font-bold text-primary">{data?.totalStudents || 0}</p>
+          <h3 className="font-semibold text-gray-900 mb-4">Tăng trưởng trường học (6 tháng)</h3>
+          <div className="flex items-end gap-2 h-40">
+            {data?.schoolGrowth?.map((g, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                <span className="text-xs font-medium text-gray-700">{g.count}</span>
+                <div className="w-full bg-blue-100 rounded-t" style={{
+                  height: `${Math.max((g.count / maxSchoolGrowth) * 100, 4)}%`,
+                  minHeight: '4px'
+                }}>
+                  <div className="w-full h-full bg-blue-500 rounded-t" />
+                </div>
+                <span className="text-xs text-gray-500">{g.month}</span>
+              </div>
+            ))}
+          </div>
         </div>
+
+        {/* Student Growth Chart */}
         <div className="card p-6">
-          <h3 className="font-semibold text-gray-900 mb-2">Tổng giáo viên toàn hệ thống</h3>
-          <p className="text-3xl font-bold text-primary">{data?.totalTeachers || 0}</p>
+          <h3 className="font-semibold text-gray-900 mb-4">Tăng trưởng học sinh (6 tháng)</h3>
+          <div className="flex items-end gap-2 h-40">
+            {data?.studentGrowth?.map((g, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                <span className="text-xs font-medium text-gray-700">{g.count}</span>
+                <div className="w-full bg-green-100 rounded-t" style={{
+                  height: `${Math.max((g.count / maxStudentGrowth) * 100, 4)}%`,
+                  minHeight: '4px'
+                }}>
+                  <div className="w-full h-full bg-green-500 rounded-t" />
+                </div>
+                <span className="text-xs text-gray-500">{g.month}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

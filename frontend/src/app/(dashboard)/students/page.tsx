@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { studentApi, classApi } from '@/lib/api'
+import { studentApi, classApi, exportApi, downloadBlob } from '@/lib/api'
 import { formatDate, getGenderLabel } from '@/lib/utils'
 import {
   Search,
@@ -14,6 +14,7 @@ import {
   Loader2,
   UserX,
   Filter,
+  Download,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -127,10 +128,25 @@ export default function StudentsPage() {
             BM3 - Tìm kiếm và xem thông tin học sinh
           </p>
         </div>
-        <Link href="/students/new" className="btn-primary">
-          <Plus className="w-4 h-4 mr-2" />
-          Tiếp nhận học sinh
-        </Link>
+        <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              try {
+                const res = await exportApi.students({ format: 'excel', classId: selectedClass || undefined, gradeId: selectedGrade || undefined })
+                downloadBlob(res.data, 'danh-sach-hoc-sinh.xlsx')
+                toast.success('Xuất file thành công')
+              } catch { toast.error('Xuất file thất bại') }
+            }}
+            className="btn-outline"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Xuất Excel
+          </button>
+          <Link href="/students/new" className="btn-primary">
+            <Plus className="w-4 h-4 mr-2" />
+            Tiếp nhận học sinh
+          </Link>
+        </div>
       </div>
 
       {/* Search & Filters */}

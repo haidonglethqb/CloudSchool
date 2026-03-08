@@ -18,6 +18,8 @@ const promotionRoutes = require('./routes/promotion.routes')
 const reportRoutes = require('./routes/report.routes')
 const settingsRoutes = require('./routes/settings.routes')
 const parentRoutes = require('./routes/parent.routes')
+const exportRoutes = require('./routes/export.routes')
+const monitoringRoutes = require('./routes/monitoring.routes')
 const { errorHandler } = require('./middleware/errorHandler')
 
 const app = express()
@@ -52,6 +54,8 @@ app.use('/api/promotion', promotionRoutes)
 app.use('/api/reports', reportRoutes)
 app.use('/api/settings', settingsRoutes)
 app.use('/api/parents', parentRoutes)
+app.use('/api/export', exportRoutes)
+app.use('/api/monitoring', monitoringRoutes)
 
 // Error handling
 app.use(errorHandler)

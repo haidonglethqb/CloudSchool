@@ -185,7 +185,7 @@ router.get('/student/:studentId', authenticate, async (req, res, next) => {
 })
 
 // POST /scores - Create/Update score
-router.post('/', authenticate, authorize('SUPER_ADMIN', 'TEACHER'), [
+router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), [
   body('studentId').notEmpty(),
   body('subjectId').notEmpty(),
   body('semesterId').notEmpty(),
@@ -199,6 +199,19 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'TEACHER'), [
     }
 
     const { studentId, subjectId, semesterId, scoreComponentId, value } = req.body
+
+    // Check if score is locked (teachers can't edit locked scores)
+    const existingScore = await prisma.score.findUnique({
+      where: {
+        studentId_subjectId_semesterId_scoreComponentId: {
+          studentId, subjectId, semesterId, scoreComponentId
+        }
+      }
+    })
+
+    if (existingScore && existingScore.isLocked && req.user.role !== 'SUPER_ADMIN') {
+      throw new AppError('Score is locked. Only Super Admin can edit locked scores.', 403, 'SCORE_LOCKED')
+    }
 
     // Teacher can only enter scores for assigned classes
     if (req.user.role === 'TEACHER') {
@@ -233,7 +246,7 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'TEACHER'), [
 })
 
 // POST /scores/batch - Batch save scores
-router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'TEACHER'), async (req, res, next) => {
+router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
   try {
     const { scores } = req.body
 
@@ -273,6 +286,79 @@ router.patch('/:id/lock', authenticate, authorize('SUPER_ADMIN'), async (req, re
       data: { isLocked: true }
     })
     res.json({ data: score })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// PATCH /scores/:id/unlock — Unlock score (SUPER_ADMIN only)
+router.patch('/:id/unlock', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+  try {
+    const score = await prisma.score.update({
+      where: { id: req.params.id },
+      data: { isLocked: false }
+    })
+    res.json({ data: score })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /scores/class/:classId/lock — Lock all scores for a class+subject+semester
+router.post('/class/:classId/lock', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+  try {
+    const { subjectId, semesterId } = req.body
+
+    if (!subjectId || !semesterId) {
+      throw new AppError('subjectId and semesterId are required', 400, 'MISSING_PARAMS')
+    }
+
+    const students = await prisma.student.findMany({
+      where: { classId: req.params.classId },
+      select: { id: true }
+    })
+
+    const result = await prisma.score.updateMany({
+      where: {
+        studentId: { in: students.map(s => s.id) },
+        subjectId,
+        semesterId,
+        tenantId: req.tenantId
+      },
+      data: { isLocked: true }
+    })
+
+    res.json({ data: { message: `Locked ${result.count} scores` } })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /scores/class/:classId/unlock — Unlock all scores for a class+subject+semester
+router.post('/class/:classId/unlock', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+  try {
+    const { subjectId, semesterId } = req.body
+
+    if (!subjectId || !semesterId) {
+      throw new AppError('subjectId and semesterId are required', 400, 'MISSING_PARAMS')
+    }
+
+    const students = await prisma.student.findMany({
+      where: { classId: req.params.classId },
+      select: { id: true }
+    })
+
+    const result = await prisma.score.updateMany({
+      where: {
+        studentId: { in: students.map(s => s.id) },
+        subjectId,
+        semesterId,
+        tenantId: req.tenantId
+      },
+      data: { isLocked: false }
+    })
+
+    res.json({ data: { message: `Unlocked ${result.count} scores` } })
   } catch (error) {
     next(error)
   }

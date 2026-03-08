@@ -24,6 +24,9 @@ import {
   Shield,
   Layers,
   ArrowUpDown,
+  Activity,
+  FileText,
+  Download,
 } from 'lucide-react'
 
 // Platform Admin menu
@@ -31,6 +34,8 @@ const platformAdminMenu = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
   { href: '/admin/schools', icon: Building2, label: 'Quản lý trường' },
   { href: '/admin/subscriptions', icon: CreditCard, label: 'Gói đăng ký' },
+  { href: '/admin/monitoring', icon: Activity, label: 'Giám sát hệ thống' },
+  { href: '/admin/activity-logs', icon: FileText, label: 'Nhật ký hoạt động' },
 ]
 
 // School Admin (SUPER_ADMIN) menu
@@ -176,9 +181,15 @@ export default function DashboardLayout({
           {/* Navigation */}
           <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
             {menuItems.map((item) => {
-              const isActive =
-                pathname === item.href ||
-                (item.href !== '/dashboard' && pathname.startsWith(item.href))
+              const isExact = pathname === item.href
+              const isPrefix = item.href !== '/dashboard' && pathname.startsWith(item.href + '/')
+              const matches = isExact || isPrefix
+              // Only highlight this item if no other menu item is a more specific match
+              const hasBetterMatch = matches && menuItems.some(
+                (other) => other.href !== item.href && other.href.length > item.href.length &&
+                  (pathname === other.href || pathname.startsWith(other.href + '/'))
+              )
+              const isActive = matches && !hasBetterMatch
               return (
                 <Link
                   key={item.href}
