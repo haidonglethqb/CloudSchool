@@ -69,8 +69,8 @@ const DEFAULT_PERMISSIONS = {
   TEACHER: ['scores', 'classes', 'reports'],
 }
 
-// GET /settings/role-permissions
-router.get('/role-permissions', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+// GET /settings/role-permissions — accessible by all authenticated users so sidebar can filter
+router.get('/role-permissions', authenticate, async (req, res, next) => {
   try {
     const settings = await prisma.tenantSettings.findUnique({
       where: { tenantId: req.tenantId }

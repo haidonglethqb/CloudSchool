@@ -3,8 +3,9 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth'
+import { settingsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import {
   LayoutDashboard,
   UserPlus,
@@ -29,8 +30,15 @@ import {
   Download,
 } from 'lucide-react'
 
+interface MenuItem {
+  href: string
+  icon: typeof LayoutDashboard
+  label: string
+  module?: string
+}
+
 // Platform Admin menu
-const platformAdminMenu = [
+const platformAdminMenu: MenuItem[] = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
   { href: '/admin/schools', icon: Building2, label: 'Quản lý trường' },
   { href: '/admin/subscriptions', icon: CreditCard, label: 'Gói đăng ký' },
@@ -38,53 +46,55 @@ const platformAdminMenu = [
   { href: '/admin/activity-logs', icon: FileText, label: 'Nhật ký hoạt động' },
 ]
 
-// School Admin (SUPER_ADMIN) menu
-const superAdminMenu = [
+// School Admin (SUPER_ADMIN) menu — full access, not filtered by permissions
+const superAdminMenu: MenuItem[] = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
   { href: '/users', icon: Shield, label: 'Quản lý người dùng' },
-  { href: '/students/new', icon: UserPlus, label: 'Tiếp nhận HS' },
-  { href: '/students', icon: Search, label: 'Tra cứu HS' },
-  { href: '/classes', icon: Users, label: 'Danh sách lớp' },
-  { href: '/subjects', icon: BookOpen, label: 'Môn học' },
-  { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm' },
-  { href: '/promotion', icon: ArrowUpDown, label: 'Xét lên lớp' },
-  { href: '/reports', icon: BarChart3, label: 'Báo cáo' },
-  { href: '/parents', icon: UserCheck, label: 'Quản lý Phụ huynh' },
+  { href: '/students/new', icon: UserPlus, label: 'Tiếp nhận HS', module: 'students' },
+  { href: '/students', icon: Search, label: 'Tra cứu HS', module: 'students' },
+  { href: '/classes', icon: Users, label: 'Danh sách lớp', module: 'classes' },
+  { href: '/subjects', icon: BookOpen, label: 'Môn học', module: 'subjects' },
+  { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm', module: 'scores' },
+  { href: '/promotion', icon: ArrowUpDown, label: 'Xét lên lớp', module: 'promotion' },
+  { href: '/reports', icon: BarChart3, label: 'Báo cáo', module: 'reports' },
+  { href: '/parents', icon: UserCheck, label: 'Quản lý Phụ huynh', module: 'parents' },
   { href: '/fees', icon: CreditCard, label: 'Quản lý học phí' },
-  { href: '/settings', icon: Settings, label: 'Quy định' },
+  { href: '/settings', icon: Settings, label: 'Quy định', module: 'settings' },
   { href: '/settings/permissions', icon: Layers, label: 'Phân quyền' },
 ]
 
-// Staff menu
-const staffMenu = [
+// Staff menu — filtered by permissions
+const staffMenu: MenuItem[] = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
-  { href: '/students/new', icon: UserPlus, label: 'Tiếp nhận HS' },
-  { href: '/students', icon: Search, label: 'Tra cứu HS' },
-  { href: '/classes', icon: Users, label: 'Danh sách lớp' },
-  { href: '/subjects', icon: BookOpen, label: 'Môn học' },
-  { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm' },
-  { href: '/reports', icon: BarChart3, label: 'Báo cáo' },
-  { href: '/parents', icon: UserCheck, label: 'Quản lý Phụ huynh' },
+  { href: '/students/new', icon: UserPlus, label: 'Tiếp nhận HS', module: 'students' },
+  { href: '/students', icon: Search, label: 'Tra cứu HS', module: 'students' },
+  { href: '/classes', icon: Users, label: 'Danh sách lớp', module: 'classes' },
+  { href: '/subjects', icon: BookOpen, label: 'Môn học', module: 'subjects' },
+  { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm', module: 'scores' },
+  { href: '/promotion', icon: ArrowUpDown, label: 'Xét lên lớp', module: 'promotion' },
+  { href: '/reports', icon: BarChart3, label: 'Báo cáo', module: 'reports' },
+  { href: '/parents', icon: UserCheck, label: 'Quản lý Phụ huynh', module: 'parents' },
   { href: '/fees', icon: CreditCard, label: 'Quản lý học phí' },
+  { href: '/export', icon: Download, label: 'Xuất dữ liệu', module: 'export' },
 ]
 
-// Teacher menu
-const teacherMenu = [
+// Teacher menu — filtered by permissions
+const teacherMenu: MenuItem[] = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
-  { href: '/classes', icon: Users, label: 'Lớp của tôi' },
-  { href: '/students', icon: Search, label: 'Tra cứu HS' },
-  { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm' },
-  { href: '/reports', icon: BarChart3, label: 'Báo cáo' },
+  { href: '/classes', icon: Users, label: 'Lớp của tôi', module: 'classes' },
+  { href: '/students', icon: Search, label: 'Tra cứu HS', module: 'students' },
+  { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm', module: 'scores' },
+  { href: '/reports', icon: BarChart3, label: 'Báo cáo', module: 'reports' },
 ]
 
 // Student menu
-const studentMenu = [
+const studentMenu: MenuItem[] = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
   { href: '/my-scores', icon: BookOpen, label: 'Xem điểm' },
 ]
 
 // Parent menu
-const parentMenu = [
+const parentMenu: MenuItem[] = [
   { href: '/my-children', icon: GraduationCap, label: 'Con em của tôi' },
   { href: '/my-children/fees', icon: CreditCard, label: 'Học phí' },
 ]
@@ -99,30 +109,50 @@ export default function DashboardLayout({
   const { user, logout, isAuthenticated } = useAuthStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [rolePermissions, setRolePermissions] = useState<Record<string, string[]> | null>(null)
 
-  // Get menu items based on user role
-  const menuItems = useMemo(() => {
-    switch (user?.role) {
-      case 'PLATFORM_ADMIN':
-        return platformAdminMenu
-      case 'SUPER_ADMIN':
-        return superAdminMenu
-      case 'STAFF':
-        return staffMenu
-      case 'TEACHER':
-        return teacherMenu
-      case 'STUDENT':
-        return studentMenu
-      case 'PARENT':
-        return parentMenu
-      default:
-        return []
+  // Fetch role permissions for STAFF/TEACHER
+  const fetchPermissions = useCallback(async () => {
+    if (!user || !['STAFF', 'TEACHER'].includes(user.role)) return
+    try {
+      const res = await settingsApi.getRolePermissions()
+      setRolePermissions(res.data.data)
+    } catch {
+      // Fallback: show all items if permissions can't be loaded
     }
-  }, [user?.role])
+  }, [user])
+
+  // Get menu items based on user role, then filter by permissions
+  const menuItems = useMemo(() => {
+    let items: MenuItem[]
+    switch (user?.role) {
+      case 'PLATFORM_ADMIN': items = platformAdminMenu; break
+      case 'SUPER_ADMIN': items = superAdminMenu; break
+      case 'STAFF': items = staffMenu; break
+      case 'TEACHER': items = teacherMenu; break
+      case 'STUDENT': items = studentMenu; break
+      case 'PARENT': items = parentMenu; break
+      default: items = []
+    }
+
+    // Apply permission filtering for STAFF and TEACHER
+    if (rolePermissions && user?.role && ['STAFF', 'TEACHER'].includes(user.role)) {
+      const allowed = rolePermissions[user.role] || []
+      items = items.filter(item => !item.module || allowed.includes(item.module))
+    }
+
+    return items
+  }, [user?.role, rolePermissions])
 
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  useEffect(() => {
+    if (mounted && isAuthenticated) {
+      fetchPermissions()
+    }
+  }, [mounted, isAuthenticated, fetchPermissions])
 
   useEffect(() => {
     if (mounted && !isAuthenticated) {

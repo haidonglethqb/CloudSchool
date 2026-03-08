@@ -1,7 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 import { useAuthStore } from '@/store/auth'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -77,6 +77,8 @@ export const userApi = {
   update: (id: string, data: Record<string, unknown>) => api.put(`/users/${id}`, data),
   disable: (id: string) => api.patch(`/users/${id}/disable`),
   delete: (id: string) => api.delete(`/users/${id}`),
+  updateAssignments: (id: string, assignments: Array<{ classId: string; subjectId: string; isHomeroom?: boolean }>) =>
+    api.put(`/users/${id}/assignments`, { assignments }),
 }
 
 // ==================== Students ====================

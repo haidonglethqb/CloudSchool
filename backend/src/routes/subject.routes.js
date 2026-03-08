@@ -96,6 +96,16 @@ router.get('/', authenticate, async (req, res, next) => {
     const where = { tenantId: req.tenantId }
     if (!includeInactive) where.isActive = true
 
+    // Teachers only see subjects they are assigned to teach
+    if (req.user.role === 'TEACHER') {
+      const assignments = await prisma.teacherAssignment.findMany({
+        where: { teacherId: req.user.id },
+        select: { subjectId: true },
+        distinct: ['subjectId'],
+      })
+      where.id = { in: assignments.map(a => a.subjectId) }
+    }
+
     const subjects = await prisma.subject.findMany({
       where,
       include: { scoreComponents: true },

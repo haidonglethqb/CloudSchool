@@ -14,7 +14,7 @@ router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res
 
     const where = {
       tenantId: req.tenantId,
-      role: { not: 'PLATFORM_ADMIN' },
+      role: { notIn: ['PLATFORM_ADMIN', 'PARENT', 'STUDENT'] },
       ...(search && {
         OR: [
           { fullName: { contains: search, mode: 'insensitive' } },
@@ -136,6 +136,52 @@ router.patch('/:id/disable', authenticate, authorize('SUPER_ADMIN'), async (req,
       data: { isActive: false }
     })
     res.json({ data: { message: 'User disabled' } })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// PUT /users/:id/assignments - Manage teacher assignments (SUPER_ADMIN only)
+router.put('/:id/assignments', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+  try {
+    const { assignments } = req.body
+    if (!Array.isArray(assignments)) {
+      throw new AppError('assignments must be an array', 400, 'INVALID_INPUT')
+    }
+
+    const targetUser = await prisma.user.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId, role: 'TEACHER' },
+    })
+    if (!targetUser) throw new AppError('Teacher not found', 404, 'NOT_FOUND')
+
+    // Delete all existing assignments for this teacher
+    await prisma.teacherAssignment.deleteMany({
+      where: { teacherId: req.params.id },
+    })
+
+    // Create new assignments
+    if (assignments.length > 0) {
+      await prisma.teacherAssignment.createMany({
+        data: assignments.map(a => ({
+          tenantId: req.tenantId,
+          teacherId: req.params.id,
+          classId: a.classId,
+          subjectId: a.subjectId,
+          isHomeroom: a.isHomeroom || false,
+        })),
+        skipDuplicates: true,
+      })
+    }
+
+    const updated = await prisma.user.findFirst({
+      where: { id: req.params.id },
+      select: {
+        id: true, fullName: true,
+        teacherAssignments: { include: { class: true, subject: true } },
+      },
+    })
+
+    res.json({ data: updated })
   } catch (error) {
     next(error)
   }
