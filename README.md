@@ -82,22 +82,13 @@ cd cloudschool
 
 #### Bước 2: Cấu hình biến môi trường
 
-Tạo file **`backend/.env`**:
-
-```env
-PORT=5000
-DATABASE_URL=postgresql://postgres:postgres123@localhost:5432/cloudschool
-JWT_SECRET=your-super-secret-key-change-in-production
-JWT_EXPIRES_IN=24h
-CORS_ORIGIN=http://localhost:3000
-NODE_ENV=development
+```bash
+# Copy file env mẫu
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env.local
 ```
 
-Tạo file **`frontend/.env.local`**:
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:5000/api
-```
+> Mở file `backend/.env` và `frontend/.env.local` để chỉnh sửa nếu cần (port, database URL, JWT secret, ...).
 
 #### Bước 3: Khởi động PostgreSQL bằng Docker
 
