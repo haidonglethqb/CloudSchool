@@ -18,9 +18,9 @@ env:
 
 jobs:
   # ─────────────────────────────────────────────
-  # Job 1: TypeScript check trước khi build image
+  # Job 1: Validate trước khi build image
   # ─────────────────────────────────────────────
-  type-check:
+  validate:
     runs-on: ubuntu-latest
     outputs:
       image_name_lower: ${{ steps.lowercase.outputs.image_name }}
@@ -36,26 +36,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: server/package-lock.json
 
-      - name: Install server dependencies
-        working-directory: ./server
+      - name: Install backend dependencies
+        working-directory: ./backend
         run: npm ci
 
       - name: Generate Prisma Client
-        working-directory: ./server
+        working-directory: ./backend
         run: npx prisma generate
 
-      - name: TypeScript check (server)
-        working-directory: ./server
-        run: npx tsc --noEmit
-
   # ─────────────────────────────────────────────
-  # Job 2a: Build và push Server image (PARALLEL)
+  # Job 2a: Build và push Backend image (PARALLEL)
   # ─────────────────────────────────────────────
-  build-server:
-    needs: type-check
+  build-backend:
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -75,31 +69,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata for Server
-        id: meta-server
+      - name: Extract metadata for Backend
+        id: meta-backend
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ needs.type-check.outputs.image_name_lower }}/server
+          images: ${{ env.REGISTRY }}/${{ needs.validate.outputs.image_name_lower }}/backend
           tags: |
             type=sha,prefix=
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      - name: Build and push Server image
+      - name: Build and push Backend image
         uses: docker/build-push-action@v5
         with:
-          context: ./server
-          file: ./server/Dockerfile
+          context: ./backend
+          file: ./backend/Dockerfile
           push: true
-          tags: ${{ steps.meta-server.outputs.tags }}
-          labels: ${{ steps.meta-server.outputs.labels }}
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   # ─────────────────────────────────────────────
-  # Job 2b: Build và push Client image (PARALLEL)
+  # Job 2b: Build và push Frontend image (PARALLEL)
   # ─────────────────────────────────────────────
-  build-client:
-    needs: type-check
+  build-frontend:
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -119,40 +113,49 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata for Client
-        id: meta-client
+      - name: Extract metadata for Frontend
+        id: meta-frontend
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ needs.type-check.outputs.image_name_lower }}/client
+          images: ${{ env.REGISTRY }}/${{ needs.validate.outputs.image_name_lower }}/frontend
           tags: |
             type=sha,prefix=
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      - name: Build and push Client image
+      - name: Build and push Frontend image
         uses: docker/build-push-action@v5
         with:
-          context: ./client
-          file: ./client/Dockerfile
+          context: ./frontend
+          file: ./frontend/Dockerfile
           push: true
-          tags: ${{ steps.meta-client.outputs.tags }}
-          labels: ${{ steps.meta-client.outputs.labels }}
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
             NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
-            NEXT_PUBLIC_WS_URL=${{ secrets.NEXT_PUBLIC_WS_URL }}
 
   # ─────────────────────────────────────────────
   # Job 3: Deploy lên VPS (đợi cả 2 builds hoàn thành)
   # ─────────────────────────────────────────────
   deploy:
-    needs: [type-check, build-server, build-client]
+    needs: [validate, build-backend, build-frontend]
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Copy docker-compose.yml to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          source: "docker-compose.yml"
+          target: ${{ secrets.VPS_DEPLOY_PATH }}
 
       - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -161,37 +164,25 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
-          # Tăng timeout để tránh SSH timeout khi pull image lớn
           command_timeout: 15m
           script: |
             set -e
+
+            # Tạo thư mục deploy nếu chưa có
+            mkdir -p ${{ secrets.VPS_DEPLOY_PATH }}
             cd ${{ secrets.VPS_DEPLOY_PATH }}
 
-            # Ensure required directories exist
-            mkdir -p nginx/ssl nginx/logs
-
             # ── Bước 1: Ghi .env ───────────────────────────────────
-            # GITHUB_REPOSITORY phải lowercase để khớp với image name trên GHCR
-            # (docker/metadata-action tự lowercase khi push)
             cat > .env << 'ENVEOF'
-            POSTGRES_USER=vgfriend
+            POSTGRES_USER=${{ secrets.POSTGRES_USER }}
             POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-            POSTGRES_DB=vgfriend
+            POSTGRES_DB=${{ secrets.POSTGRES_DB }}
             JWT_SECRET=${{ secrets.JWT_SECRET }}
-            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
-            GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
+            JWT_EXPIRES_IN=24h
             CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}
             NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
-            NEXT_PUBLIC_WS_URL=${{ secrets.NEXT_PUBLIC_WS_URL }}
-            SMTP_HOST=${{ secrets.SMTP_HOST }}
-            SMTP_PORT=${{ secrets.SMTP_PORT }}
-            SMTP_SECURE=${{ secrets.SMTP_SECURE }}
-            SMTP_USER=${{ secrets.SMTP_USER }}
-            SMTP_PASS=${{ secrets.SMTP_PASS }}
-            SMTP_FROM_NAME=${{ secrets.SMTP_FROM_NAME }}
-            GITHUB_REPOSITORY=${{ needs.type-check.outputs.image_name_lower }}
+            GITHUB_REPOSITORY=${{ needs.validate.outputs.image_name_lower }}
             ENVEOF
-            # Xóa leading whitespace do YAML indentation
             sed -i 's/^[[:space:]]*//' .env
 
             # ── Bước 2: Login GHCR ─────────────────────────────────
@@ -201,11 +192,11 @@ jobs:
             docker compose pull
 
             # ── Bước 4: Start database trước, chờ healthy ─────────
-            docker compose up -d postgres redis
+            docker compose up -d postgres
 
             echo "Waiting for PostgreSQL to be ready..."
             for i in $(seq 1 30); do
-              if docker compose exec -T postgres pg_isready -U vgfriend -d vgfriend > /dev/null 2>&1; then
+              if docker compose exec -T postgres pg_isready -U ${{ secrets.POSTGRES_USER }} -d ${{ secrets.POSTGRES_DB }} > /dev/null 2>&1; then
                 echo "PostgreSQL is ready."
                 break
               fi
@@ -216,76 +207,61 @@ jobs:
               sleep 2
             done
 
-            # ── Bước 5: Chạy migration TRƯỚC khi start server ──────
-            # Dùng docker compose run để tạo container tạm từ image mới
-            # --no-deps: không start lại postgres (đã chạy ở trên)
-            # --rm: tự xóa container sau khi xong
-            echo "Running database migrations..."
-            docker compose run --rm --no-deps server npx prisma migrate deploy
-            echo "Migrations completed."
+            # ── Bước 5: Sync database schema ───────────────────────
+            # CloudSchool dùng prisma db push (không có migration files)
+            echo "Syncing database schema..."
+            docker compose run --rm backend npx prisma db push --accept-data-loss
+            echo "Schema sync completed."
 
             # ── Bước 5.5: Seed database (idempotent - safe to run multiple times)
-            # This uses upsert so it won't duplicate or delete user data
             echo "Seeding database..."
-            docker compose run --rm --no-deps server npx prisma db seed
+            docker compose run --rm backend npm run db:seed
             echo "Seeding completed."
 
             # ── Bước 6: Start tất cả services ─────────────────────
-            docker compose --profile production up -d --force-recreate
+            docker compose up -d --force-recreate
 
-            # ── Bước 7: Verify server healthy ──────────────────────
-            echo "Waiting for server to be healthy..."
+            # ── Bước 7: Verify backend healthy ─────────────────────
+            echo "Waiting for backend to be healthy..."
             for i in $(seq 1 20); do
-              STATUS=$(docker inspect --format='{{.State.Health.Status}}' vgfriend-server 2>/dev/null || echo "starting")
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' cloudschool-backend 2>/dev/null || echo "starting")
               if [ "$STATUS" = "healthy" ]; then
-                echo "Server is healthy!"
+                echo "Backend is healthy!"
                 break
               fi
               if [ "$i" -eq 20 ]; then
-                echo "ERROR: Server did not become healthy. Check logs:"
-                docker compose logs --tail=50 server
+                echo "ERROR: Backend did not become healthy. Check logs:"
+                docker compose logs --tail=50 backend
                 exit 1
               fi
-              echo "Server status: $STATUS, retrying ($i/20)..."
+              echo "Backend status: $STATUS, retrying ($i/20)..."
               sleep 5
             done
 
             # ── Bước 8: Cleanup để tránh tràn bộ nhớ ──────────────
             echo "Starting cleanup..."
-            
-            # 8.1: Xóa containers đã stopped (không ảnh hưởng running containers)
+
             docker container prune -f
-            
-            # 8.2: Xóa dangling images (images không có tag)
             docker image prune -f
-            
-            # 8.3: Xóa images cũ của project (giữ lại 3 versions gần nhất để rollback)
-            # Lấy list tất cả images của project, sort theo thời gian, xóa từ image thứ 4 trở đi
-            echo "Cleaning old server images..."
-            docker images "ghcr.io/${{ needs.type-check.outputs.image_name_lower }}/server" --format "{{.ID}} {{.CreatedAt}}" | \
+
+            echo "Cleaning old backend images..."
+            docker images "ghcr.io/${{ needs.validate.outputs.image_name_lower }}/backend" --format "{{.ID}} {{.CreatedAt}}" | \
               sort -k2 -r | tail -n +4 | awk '{print $1}' | xargs -r docker rmi -f 2>/dev/null || true
-            
-            echo "Cleaning old client images..."
-            docker images "ghcr.io/${{ needs.type-check.outputs.image_name_lower }}/client" --format "{{.ID}} {{.CreatedAt}}" | \
+
+            echo "Cleaning old frontend images..."
+            docker images "ghcr.io/${{ needs.validate.outputs.image_name_lower }}/frontend" --format "{{.ID}} {{.CreatedAt}}" | \
               sort -k2 -r | tail -n +4 | awk '{print $1}' | xargs -r docker rmi -f 2>/dev/null || true
-            
-            # 8.4: Xóa build cache (giữ lại 500MB để tăng tốc build sau)
+
             docker builder prune -f --keep-storage 500MB 2>/dev/null || true
-            
-            # 8.5: Xóa networks không sử dụng
             docker network prune -f
-            
-            # 8.6: Dọn nginx logs cũ hơn 7 ngày (giữ logs gần đây để debug)
-            find ./nginx/logs -name "*.log" -type f -mtime +7 -exec truncate -s 0 {} \; 2>/dev/null || true
-            
-            # 8.7: Hiển thị disk usage sau cleanup
+
             echo "Disk usage after cleanup:"
             df -h / | tail -1
             echo "Docker disk usage:"
             docker system df
-            
-            # ⚠️  KHÔNG dùng 'docker volume prune' - sẽ xóa postgres_data và redis_data!
-            
+
+            # ⚠️  KHÔNG dùng 'docker volume prune' - sẽ xóa postgres_data!
+
             echo "Deployment completed successfully!"
 
       - name: Notify deployment status
