@@ -218,12 +218,12 @@ jobs:
             # ── Bước 5: Sync database schema ───────────────────────
             # CloudSchool dùng prisma db push (không có migration files)
             echo "Syncing database schema..."
-            sudo docker compose run --rm backend npx prisma db push --accept-data-loss
+            sudo docker compose run --rm --user root backend npx prisma db push --accept-data-loss
             echo "Schema sync completed."
 
             # ── Bước 5.5: Seed database (idempotent - safe to run multiple times)
             echo "Seeding database..."
-            sudo docker compose run --rm backend npm run db:seed
+            sudo docker compose run --rm --user root backend npm run db:seed
             echo "Seeding completed."
 
             # ── Bước 6: Start tất cả services ─────────────────────

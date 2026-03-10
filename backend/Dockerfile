@@ -21,7 +21,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-RUN apk add --no-cache wget
+RUN apk add --no-cache wget openssl
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 expressjs
 
@@ -29,7 +29,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY package*.json ./
+
+RUN chown -R expressjs:nodejs /app/node_modules/.prisma /app/node_modules/@prisma
 
 USER expressjs
 
