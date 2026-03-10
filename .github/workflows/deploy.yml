@@ -147,6 +147,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Create deploy directory on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: mkdir -p ${{ secrets.VPS_DEPLOY_PATH }}
+
       - name: Copy docker-compose.yml to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -167,9 +176,6 @@ jobs:
           command_timeout: 15m
           script: |
             set -e
-
-            # Tạo thư mục deploy nếu chưa có
-            mkdir -p ${{ secrets.VPS_DEPLOY_PATH }}
             cd ${{ secrets.VPS_DEPLOY_PATH }}
 
             # ── Bước 1: Ghi .env ───────────────────────────────────
