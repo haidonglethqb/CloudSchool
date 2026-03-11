@@ -25,25 +25,9 @@ jobs:
     outputs:
       image_name_lower: ${{ steps.lowercase.outputs.image_name }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Lowercase image name
         id: lowercase
         run: echo "image_name=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install backend dependencies
-        working-directory: ./backend
-        run: npm ci
-
-      - name: Generate Prisma Client
-        working-directory: ./backend
-        run: npx prisma generate
 
   # ─────────────────────────────────────────────
   # Job 2a: Build và push Backend image (PARALLEL)
@@ -194,17 +178,17 @@ jobs:
             sed -i 's/^[[:space:]]*//' .env
 
             # ── Bước 2: Login GHCR ─────────────────────────────────
-            echo "${{ secrets.CR_PAT }}" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            echo "${{ secrets.CR_PAT }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
             # ── Bước 3: Pull images mới ────────────────────────────
-            sudo docker compose pull
+            docker compose pull
 
             # ── Bước 4: Start database trước, chờ healthy ─────────
-            sudo docker compose up -d postgres
+            docker compose up -d postgres
 
             echo "Waiting for PostgreSQL to be ready..."
             for i in $(seq 1 30); do
-              if sudo docker compose exec -T postgres pg_isready -U ${{ secrets.POSTGRES_USER }} -d ${{ secrets.POSTGRES_DB }} > /dev/null 2>&1; then
+              if docker compose exec -T postgres pg_isready -U ${{ secrets.POSTGRES_USER }} -d ${{ secrets.POSTGRES_DB }} > /dev/null 2>&1; then
                 echo "PostgreSQL is ready."
                 break
               fi
@@ -218,28 +202,28 @@ jobs:
             # ── Bước 5: Sync database schema ───────────────────────
             # CloudSchool dùng prisma db push (không có migration files)
             echo "Syncing database schema..."
-            sudo docker compose run --rm --user root backend npx prisma db push --accept-data-loss
+            docker compose run --rm --user root backend npx prisma db push --accept-data-loss
             echo "Schema sync completed."
 
             # ── Bước 5.5: Seed database (idempotent - safe to run multiple times)
             echo "Seeding database..."
-            sudo docker compose run --rm --user root backend npm run db:seed
+            docker compose run --rm --user root backend npm run db:seed
             echo "Seeding completed."
 
             # ── Bước 6: Start tất cả services ─────────────────────
-            sudo docker compose up -d --force-recreate
+            docker compose up -d --force-recreate
 
             # ── Bước 7: Verify backend healthy ─────────────────────
             echo "Waiting for backend to be healthy..."
             for i in $(seq 1 20); do
-              STATUS=$(sudo docker inspect --format='{{.State.Health.Status}}' cloudschool-backend 2>/dev/null || echo "starting")
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' cloudschool-backend 2>/dev/null || echo "starting")
               if [ "$STATUS" = "healthy" ]; then
                 echo "Backend is healthy!"
                 break
               fi
               if [ "$i" -eq 20 ]; then
                 echo "ERROR: Backend did not become healthy. Check logs:"
-                sudo docker compose logs --tail=50 backend
+                docker compose logs --tail=50 backend
                 exit 1
               fi
               echo "Backend status: $STATUS, retrying ($i/20)..."
@@ -249,24 +233,24 @@ jobs:
             # ── Bước 8: Cleanup để tránh tràn bộ nhớ ──────────────
             echo "Starting cleanup..."
 
-            sudo docker container prune -f
-            sudo docker image prune -f
+            docker container prune -f
+            docker image prune -f
 
             echo "Cleaning old backend images..."
-            sudo docker images "ghcr.io/${{ needs.validate.outputs.image_name_lower }}/backend" --format "{{.ID}} {{.CreatedAt}}" | \
-              sort -k2 -r | tail -n +4 | awk '{print $1}' | xargs -r sudo docker rmi -f 2>/dev/null || true
+            docker images "ghcr.io/${{ needs.validate.outputs.image_name_lower }}/backend" --format "{{.ID}} {{.CreatedAt}}" | \
+              sort -k2 -r | tail -n +4 | awk '{print $1}' | xargs -r docker rmi -f 2>/dev/null || true
 
             echo "Cleaning old frontend images..."
-            sudo docker images "ghcr.io/${{ needs.validate.outputs.image_name_lower }}/frontend" --format "{{.ID}} {{.CreatedAt}}" | \
-              sort -k2 -r | tail -n +4 | awk '{print $1}' | xargs -r sudo docker rmi -f 2>/dev/null || true
+            docker images "ghcr.io/${{ needs.validate.outputs.image_name_lower }}/frontend" --format "{{.ID}} {{.CreatedAt}}" | \
+              sort -k2 -r | tail -n +4 | awk '{print $1}' | xargs -r docker rmi -f 2>/dev/null || true
 
-            sudo docker builder prune -f --keep-storage 500MB 2>/dev/null || true
-            sudo docker network prune -f
+            docker builder prune -f --keep-storage 500MB 2>/dev/null || true
+            docker network prune -f
 
             echo "Disk usage after cleanup:"
             df -h / | tail -1
             echo "Docker disk usage:"
-            sudo docker system df
+            docker system df
 
             # ⚠️  KHÔNG dùng 'docker volume prune' - sẽ xóa postgres_data!
 
