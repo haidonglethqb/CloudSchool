@@ -174,7 +174,7 @@ router.get('/system-stats', async (req, res, next) => {
           database: {
             status: dbStatus,
             latencyMs: dbLatency,
-            version: dbVersion,
+            version: 'PostgreSQL',
             tables: dbTableCount,
             activeConnections: dbActiveConnections,
           },

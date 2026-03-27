@@ -1,5 +1,6 @@
 const express = require('express')
 const router = express.Router()
+const crypto = require('crypto')
 const bcrypt = require('bcryptjs')
 const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
@@ -34,34 +35,25 @@ router.get('/dashboard', async (req, res, next) => {
       prisma.subscriptionPlan.count({ where: { isActive: true } })
     ])
 
-    // School growth over last 6 months
+    // School and Student growth over last 6 months (parallelized)
     const now = new Date()
-    const schoolGrowth = []
-    for (let i = 5; i >= 0; i--) {
-      const start = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
-      const count = await prisma.tenant.count({
-        where: { createdAt: { gte: start, lt: end } }
-      })
-      schoolGrowth.push({
-        month: `T${start.getMonth() + 1}`,
-        count
-      })
-    }
+    const months = Array.from({ length: 6 }, (_, i) => {
+      const start = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
+      const end = new Date(now.getFullYear(), now.getMonth() - (5 - i) + 1, 1)
+      return { start, end, label: `T${start.getMonth() + 1}` }
+    })
 
-    // Student growth over last 6 months
-    const studentGrowth = []
-    for (let i = 5; i >= 0; i--) {
-      const start = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
-      const count = await prisma.student.count({
-        where: { createdAt: { gte: start, lt: end } }
-      })
-      studentGrowth.push({
-        month: `T${start.getMonth() + 1}`,
-        count
-      })
-    }
+    const [schoolCounts, studentCounts] = await Promise.all([
+      Promise.all(months.map(m => prisma.tenant.count({
+        where: { createdAt: { gte: m.start, lt: m.end } }
+      }))),
+      Promise.all(months.map(m => prisma.student.count({
+        where: { createdAt: { gte: m.start, lt: m.end } }
+      })))
+    ])
+
+    const schoolGrowth = months.map((m, i) => ({ month: m.label, count: schoolCounts[i] }))
+    const studentGrowth = months.map((m, i) => ({ month: m.label, count: studentCounts[i] }))
 
     res.json({
       data: {
@@ -147,7 +139,7 @@ router.post('/schools', [
     const { phone, address, planId } = req.body
     const email = req.body.adminEmail || req.body.email
     const adminName = req.body.adminName || `Admin - ${schoolName}`
-    const adminPassword = req.body.adminPassword || 'Admin@123'
+    const adminPassword = req.body.adminPassword || crypto.randomBytes(12).toString('base64url')
 
     const code = schoolName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 8).toUpperCase() +
       Math.random().toString(36).substring(2, 5).toUpperCase()

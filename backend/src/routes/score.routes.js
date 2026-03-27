@@ -119,10 +119,11 @@ router.get('/student/:studentId', authenticate, async (req, res, next) => {
       orderBy: [{ subjectId: 'asc' }, { scoreComponentId: 'asc' }]
     })
 
-    const student = await prisma.student.findUnique({
-      where: { id: req.params.studentId },
+    const student = await prisma.student.findFirst({
+      where: { id: req.params.studentId, tenantId: req.tenantId },
       include: { class: { include: { grade: true } } }
     })
+    if (!student) throw new AppError('Student not found', 404, 'NOT_FOUND')
 
     // Group by subject and calculate averages
     const subjects = await prisma.subject.findMany({
@@ -222,7 +223,8 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), [
 
     // Teacher can only enter scores for assigned classes
     if (req.user.role === 'TEACHER') {
-      const student = await prisma.student.findUnique({ where: { id: studentId } })
+      const student = await prisma.student.findFirst({ where: { id: studentId, tenantId: req.tenantId } })
+      if (!student) throw new AppError('Student not found', 404, 'NOT_FOUND')
       const assignment = await prisma.teacherAssignment.findFirst({
         where: { teacherId: req.user.id, classId: student.classId, subjectId }
       })
@@ -231,7 +233,11 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), [
       }
     }
 
-    // Upsert score (one score per student/subject/semester/component)
+    const studentCheck = await prisma.student.findFirst({
+      where: { id: studentId, tenantId: req.tenantId }
+    })
+    if (!studentCheck) throw new AppError('Student not found in your school', 404, 'NOT_FOUND')
+
     const score = await prisma.score.upsert({
       where: {
         studentId_subjectId_semesterId_scoreComponentId: {
@@ -332,6 +338,11 @@ router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER')
 // PATCH /scores/:id/lock
 router.patch('/:id/lock', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
+    const existingScore = await prisma.score.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existingScore) throw new AppError('Score not found', 404, 'NOT_FOUND')
+
     const score = await prisma.score.update({
       where: { id: req.params.id },
       data: { isLocked: true }
@@ -345,6 +356,11 @@ router.patch('/:id/lock', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async
 // PATCH /scores/:id/unlock
 router.patch('/:id/unlock', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
+    const existingScore = await prisma.score.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existingScore) throw new AppError('Score not found', 404, 'NOT_FOUND')
+
     const score = await prisma.score.update({
       where: { id: req.params.id },
       data: { isLocked: false }

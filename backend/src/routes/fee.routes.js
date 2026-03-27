@@ -237,6 +237,11 @@ router.patch('/:id/students/:studentId', authenticate, authorize('SUPER_ADMIN', 
   try {
     const { status, paidAmount, note } = req.body
 
+    const fee = await prisma.fee.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!fee) throw new AppError('Fee not found', 404, 'NOT_FOUND')
+
     const studentFee = await prisma.studentFee.findUnique({
       where: { feeId_studentId: { feeId: req.params.id, studentId: req.params.studentId } },
     })
@@ -276,8 +281,18 @@ router.post('/:id/assign', authenticate, authorize('SUPER_ADMIN', 'STAFF'), asyn
     })
     if (!fee) throw new AppError('Fee not found', 404, 'NOT_FOUND')
 
+    // Verify all students belong to current tenant
+    const validStudents = await prisma.student.findMany({
+      where: { id: { in: studentIds }, tenantId: req.tenantId },
+      select: { id: true }
+    })
+    const validStudentIds = validStudents.map(s => s.id)
+    if (validStudentIds.length === 0) {
+      throw new AppError('No valid students found', 400, 'INVALID_INPUT')
+    }
+
     await prisma.studentFee.createMany({
-      data: studentIds.map(studentId => ({
+      data: validStudentIds.map(studentId => ({
         tenantId: req.tenantId,
         feeId: fee.id,
         studentId,
@@ -286,7 +301,7 @@ router.post('/:id/assign', authenticate, authorize('SUPER_ADMIN', 'STAFF'), asyn
       skipDuplicates: true,
     })
 
-    res.json({ data: { message: `Assigned fee to ${studentIds.length} students` } })
+    res.json({ data: { message: `Assigned fee to ${validStudentIds.length} students` } })
   } catch (error) {
     next(error)
   }

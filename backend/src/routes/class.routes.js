@@ -132,6 +132,11 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
   try {
     const { name, gradeId, academicYear, capacity, isActive } = req.body
 
+    const existingClass = await prisma.class.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existingClass) throw new AppError('Class not found', 404, 'NOT_FOUND')
+
     const classInfo = await prisma.class.update({
       where: { id: req.params.id },
       data: {
@@ -158,6 +163,8 @@ router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, n
       include: { _count: { select: { students: true } } }
     })
 
+    if (!classInfo) throw new AppError('Class not found', 404, 'NOT_FOUND')
+
     if (classInfo._count.students > 0) {
       throw new AppError('Cannot delete class with students', 400, 'CLASS_HAS_STUDENTS')
     }
@@ -176,6 +183,16 @@ router.post('/:id/assign-teacher', authenticate, authorize('SUPER_ADMIN'), [
 ], async (req, res, next) => {
   try {
     const { teacherId, subjectId, isHomeroom } = req.body
+
+    // Verify class, teacher, and subject belong to current tenant
+    const [cls, teacher, subject] = await Promise.all([
+      prisma.class.findFirst({ where: { id: req.params.id, tenantId: req.tenantId } }),
+      prisma.user.findFirst({ where: { id: teacherId, tenantId: req.tenantId, role: 'TEACHER' } }),
+      prisma.subject.findFirst({ where: { id: subjectId, tenantId: req.tenantId } })
+    ])
+    if (!cls) throw new AppError('Class not found', 404, 'NOT_FOUND')
+    if (!teacher) throw new AppError('Teacher not found', 404, 'NOT_FOUND')
+    if (!subject) throw new AppError('Subject not found', 404, 'NOT_FOUND')
 
     const assignment = await prisma.teacherAssignment.create({
       data: {
@@ -201,6 +218,11 @@ router.post('/:id/assign-teacher', authenticate, authorize('SUPER_ADMIN'), [
 // DELETE /classes/:id/assign-teacher/:assignmentId
 router.delete('/:id/assign-teacher/:assignmentId', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
+    const existingAssignment = await prisma.teacherAssignment.findFirst({
+      where: { id: req.params.assignmentId, tenantId: req.tenantId }
+    })
+    if (!existingAssignment) throw new AppError('Assignment not found', 404, 'NOT_FOUND')
+
     await prisma.teacherAssignment.delete({ where: { id: req.params.assignmentId } })
     res.json({ data: { message: 'Assignment removed' } })
   } catch (error) {
@@ -212,7 +234,7 @@ router.delete('/:id/assign-teacher/:assignmentId', authenticate, authorize('SUPE
 router.get('/:id/students', authenticate, async (req, res, next) => {
   try {
     const students = await prisma.student.findMany({
-      where: { classId: req.params.id, isActive: true },
+      where: { classId: req.params.id, tenantId: req.tenantId, isActive: true },
       orderBy: { fullName: 'asc' }
     })
     res.json({ data: students })
@@ -226,17 +248,27 @@ router.post('/:id/students', authenticate, authorize('SUPER_ADMIN', 'STAFF'), as
   try {
     const { studentId } = req.body
 
-    const cls = await prisma.class.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId },
-      include: { _count: { select: { students: true } } }
-    })
-    if (cls._count.students >= cls.capacity) {
-      throw new AppError('Class is full', 400, 'CLASS_FULL')
-    }
+    // Use transaction to prevent race conditions
+    const student = await prisma.$transaction(async (tx) => {
+      const cls = await tx.class.findFirst({
+        where: { id: req.params.id, tenantId: req.tenantId },
+        include: { _count: { select: { students: true } } }
+      })
+      if (!cls) throw new AppError('Class not found', 404, 'NOT_FOUND')
+      if (cls._count.students >= cls.capacity) {
+        throw new AppError('Class is full', 400, 'CLASS_FULL')
+      }
 
-    const student = await prisma.student.update({
-      where: { id: studentId },
-      data: { classId: req.params.id }
+      // Verify student belongs to current tenant
+      const existingStudent = await tx.student.findFirst({
+        where: { id: studentId, tenantId: req.tenantId }
+      })
+      if (!existingStudent) throw new AppError('Student not found', 404, 'NOT_FOUND')
+
+      return tx.student.update({
+        where: { id: studentId },
+        data: { classId: req.params.id }
+      })
     })
     res.json({ data: student })
   } catch (error) {
@@ -247,6 +279,11 @@ router.post('/:id/students', authenticate, authorize('SUPER_ADMIN', 'STAFF'), as
 // DELETE /classes/:id/students/:studentId - Remove student from class
 router.delete('/:id/students/:studentId', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
+    const existingStudent = await prisma.student.findFirst({
+      where: { id: req.params.studentId, tenantId: req.tenantId }
+    })
+    if (!existingStudent) throw new AppError('Student not found', 404, 'NOT_FOUND')
+
     const student = await prisma.student.update({
       where: { id: req.params.studentId },
       data: { classId: null }

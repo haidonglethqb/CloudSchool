@@ -6,8 +6,9 @@ const { authenticate, authorize } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
 
 // Generate student code
-const generateStudentCode = async (tenantId) => {
-  const count = await prisma.student.count({ where: { tenantId } })
+const generateStudentCode = async (tenantId, tx) => {
+  const client = tx || prisma
+  const count = await client.student.count({ where: { tenantId } })
   const year = new Date().getFullYear().toString().slice(-2)
   return `HS${year}${String(count + 1).padStart(4, '0')}`
 }
@@ -61,7 +62,7 @@ router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), asyn
 })
 
 // GET /students/:id
-router.get('/:id', authenticate, async (req, res, next) => {
+router.get('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
   try {
     const student = await prisma.student.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },
@@ -104,34 +105,37 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
       throw new AppError(`Student age (${age}) must be between ${settings.minAge}-${settings.maxAge}`, 400, 'INVALID_AGE')
     }
 
-    // Check class capacity
-    if (classId) {
-      const cls = await prisma.class.findFirst({
-        where: { id: classId, tenantId: req.tenantId },
-        include: { _count: { select: { students: true } } }
-      })
-      if (!cls) throw new AppError('Class not found', 404, 'CLASS_NOT_FOUND')
-      if (cls._count.students >= cls.capacity) {
-        throw new AppError(`Class ${cls.name} is full (max: ${cls.capacity})`, 400, 'CLASS_FULL')
+    // Use transaction to prevent race conditions
+    const student = await prisma.$transaction(async (tx) => {
+      // Check class capacity inside transaction
+      if (classId) {
+        const cls = await tx.class.findFirst({
+          where: { id: classId, tenantId: req.tenantId },
+          include: { _count: { select: { students: true } } }
+        })
+        if (!cls) throw new AppError('Class not found', 404, 'CLASS_NOT_FOUND')
+        if (cls._count.students >= cls.capacity) {
+          throw new AppError(`Class ${cls.name} is full (max: ${cls.capacity})`, 400, 'CLASS_FULL')
+        }
       }
-    }
 
-    const studentCode = await generateStudentCode(req.tenantId)
+      const studentCode = await generateStudentCode(req.tenantId, tx)
 
-    const student = await prisma.student.create({
-      data: {
-        tenantId: req.tenantId,
-        studentCode,
-        fullName,
-        gender,
-        dateOfBirth: new Date(dateOfBirth),
-        address,
-        phone,
-        parentName,
-        parentPhone,
-        classId
-      },
-      include: { class: { include: { grade: true } } }
+      return tx.student.create({
+        data: {
+          tenantId: req.tenantId,
+          studentCode,
+          fullName,
+          gender,
+          dateOfBirth: new Date(dateOfBirth),
+          address,
+          phone,
+          parentName,
+          parentPhone,
+          classId
+        },
+        include: { class: { include: { grade: true } } }
+      })
     })
 
     res.status(201).json({ data: student })
@@ -167,6 +171,11 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
       }
     }
 
+    const existingStudent = await prisma.student.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existingStudent) throw new AppError('Student not found', 404, 'NOT_FOUND')
+
     const student = await prisma.student.update({
       where: { id: req.params.id },
       data: updateData,
@@ -182,7 +191,11 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
 // DELETE /students/:id
 router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
-    // Cannot delete if scores exist
+    const existingStudent = await prisma.student.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existingStudent) throw new AppError('Student not found', 404, 'NOT_FOUND')
+
     const scoreCount = await prisma.score.count({ where: { studentId: req.params.id } })
     if (scoreCount > 0) {
       throw new AppError('Cannot delete student with score records', 400, 'HAS_SCORES')

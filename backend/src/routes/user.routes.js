@@ -116,6 +116,11 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next
     if (isActive !== undefined) updateData.isActive = isActive
     if (password) updateData.password = await bcrypt.hash(password, 10)
 
+    const existingUser = await prisma.user.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existingUser) throw new AppError('User not found', 404, 'NOT_FOUND')
+
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: updateData,
@@ -131,6 +136,11 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next
 // PATCH /users/:id/disable
 router.patch('/:id/disable', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
+    const existingUser = await prisma.user.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existingUser) throw new AppError('User not found', 404, 'NOT_FOUND')
+
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { isActive: false }
@@ -194,6 +204,11 @@ router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, n
     if (req.params.id === req.user.id) {
       throw new AppError('Cannot delete yourself', 400, 'SELF_DELETE')
     }
+
+    const existingUser = await prisma.user.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existingUser) throw new AppError('User not found', 404, 'NOT_FOUND')
 
     await prisma.user.delete({ where: { id: req.params.id } })
     res.json({ data: { message: 'User deleted' } })
