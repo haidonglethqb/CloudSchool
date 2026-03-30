@@ -128,7 +128,7 @@ export const subjectApi = {
   delete: (id: string) => api.delete(`/subjects/${id}`),
   // Semesters
   getSemesters: () => api.get('/subjects/semesters'),
-  createSemester: (data: { name: string; year: string; semesterNum: number; startDate?: string; endDate?: string }) =>
+  createSemester: (data: { name: string; year: string; semesterNum: number; startDate?: string; endDate?: string; academicYearId?: string }) =>
     api.post('/subjects/semesters', data),
   updateSemester: (id: string, data: Record<string, unknown>) =>
     api.patch(`/subjects/semesters/${id}`, data),
@@ -174,6 +174,10 @@ export const promotionApi = {
     api.post('/promotion/calculate', data),
   override: (id: string, result: string) =>
     api.put(`/promotion/${id}`, { result }),
+  promote: (data: { semesterId: string; academicYearId?: string; newAcademicYear?: number }) =>
+    api.post('/promotion/promote', data),
+  archiveClasses: (academicYear: string) =>
+    api.post('/promotion/archive-classes', { academicYear }),
 }
 
 // ==================== Reports ====================

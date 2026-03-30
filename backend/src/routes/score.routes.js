@@ -24,8 +24,12 @@ router.get('/class/:classId', authenticate, async (req, res, next) => {
       }
     }
 
+    // Validate classId belongs to this tenant
+    const classCheck = await prisma.class.findFirst({ where: { id: req.params.classId, tenantId: req.tenantId } })
+    if (!classCheck) throw new AppError('Class not found', 404, 'NOT_FOUND')
+
     const students = await prisma.student.findMany({
-      where: { classId: req.params.classId, isActive: true },
+      where: { classId: req.params.classId, tenantId: req.tenantId, isActive: true },
       orderBy: { fullName: 'asc' }
     })
 
@@ -40,7 +44,7 @@ router.get('/class/:classId', authenticate, async (req, res, next) => {
     // Batch fetch all scores for all students at once (avoid N+1)
     const studentIds = students.map(s => s.id)
     const allScores = await prisma.score.findMany({
-      where: { studentId: { in: studentIds }, subjectId, semesterId },
+      where: { studentId: { in: studentIds }, subjectId, semesterId, tenantId: req.tenantId },
       include: { scoreComponent: true }
     })
 
@@ -78,9 +82,9 @@ router.get('/class/:classId', authenticate, async (req, res, next) => {
     })
 
     const [classInfo, subject, semester] = await Promise.all([
-      prisma.class.findUnique({ where: { id: req.params.classId }, include: { grade: true } }),
-      prisma.subject.findUnique({ where: { id: subjectId } }),
-      prisma.semester.findUnique({ where: { id: semesterId } })
+      prisma.class.findFirst({ where: { id: req.params.classId, tenantId: req.tenantId }, include: { grade: true } }),
+      prisma.subject.findFirst({ where: { id: subjectId, tenantId: req.tenantId } }),
+      prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId } })
     ])
 
     res.json({
@@ -158,21 +162,30 @@ router.get('/student/:studentId', authenticate, async (req, res, next) => {
       ? Math.round((validAverages.reduce((a, b) => a + b, 0) / validAverages.length) * 100) / 100
       : null
 
-    // Ranking (among classmates)
+    // Ranking (among classmates) - use per-subject averages to match overallAverage logic
     let ranking = null
     if (student.classId && semesterId) {
       const classmates = await prisma.student.findMany({
-        where: { classId: student.classId, isActive: true },
+        where: { classId: student.classId, tenantId: req.tenantId, isActive: true },
         include: { scores: { where: { semesterId }, include: { scoreComponent: true } } }
       })
 
       const classmateAverages = classmates.map(cm => {
-        let sum = 0; let weight = 0
+        // Group scores by subject
+        const bySubject = {}
         for (const s of cm.scores) {
-          sum += s.value * s.scoreComponent.weight
-          weight += s.scoreComponent.weight
+          if (!bySubject[s.subjectId]) bySubject[s.subjectId] = []
+          bySubject[s.subjectId].push(s)
         }
-        return { id: cm.id, average: weight > 0 ? sum / weight : 0 }
+        // Per-subject weighted average, then overall average
+        const subjectAvgs = []
+        for (const scores of Object.values(bySubject)) {
+          let wSum = 0; let wTotal = 0
+          for (const s of scores) { wSum += s.value * s.scoreComponent.weight; wTotal += s.scoreComponent.weight }
+          if (wTotal > 0) subjectAvgs.push(wSum / wTotal)
+        }
+        const avg = subjectAvgs.length > 0 ? subjectAvgs.reduce((a, b) => a + b, 0) / subjectAvgs.length : 0
+        return { id: cm.id, average: avg }
       }).sort((a, b) => b.average - a.average)
 
       ranking = classmateAverages.findIndex(c => c.id === student.id) + 1
@@ -184,7 +197,7 @@ router.get('/student/:studentId', authenticate, async (req, res, next) => {
         subjectScores,
         overallAverage,
         ranking,
-        totalStudents: student.classId ? await prisma.student.count({ where: { classId: student.classId, isActive: true } }) : null
+        totalStudents: student.classId ? await prisma.student.count({ where: { classId: student.classId, tenantId: req.tenantId, isActive: true } }) : null
       }
     })
   } catch (error) {
@@ -242,10 +255,27 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), [
       }
     }
 
-    const studentCheck = await prisma.student.findFirst({
-      where: { id: studentId, tenantId: req.tenantId }
-    })
+    const [studentCheck, subjectCheck, semesterCheck, componentCheck] = await Promise.all([
+      prisma.student.findFirst({ where: { id: studentId, tenantId: req.tenantId } }),
+      prisma.subject.findFirst({ where: { id: subjectId, tenantId: req.tenantId } }),
+      prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId } }),
+      prisma.scoreComponent.findFirst({ where: { id: scoreComponentId, tenantId: req.tenantId } })
+    ])
     if (!studentCheck) throw new AppError('Student not found in your school', 404, 'NOT_FOUND')
+    if (!subjectCheck) throw new AppError('Subject not found', 404, 'NOT_FOUND')
+    if (!semesterCheck) throw new AppError('Semester not found', 404, 'NOT_FOUND')
+    if (!componentCheck) throw new AppError('Score component not found', 404, 'NOT_FOUND')
+
+    // Enforce semester date window for teachers
+    if (req.user.role === 'TEACHER' && semesterCheck.startDate && semesterCheck.endDate) {
+      const now = new Date()
+      if (now < new Date(semesterCheck.startDate) || now > new Date(semesterCheck.endDate)) {
+        throw new AppError(
+          'Ngoài thời gian nhập điểm cho học kỳ này',
+          403, 'SEMESTER_CLOSED'
+        )
+      }
+    }
 
     const score = await prisma.score.upsert({
       where: {
@@ -284,6 +314,25 @@ router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER')
       }
     }
 
+    // Enforce semester date window for teachers (batch)
+    if (req.user.role === 'TEACHER' && scores.length > 0) {
+      const semesterIds = [...new Set(scores.map(s => s.semesterId))]
+      const semesters = await prisma.semester.findMany({
+        where: { id: { in: semesterIds }, tenantId: req.tenantId }
+      })
+      const now = new Date()
+      for (const sem of semesters) {
+        if (sem.startDate && sem.endDate) {
+          if (now < new Date(sem.startDate) || now > new Date(sem.endDate)) {
+            throw new AppError(
+              `Ngoài thời gian nhập điểm cho học kỳ ${sem.name}`,
+              403, 'SEMESTER_CLOSED'
+            )
+          }
+        }
+      }
+    }
+
     if (req.user.role === 'TEACHER') {
       // Collect unique studentId+subjectId pairs to validate assignments
       const pairsToCheck = new Map()
@@ -295,7 +344,7 @@ router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER')
       }
 
       for (const { studentId, subjectId } of pairsToCheck.values()) {
-        const student = await prisma.student.findUnique({ where: { id: studentId } })
+        const student = await prisma.student.findFirst({ where: { id: studentId, tenantId: req.tenantId } })
         if (!student || !student.classId) {
           throw new AppError('Student not found or not assigned to a class', 400, 'INVALID_STUDENT')
         }
@@ -391,8 +440,11 @@ router.post('/class/:classId/lock', authenticate, authorize('SUPER_ADMIN', 'STAF
       throw new AppError('subjectId and semesterId are required', 400, 'MISSING_PARAMS')
     }
 
+    const classCheck = await prisma.class.findFirst({ where: { id: req.params.classId, tenantId: req.tenantId } })
+    if (!classCheck) throw new AppError('Class not found', 404, 'NOT_FOUND')
+
     const students = await prisma.student.findMany({
-      where: { classId: req.params.classId },
+      where: { classId: req.params.classId, tenantId: req.tenantId },
       select: { id: true }
     })
 
@@ -421,8 +473,11 @@ router.post('/class/:classId/unlock', authenticate, authorize('SUPER_ADMIN', 'ST
       throw new AppError('subjectId and semesterId are required', 400, 'MISSING_PARAMS')
     }
 
+    const classCheck = await prisma.class.findFirst({ where: { id: req.params.classId, tenantId: req.tenantId } })
+    if (!classCheck) throw new AppError('Class not found', 404, 'NOT_FOUND')
+
     const students = await prisma.student.findMany({
-      where: { classId: req.params.classId },
+      where: { classId: req.params.classId, tenantId: req.tenantId },
       select: { id: true }
     })
 
@@ -445,6 +500,11 @@ router.post('/class/:classId/unlock', authenticate, authorize('SUPER_ADMIN', 'ST
 // DELETE /scores/:id
 router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
+    const existing = await prisma.score.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existing) throw new AppError('Score not found', 404, 'NOT_FOUND')
+
     await prisma.score.delete({ where: { id: req.params.id } })
     res.json({ data: { message: 'Score deleted' } })
   } catch (error) {
@@ -473,26 +533,36 @@ router.get('/student/:studentId/yearly', authenticate, async (req, res, next) =>
       orderBy: { semesterNum: 'asc' }
     })
 
-    const sem1 = semesters.find(s => s.semesterNum === 1)
-    const sem2 = semesters.find(s => s.semesterNum === 2)
+    // Support dynamic number of semesters (not just 1 and 2)
+    const semesterMap = {}
+    for (const sem of semesters) {
+      semesterMap[sem.semesterNum] = sem
+    }
+    const sem1 = semesterMap[1]
+    const sem2 = semesterMap[2]
 
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
 
-    // Get all scores for both semesters
-    const semesterIds = [sem1?.id, sem2?.id].filter(Boolean)
+    // Get all scores for ALL semesters of this year
+    const semesterIds = semesters.map(s => s.id)
     const scores = await prisma.score.findMany({
       where: { studentId, semesterId: { in: semesterIds } },
       include: { scoreComponent: true, subject: true }
     })
 
-    // Group by subject then by semester
+    // Group by subject then by semester (support dynamic semester count)
     const subjectMap = {}
     for (const s of scores) {
       if (!subjectMap[s.subjectId]) {
-        subjectMap[s.subjectId] = { subject: s.subject, sem1: [], sem2: [] }
+        subjectMap[s.subjectId] = { subject: s.subject, semesters: {} }
       }
-      if (sem1 && s.semesterId === sem1.id) subjectMap[s.subjectId].sem1.push(s)
-      if (sem2 && s.semesterId === sem2.id) subjectMap[s.subjectId].sem2.push(s)
+      const sem = semesters.find(sem => sem.id === s.semesterId)
+      if (sem) {
+        if (!subjectMap[s.subjectId].semesters[sem.semesterNum]) {
+          subjectMap[s.subjectId].semesters[sem.semesterNum] = []
+        }
+        subjectMap[s.subjectId].semesters[sem.semesterNum].push(s)
+      }
     }
 
     const calcWeightedAvg = (scores) => {
@@ -506,12 +576,16 @@ router.get('/student/:studentId/yearly', authenticate, async (req, res, next) =>
       return totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) / 100 : null
     }
 
-    const subjects = Object.values(subjectMap).map(({ subject, sem1: s1, sem2: s2 }) => {
-      const semester1Average = calcWeightedAvg(s1)
-      const semester2Average = calcWeightedAvg(s2)
-      const yearlyAverage = semester1Average != null && semester2Average != null
-        ? Math.round(((semester1Average + semester2Average) / 2) * 100) / 100
-        : semester1Average ?? semester2Average
+    const subjects = Object.values(subjectMap).map(({ subject, semesters: semScores }) => {
+      const semester1Average = calcWeightedAvg(semScores[1] || [])
+      const semester2Average = calcWeightedAvg(semScores[2] || [])
+      
+      // Calculate yearly average from all available semesters
+      const allSemAvgs = Object.values(semScores).map(scores => calcWeightedAvg(scores)).filter(v => v != null)
+      const yearlyAverage = allSemAvgs.length > 0
+        ? Math.round((allSemAvgs.reduce((a, b) => a + b, 0) / allSemAvgs.length) * 100) / 100
+        : null
+      
       return {
         subject: { id: subject.id, name: subject.name },
         semester1Average,

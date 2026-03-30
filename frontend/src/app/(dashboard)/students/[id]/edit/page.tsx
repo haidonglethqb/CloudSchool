@@ -97,7 +97,6 @@ export default function StudentEditPage() {
         parentPhone: formData.parentPhone || undefined,
         address: formData.address || undefined,
         email: formData.email || undefined,
-        classId: formData.classId || undefined,
       })
       toast.success('Cập nhật họ sinh thành công')
       router.push(`/students/${id}`)
@@ -229,17 +228,14 @@ export default function StudentEditPage() {
             />
           </div>
 
-          {/* Grade & Class */}
+          {/* Grade & Class (read-only - use transfer function) */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Khối</label>
               <select
-                className="input"
+                className="input bg-gray-50 cursor-not-allowed"
                 value={selectedGrade}
-                onChange={(e) => {
-                  setSelectedGrade(e.target.value)
-                  setFormData({ ...formData, classId: '' })
-                }}
+                disabled
               >
                 <option value="">Chọn khối</option>
                 {grades.map((grade) => (
@@ -252,9 +248,9 @@ export default function StudentEditPage() {
             <div>
               <label className="label">Lớp</label>
               <select
-                className="input"
+                className="input bg-gray-50 cursor-not-allowed"
                 value={formData.classId}
-                onChange={(e) => setFormData({ ...formData, classId: e.target.value })}
+                disabled
               >
                 <option value="">Chọn lớp</option>
                 {filteredClasses.map((cls) => (
@@ -263,6 +259,7 @@ export default function StudentEditPage() {
                   </option>
                 ))}
               </select>
+              <p className="text-xs text-gray-500 mt-1">Để đổi lớp, sử dụng chức năng &quot;Chuyển lớp&quot; ở trang chi tiết.</p>
             </div>
           </div>
 

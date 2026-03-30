@@ -41,6 +41,9 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
 
     const { name, weight, subjectId } = req.body
 
+    const subject = await prisma.subject.findFirst({ where: { id: subjectId, tenantId: req.tenantId } })
+    if (!subject) throw new AppError('Subject not found', 404, 'NOT_FOUND')
+
     // Validate total weight for subject <= 100
     const existing = await prisma.scoreComponent.findMany({
       where: { tenantId: req.tenantId, subjectId }
@@ -71,7 +74,9 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
   try {
     const { name, weight } = req.body
 
-    const current = await prisma.scoreComponent.findUnique({ where: { id: req.params.id } })
+    const current = await prisma.scoreComponent.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
     if (!current) throw new AppError('Not found', 404, 'NOT_FOUND')
 
     // Validate total weight
@@ -100,6 +105,11 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
 // DELETE /score-components/:id
 router.delete('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
+    const existing = await prisma.scoreComponent.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existing) throw new AppError('Not found', 404, 'NOT_FOUND')
+
     // Check if scores exist for this component
     const scoreCount = await prisma.score.count({ where: { scoreComponentId: req.params.id } })
     if (scoreCount > 0) {

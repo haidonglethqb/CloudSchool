@@ -71,10 +71,11 @@ router.get('/my-children/:studentId/scores', authorize('PARENT'), async (req, re
     })
     if (!link) throw new AppError('Access denied', 403, 'FORBIDDEN')
 
-    const student = await prisma.student.findUnique({
-      where: { id: studentId },
+    const student = await prisma.student.findFirst({
+      where: { id: studentId, tenantId: req.user.tenantId },
       include: { class: { include: { grade: true } } }
     })
+    if (!student) throw new AppError('Student not found', 404, 'NOT_FOUND')
 
     const where = { studentId }
     if (semesterId) where.semesterId = semesterId

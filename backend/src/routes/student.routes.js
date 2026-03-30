@@ -145,17 +145,32 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
           where: { tenantId: req.tenantId, isActive: true }
         })
         if (activeSemester) {
-          const academicYear = activeSemester.academicYearId
-            ? { academicYearId: activeSemester.academicYearId }
-            : {}
-          if (academicYear.academicYearId) {
+          // Find or infer academicYearId
+          let academicYearId = activeSemester.academicYearId
+          if (!academicYearId) {
+            // Try to find matching academic year by year string (e.g., "2024-2025")
+            const yearMatch = activeSemester.year.match(/(\d{4})-(\d{4})/)
+            if (yearMatch) {
+              const [, startYear, endYear] = yearMatch
+              const ay = await tx.academicYear.findFirst({
+                where: {
+                  tenantId: req.tenantId,
+                  startYear: parseInt(startYear),
+                  endYear: parseInt(endYear)
+                }
+              })
+              academicYearId = ay?.id
+            }
+          }
+          // Create enrollment only if we have academicYearId
+          if (academicYearId) {
             await tx.classEnrollment.create({
               data: {
                 tenantId: req.tenantId,
                 studentId: newStudent.id,
                 classId,
                 semesterId: activeSemester.id,
-                ...academicYear
+                academicYearId
               }
             })
           }
@@ -189,21 +204,16 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
     if (email !== undefined) updateData.email = email
     if (admissionDate) updateData.admissionDate = new Date(admissionDate)
 
-    // Check class capacity if transferring
-    if (classId) {
-      const cls = await prisma.class.findFirst({
-        where: { id: classId, tenantId: req.tenantId },
-        include: { _count: { select: { students: true } } }
-      })
-      if (cls && cls._count.students >= cls.capacity) {
-        throw new AppError(`Class ${cls.name} is full`, 400, 'CLASS_FULL')
-      }
-    }
-
     const existingStudent = await prisma.student.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId }
     })
     if (!existingStudent) throw new AppError('Student not found', 404, 'NOT_FOUND')
+
+    // Prevent classId change via PUT - must use transfer endpoint
+    if (classId !== undefined && classId !== existingStudent.classId) {
+      throw new AppError('Không thể đổi lớp qua API này. Hãy sử dụng chức năng chuyển lớp.', 400, 'USE_TRANSFER')
+    }
+    delete updateData.classId
 
     const student = await prisma.student.update({
       where: { id: req.params.id },
@@ -253,6 +263,10 @@ router.post('/:id/transfer', authenticate, authorize('SUPER_ADMIN', 'STAFF'), as
     })
     if (!currentStudent) throw new AppError('Student not found', 404, 'NOT_FOUND')
 
+    if (!currentStudent.isActive) {
+      throw new AppError('Cannot transfer inactive student', 400, 'STUDENT_INACTIVE')
+    }
+
     const fromClassId = currentStudent.classId
     if (fromClassId === classId) {
       throw new AppError('Student is already in this class', 400, 'SAME_CLASS')
@@ -273,45 +287,70 @@ router.post('/:id/transfer', authenticate, authorize('SUPER_ADMIN', 'STAFF'), as
       where: { tenantId: req.tenantId, isActive: true }
     })
 
-    // Update student and record transfer history in a transaction
-    const [student, transferRecord] = await prisma.$transaction([
-      prisma.student.update({
+    // Update student, record transfer, and update enrollment in a single transaction
+    await prisma.$transaction(async (tx) => {
+      await tx.student.update({
         where: { id: req.params.id },
         data: { classId },
         include: { class: { include: { grade: true } } }
-      }),
-      ...(fromClassId ? [prisma.transferHistory.create({
-        data: {
-          tenantId: req.tenantId,
-          studentId: req.params.id,
-          fromClassId,
-          toClassId: classId,
-          semesterId: activeSemester?.id || null,
-          reason: reason || null,
-          transferredBy: req.user.id
-        }
-      })] : [])
-    ])
-
-    // Create enrollment for new class
-    if (activeSemester && activeSemester.academicYearId) {
-      await prisma.classEnrollment.upsert({
-        where: {
-          studentId_semesterId: {
-            studentId: req.params.id,
-            semesterId: activeSemester.id
-          }
-        },
-        create: {
-          tenantId: req.tenantId,
-          studentId: req.params.id,
-          classId,
-          semesterId: activeSemester.id,
-          academicYearId: activeSemester.academicYearId
-        },
-        update: { classId }
       })
-    }
+
+      if (fromClassId) {
+        await tx.transferHistory.create({
+          data: {
+            tenantId: req.tenantId,
+            studentId: req.params.id,
+            fromClassId,
+            toClassId: classId,
+            semesterId: activeSemester?.id || null,
+            reason: reason || null,
+            transferredBy: req.user.id
+          }
+        })
+      }
+
+      // Create/update enrollment for new class
+      if (activeSemester) {
+        let academicYearId = activeSemester.academicYearId
+        if (!academicYearId) {
+          const yearMatch = activeSemester.year.match(/(\d{4})-(\d{4})/)
+          if (yearMatch) {
+            const [, startYear, endYear] = yearMatch
+            const ay = await tx.academicYear.findFirst({
+              where: {
+                tenantId: req.tenantId,
+                startYear: parseInt(startYear),
+                endYear: parseInt(endYear)
+              }
+            })
+            academicYearId = ay?.id
+          }
+        }
+        if (academicYearId) {
+          await tx.classEnrollment.upsert({
+            where: {
+              studentId_semesterId: {
+                studentId: req.params.id,
+                semesterId: activeSemester.id
+              }
+            },
+            create: {
+              tenantId: req.tenantId,
+              studentId: req.params.id,
+              classId,
+              semesterId: activeSemester.id,
+              academicYearId
+            },
+            update: { classId }
+          })
+        }
+      }
+    })
+
+    const student = await prisma.student.findUnique({
+      where: { id: req.params.id },
+      include: { class: { include: { grade: true } } }
+    })
 
     // Log activity
     await prisma.activityLog.create({

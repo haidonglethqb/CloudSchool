@@ -31,20 +31,38 @@ router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res
   }
 })
 
-// POST /promotion/calculate - Calculate promotions for a class
+// POST /promotion/calculate - Calculate promotions for a class or all classes
 router.post('/calculate', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
     const { classId, semesterId } = req.body
 
-    if (!classId || !semesterId) {
-      throw new AppError('classId and semesterId are required', 400, 'MISSING_PARAMS')
+    if (!semesterId) {
+      throw new AppError('semesterId is required', 400, 'MISSING_PARAMS')
+    }
+
+    // Validate semester belongs to this tenant
+    const semesterCheck = await prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId } })
+    if (!semesterCheck) throw new AppError('Semester not found', 404, 'NOT_FOUND')
+
+    // If classId provided, validate it; otherwise calculate for all classes
+    let classIds = []
+    if (classId) {
+      const classCheck = await prisma.class.findFirst({ where: { id: classId, tenantId: req.tenantId } })
+      if (!classCheck) throw new AppError('Class not found', 404, 'NOT_FOUND')
+      classIds = [classId]
+    } else {
+      const allClasses = await prisma.class.findMany({
+        where: { tenantId: req.tenantId, isActive: true },
+        select: { id: true }
+      })
+      classIds = allClasses.map(c => c.id)
     }
 
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
 
-    // Get all students in class
+    // Get all students in target classes
     const students = await prisma.student.findMany({
-      where: { classId, isActive: true },
+      where: { classId: { in: classIds }, tenantId: req.tenantId, isActive: true },
       include: {
         scores: {
           where: { semesterId },
@@ -67,7 +85,7 @@ router.post('/calculate', authenticate, authorize('SUPER_ADMIN'), async (req, re
 
       // Calculate weighted average per subject
       const subjectAverages = []
-      for (const [subjectId, scores] of Object.entries(subjectScores)) {
+      for (const [, scores] of Object.entries(subjectScores)) {
         let weightedSum = 0
         let totalWeight = 0
         for (const s of scores) {
@@ -82,7 +100,10 @@ router.post('/calculate', authenticate, authorize('SUPER_ADMIN'), async (req, re
       // Overall average
       const average = subjectAverages.length > 0
         ? Math.round((subjectAverages.reduce((a, b) => a + b, 0) / subjectAverages.length) * 100) / 100
-        : 0
+        : null
+
+      // Skip students with no scores
+      if (average === null) continue
 
       // Determine result
       let result = 'PASS'
@@ -92,7 +113,7 @@ router.post('/calculate', authenticate, authorize('SUPER_ADMIN'), async (req, re
         result = 'RETAKE'
       }
 
-      results.push({ studentId: student.id, classId, semesterId, average, result })
+      results.push({ studentId: student.id, classId: student.classId, semesterId, average, result })
     }
 
     // Upsert promotions
@@ -150,6 +171,11 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next
     if (!['PASS', 'FAIL', 'RETAKE'].includes(result)) {
       throw new AppError('Invalid result', 400, 'INVALID_RESULT')
     }
+
+    const existing = await prisma.promotion.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existing) throw new AppError('Promotion not found', 404, 'NOT_FOUND')
 
     const promotion = await prisma.promotion.update({
       where: { id: req.params.id },

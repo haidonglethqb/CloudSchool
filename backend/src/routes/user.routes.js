@@ -164,6 +164,16 @@ router.put('/:id/assignments', authenticate, authorize('SUPER_ADMIN'), async (re
     })
     if (!targetUser) throw new AppError('Teacher not found', 404, 'NOT_FOUND')
 
+    // Validate all classIds and subjectIds belong to this tenant
+    const classIds = [...new Set(assignments.map(a => a.classId))]
+    const subjectIds = [...new Set(assignments.map(a => a.subjectId))]
+    const [validClasses, validSubjects] = await Promise.all([
+      prisma.class.findMany({ where: { id: { in: classIds }, tenantId: req.tenantId }, select: { id: true } }),
+      prisma.subject.findMany({ where: { id: { in: subjectIds }, tenantId: req.tenantId }, select: { id: true } })
+    ])
+    if (validClasses.length !== classIds.length) throw new AppError('One or more classes not found', 404, 'NOT_FOUND')
+    if (validSubjects.length !== subjectIds.length) throw new AppError('One or more subjects not found', 404, 'NOT_FOUND')
+
     // Delete all existing assignments for this teacher
     await prisma.teacherAssignment.deleteMany({
       where: { teacherId: req.params.id },

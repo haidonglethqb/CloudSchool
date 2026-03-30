@@ -254,6 +254,7 @@ model Semester {
   promotions Promotion[]
   fees       Fee[]
   enrollments ClassEnrollment[]
+  transferHistories TransferHistory[]
 
   @@unique([tenantId, year, semesterNum])
   @@map("semesters")
@@ -387,6 +388,7 @@ model TransferHistory {
   toClassId     String
   toClass       Class    @relation("TransferTo", fields: [toClassId], references: [id], onDelete: Cascade)
   semesterId    String?
+  semester      Semester? @relation(fields: [semesterId], references: [id])
   reason        String?
   transferredBy String?
   createdAt     DateTime @default(now())

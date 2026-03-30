@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { promotionApi, classApi, subjectApi } from '@/lib/api'
-import { Loader2, AlertCircle, Calculator, CheckCircle, XCircle, RotateCcw, Pencil } from 'lucide-react'
+import { Loader2, AlertCircle, Calculator, CheckCircle, XCircle, RotateCcw, Pencil, ArrowUpRight, Archive } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface Semester {
@@ -26,7 +26,7 @@ interface PromotionRow {
   }
   class: { name: string }
   semester: { name: string }
-  averageScore: number | null
+  average: number | null
   result: 'PASS' | 'FAIL' | 'RETAKE'
   updatedAt: string
 }
@@ -48,6 +48,11 @@ export default function PromotionPage() {
   const [calculating, setCalculating] = useState(false)
   const [overrideId, setOverrideId] = useState<string | null>(null)
   const [overrideResult, setOverrideResult] = useState<string>('')
+  const [promoting, setPromoting] = useState(false)
+  const [promoteResult, setPromoteResult] = useState<{
+    promoted: any[]; graduated: any[]; retained: any[];
+    summary: { totalPromoted: number; totalGraduated: number; totalRetained: number }
+  } | null>(null)
 
   useEffect(() => {
     Promise.all([subjectApi.getSemesters(), classApi.list()])
@@ -104,6 +109,23 @@ export default function PromotionPage() {
     }
   }
 
+  const handlePromote = async () => {
+    if (!selectedSemester) { toast.error('Vui lòng chọn học kỳ'); return }
+    if (!confirm('Xác nhận chuyển lớp cuối năm? Học sinh PASS sẽ lên lớp, FAIL sẽ lưu ban, lớp 12 PASS sẽ tốt nghiệp.')) return
+    try {
+      setPromoting(true)
+      const nextYear = new Date().getFullYear()
+      const res = await promotionApi.promote({
+        semesterId: selectedSemester,
+        newAcademicYear: nextYear,
+      })
+      setPromoteResult(res.data.data)
+      toast.success('Chuyển lớp cuối năm thành công')
+    } catch (err: any) {
+      toast.error(err.response?.data?.error?.message || 'Lỗi chuyển lớp')
+    } finally { setPromoting(false) }
+  }
+
   if (loading) {
     return <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
   }
@@ -122,10 +144,18 @@ export default function PromotionPage() {
           <h1 className="text-2xl font-bold text-gray-900">Xét lên lớp</h1>
           <p className="text-gray-600 text-sm mt-1">Tính điểm TB và xét kết quả lên lớp cho học sinh</p>
         </div>
-        <button onClick={handleCalculate} disabled={calculating || !selectedSemester} className="btn-primary">
-          {calculating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Calculator className="w-4 h-4 mr-2" />}
-          Xét lên lớp
-        </button>
+        <div className="flex gap-2">
+          <button onClick={handleCalculate} disabled={calculating || !selectedSemester} className="btn-primary">
+            {calculating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Calculator className="w-4 h-4 mr-2" />}
+            Xét lên lớp
+          </button>
+          {stats.total > 0 && (
+            <button onClick={handlePromote} disabled={promoting || !selectedSemester} className="btn-primary bg-emerald-600 hover:bg-emerald-700">
+              {promoting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ArrowUpRight className="w-4 h-4 mr-2" />}
+              Chuyển lớp cuối năm
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
@@ -170,6 +200,37 @@ export default function PromotionPage() {
         </div>
       )}
 
+      {/* Year-end promote results */}
+      {promoteResult && (
+        <div className="card p-6 space-y-4 border-l-4 border-emerald-500">
+          <h2 className="text-lg font-bold text-gray-900">Kết quả chuyển lớp cuối năm</h2>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="p-3 bg-green-50 rounded-lg">
+              <p className="text-2xl font-bold text-green-600">{promoteResult.summary.totalPromoted}</p>
+              <p className="text-sm text-gray-600">Lên lớp</p>
+            </div>
+            <div className="p-3 bg-blue-50 rounded-lg">
+              <p className="text-2xl font-bold text-blue-600">{promoteResult.summary.totalGraduated}</p>
+              <p className="text-sm text-gray-600">Tốt nghiệp</p>
+            </div>
+            <div className="p-3 bg-yellow-50 rounded-lg">
+              <p className="text-2xl font-bold text-yellow-600">{promoteResult.summary.totalRetained}</p>
+              <p className="text-sm text-gray-600">Lưu ban</p>
+            </div>
+          </div>
+          {promoteResult.graduated.length > 0 && (
+            <div>
+              <h3 className="font-semibold text-gray-700 mb-2">Học sinh tốt nghiệp</h3>
+              <ul className="text-sm text-gray-600 space-y-1">
+                {promoteResult.graduated.map((g: any) => (
+                  <li key={g.student.id}>{g.student.fullName} ({g.student.studentCode}) - {g.fromClass}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Table */}
       {!selectedSemester ? (
         <div className="card p-8 text-center">
@@ -208,7 +269,7 @@ export default function PromotionPage() {
                       <td className="table-cell font-medium">{p.student.fullName}</td>
                       <td className="table-cell">{p.class.name}</td>
                       <td className="table-cell text-center font-semibold">
-                        {p.averageScore !== null ? p.averageScore.toFixed(2) : '-'}
+                        {p.average !== null ? p.average.toFixed(2) : '-'}
                       </td>
                       <td className="table-cell text-center">
                         {overrideId === p.id ? (

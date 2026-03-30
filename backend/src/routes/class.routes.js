@@ -108,6 +108,9 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
 
     const { name, gradeId, academicYear, capacity } = req.body
 
+    const grade = await prisma.grade.findFirst({ where: { id: gradeId, tenantId: req.tenantId } })
+    if (!grade) throw new AppError('Grade not found', 404, 'GRADE_NOT_FOUND')
+
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
 
     const classInfo = await prisma.class.create({
@@ -136,6 +139,12 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
       where: { id: req.params.id, tenantId: req.tenantId }
     })
     if (!existingClass) throw new AppError('Class not found', 404, 'NOT_FOUND')
+
+    // Validate gradeId belongs to this tenant
+    if (gradeId && gradeId !== existingClass.gradeId) {
+      const grade = await prisma.grade.findFirst({ where: { id: gradeId, tenantId: req.tenantId } })
+      if (!grade) throw new AppError('Grade not found', 404, 'GRADE_NOT_FOUND')
+    }
 
     const classInfo = await prisma.class.update({
       where: { id: req.params.id },

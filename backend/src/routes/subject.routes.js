@@ -28,7 +28,8 @@ router.get('/semesters/list', authenticate, semesterListHandler)
 router.post('/semesters', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
   body('name').notEmpty(),
   body('year').notEmpty(),
-  body('semesterNum').isInt({ min: 1 })
+  body('semesterNum').isInt({ min: 1 }),
+  body('academicYearId').optional()
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req)
@@ -36,7 +37,13 @@ router.post('/semesters', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
       return res.status(400).json({ error: { code: 'VALIDATION_ERROR', details: errors.array() } })
     }
 
-    const { name, year, semesterNum, startDate, endDate } = req.body
+    const { name, year, semesterNum, startDate, endDate, academicYearId } = req.body
+
+    // Validate academicYearId belongs to this tenant
+    if (academicYearId) {
+      const ay = await prisma.academicYear.findFirst({ where: { id: academicYearId, tenantId: req.tenantId } })
+      if (!ay) throw new AppError('Academic year not found', 404, 'NOT_FOUND')
+    }
 
     // QĐ8: Enforce maxSemesters from settings
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
@@ -58,7 +65,8 @@ router.post('/semesters', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
         tenantId: req.tenantId,
         name, year, semesterNum,
         startDate: startDate ? new Date(startDate) : null,
-        endDate: endDate ? new Date(endDate) : null
+        endDate: endDate ? new Date(endDate) : null,
+        academicYearId: academicYearId || null
       }
     })
 
@@ -71,6 +79,11 @@ router.post('/semesters', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
 // PATCH /subjects/semesters/:id
 router.patch('/semesters/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
+    const existing = await prisma.semester.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existing) throw new AppError('Semester not found', 404, 'NOT_FOUND')
+
     const { name, year, semesterNum, startDate, endDate, isActive } = req.body
 
     const semester = await prisma.semester.update({
@@ -92,6 +105,11 @@ router.patch('/semesters/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), 
 // DELETE /subjects/semesters/:id
 router.delete('/semesters/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
+    const existing = await prisma.semester.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existing) throw new AppError('Semester not found', 404, 'NOT_FOUND')
+
     const scores = await prisma.score.count({ where: { semesterId: req.params.id } })
     if (scores > 0) throw new AppError('Cannot delete semester with existing scores', 400, 'HAS_SCORES')
 
@@ -197,6 +215,11 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
 // PUT /subjects/:id
 router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
+    const existing = await prisma.subject.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existing) throw new AppError('Subject not found', 404, 'NOT_FOUND')
+
     const { name, code, description, isActive } = req.body
 
     const subject = await prisma.subject.update({
@@ -218,6 +241,11 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
 // DELETE /subjects/:id (soft delete)
 router.delete('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
+    const existing = await prisma.subject.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!existing) throw new AppError('Subject not found', 404, 'NOT_FOUND')
+
     await prisma.subject.update({
       where: { id: req.params.id },
       data: { isActive: false }

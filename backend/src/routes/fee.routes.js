@@ -132,6 +132,20 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
 
     const { name, description, amount, category, isRequired, dueDate, gradeId, classId, semesterId } = req.body
 
+    // Validate referenced entities belong to this tenant
+    if (gradeId) {
+      const grade = await prisma.grade.findFirst({ where: { id: gradeId, tenantId: req.tenantId } })
+      if (!grade) throw new AppError('Grade not found', 404, 'NOT_FOUND')
+    }
+    if (classId) {
+      const cls = await prisma.class.findFirst({ where: { id: classId, tenantId: req.tenantId } })
+      if (!cls) throw new AppError('Class not found', 404, 'NOT_FOUND')
+    }
+    if (semesterId) {
+      const sem = await prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId } })
+      if (!sem) throw new AppError('Semester not found', 404, 'NOT_FOUND')
+    }
+
     const fee = await prisma.fee.create({
       data: {
         tenantId: req.tenantId,

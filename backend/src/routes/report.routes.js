@@ -44,7 +44,7 @@ router.get('/subject-summary', authenticate, async (req, res, next) => {
         }
 
         const scores = await prisma.score.findMany({
-          where: { studentId: { in: studentIds }, subjectId, semesterId },
+          where: { studentId: { in: studentIds }, subjectId, semesterId, tenantId: req.tenantId },
           include: { scoreComponent: true }
         })
 
@@ -76,8 +76,8 @@ router.get('/subject-summary', authenticate, async (req, res, next) => {
     )
 
     const [subject, semester] = await Promise.all([
-      prisma.subject.findUnique({ where: { id: subjectId } }),
-      prisma.semester.findUnique({ where: { id: semesterId } })
+      prisma.subject.findFirst({ where: { id: subjectId, tenantId: req.tenantId } }),
+      prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId } })
     ])
 
     const totalStudents = classStats.reduce((s, c) => s + c.totalStudents, 0)
@@ -123,7 +123,7 @@ router.get('/semester-summary', authenticate, async (req, res, next) => {
         }
 
         const scores = await prisma.score.findMany({
-          where: { studentId: { in: studentIds }, semesterId },
+          where: { studentId: { in: studentIds }, semesterId, tenantId: req.tenantId },
           include: { scoreComponent: true }
         })
 
@@ -163,7 +163,7 @@ router.get('/semester-summary', authenticate, async (req, res, next) => {
       })
     )
 
-    const semester = await prisma.semester.findUnique({ where: { id: semesterId } })
+    const semester = await prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId } })
     const totalStudents = classStats.reduce((s, c) => s + c.totalStudents, 0)
     const totalPassed = classStats.reduce((s, c) => s + c.passedStudents, 0)
     const overallPassRate = totalStudents > 0 ? Math.round((totalPassed / totalStudents) * 10000) / 100 : 0
