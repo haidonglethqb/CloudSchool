@@ -32,35 +32,40 @@ router.get('/system-stats', async (req, res, next) => {
       prisma.user.count({ where: { role: 'STAFF' } })
     ])
 
-    // School growth over last 12 months
+    // School growth over last 12 months (single query instead of 12)
     const now = new Date()
-    const schoolGrowth = []
-    for (let i = 11; i >= 0; i--) {
-      const start = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
-      const count = await prisma.tenant.count({
-        where: { createdAt: { gte: start, lt: end } }
-      })
-      schoolGrowth.push({
-        month: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`,
-        label: `T${start.getMonth() + 1}/${start.getFullYear() % 100}`,
-        count
-      })
-    }
+    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1)
 
-    // Student growth over last 12 months
+    const [schoolGrowthRaw, studentGrowthRaw] = await Promise.all([
+      prisma.$queryRaw`
+        SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') as month,
+               count(*)::int as count
+        FROM tenants
+        WHERE "createdAt" >= ${twelveMonthsAgo}
+        GROUP BY date_trunc('month', "createdAt")
+        ORDER BY date_trunc('month', "createdAt")
+      `,
+      prisma.$queryRaw`
+        SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') as month,
+               count(*)::int as count
+        FROM students
+        WHERE "createdAt" >= ${twelveMonthsAgo}
+        GROUP BY date_trunc('month', "createdAt")
+        ORDER BY date_trunc('month', "createdAt")
+      `
+    ])
+
+    // Build full 12-month arrays with zero-fills
+    const schoolGrowthMap = new Map(schoolGrowthRaw.map(r => [r.month, r.count]))
+    const studentGrowthMap = new Map(studentGrowthRaw.map(r => [r.month, r.count]))
+    const schoolGrowth = []
     const studentGrowth = []
     for (let i = 11; i >= 0; i--) {
-      const start = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
-      const count = await prisma.student.count({
-        where: { createdAt: { gte: start, lt: end } }
-      })
-      studentGrowth.push({
-        month: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`,
-        label: `T${start.getMonth() + 1}/${start.getFullYear() % 100}`,
-        count
-      })
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const label = `T${d.getMonth() + 1}/${d.getFullYear() % 100}`
+      schoolGrowth.push({ month: key, label, count: schoolGrowthMap.get(key) || 0 })
+      studentGrowth.push({ month: key, label, count: studentGrowthMap.get(key) || 0 })
     }
 
     // Top schools by student count

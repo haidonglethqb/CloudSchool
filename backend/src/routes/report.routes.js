@@ -127,17 +127,25 @@ router.get('/semester-summary', authenticate, async (req, res, next) => {
           include: { scoreComponent: true }
         })
 
+        // Pre-build Map: studentId → subjectId → scores[]
+        const scoreMap = new Map()
+        for (const s of scores) {
+          if (!scoreMap.has(s.studentId)) scoreMap.set(s.studentId, new Map())
+          const subjMap = scoreMap.get(s.studentId)
+          if (!subjMap.has(s.subjectId)) subjMap.set(s.subjectId, [])
+          subjMap.get(s.subjectId).push(s)
+        }
+
         let passedCount = 0
         let totalAvg = 0
         let withScores = 0
 
         for (const sid of studentIds) {
-          const studentScores = scores.filter(s => s.studentId === sid)
+          const subjMap = scoreMap.get(sid)
+          if (!subjMap) continue
 
-          // Average across all subjects
           const subjectAverages = []
-          for (const subj of subjects) {
-            const subjScores = studentScores.filter(s => s.subjectId === subj.id)
+          for (const subjScores of subjMap.values()) {
             const avg = calcWeightedAverage(subjScores)
             if (avg !== null) subjectAverages.push(avg)
           }
@@ -283,14 +291,15 @@ router.get('/retention-report', authenticate, authorize('SUPER_ADMIN', 'STAFF'),
       }
     })
 
-    // Count total FAIL records per student (across all semesters)
-    const studentFailCounts = {}
-    const allFails = await prisma.promotion.findMany({
+    // Count total FAIL records per student using groupBy (instead of loading all records)
+    const failCountsRaw = await prisma.promotion.groupBy({
+      by: ['studentId'],
       where: { tenantId: req.tenantId, result: 'FAIL' },
-      select: { studentId: true }
+      _count: { _all: true }
     })
-    for (const f of allFails) {
-      studentFailCounts[f.studentId] = (studentFailCounts[f.studentId] || 0) + 1
+    const studentFailCounts = {}
+    for (const f of failCountsRaw) {
+      studentFailCounts[f.studentId] = f._count._all
     }
 
     const retentions = failPromotions.map(p => ({

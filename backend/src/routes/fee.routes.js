@@ -27,27 +27,37 @@ router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res
       orderBy: { createdAt: 'desc' },
     })
 
-    const feesWithStats = await Promise.all(
-      fees.map(async (fee) => {
-        const stats = await prisma.studentFee.aggregate({
-          where: { feeId: fee.id },
-          _sum: { paidAmount: true, amount: true },
-          _count: { _all: true },
-        })
-        const paidCount = await prisma.studentFee.count({
-          where: { feeId: fee.id, status: 'PAID' },
-        })
-        return {
-          ...fee,
-          stats: {
-            totalStudents: stats._count._all,
-            totalAmount: stats._sum.amount || 0,
-            totalPaid: stats._sum.paidAmount || 0,
-            paidCount,
-          },
-        }
+    // Batch aggregate stats for all fees at once
+    const feeIds = fees.map(f => f.id)
+    const [aggregateStats, paidCounts] = await Promise.all([
+      prisma.studentFee.groupBy({
+        by: ['feeId'],
+        where: { feeId: { in: feeIds } },
+        _sum: { paidAmount: true, amount: true },
+        _count: { _all: true },
+      }),
+      prisma.studentFee.groupBy({
+        by: ['feeId'],
+        where: { feeId: { in: feeIds }, status: 'PAID' },
+        _count: { _all: true },
       })
-    )
+    ])
+
+    const statsMap = new Map(aggregateStats.map(s => [s.feeId, s]))
+    const paidMap = new Map(paidCounts.map(s => [s.feeId, s._count._all]))
+
+    const feesWithStats = fees.map(fee => {
+      const stats = statsMap.get(fee.id)
+      return {
+        ...fee,
+        stats: {
+          totalStudents: stats?._count._all || 0,
+          totalAmount: stats?._sum.amount || 0,
+          totalPaid: stats?._sum.paidAmount || 0,
+          paidCount: paidMap.get(fee.id) || 0,
+        },
+      }
+    })
 
     res.json({ data: feesWithStats })
   } catch (error) {
@@ -69,7 +79,7 @@ router.get('/parent/my-fees', authenticate, authorize('PARENT'), async (req, res
     }
 
     const studentFees = await prisma.studentFee.findMany({
-      where: { studentId: { in: studentIds } },
+      where: { studentId: { in: studentIds }, tenantId: req.tenantId },
       include: {
         fee: {
           select: {
@@ -146,52 +156,56 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
       if (!sem) throw new AppError('Semester not found', 404, 'NOT_FOUND')
     }
 
-    const fee = await prisma.fee.create({
-      data: {
-        tenantId: req.tenantId,
-        name,
-        description,
-        amount,
-        category,
-        isRequired: isRequired !== false,
-        dueDate: dueDate ? new Date(dueDate) : null,
-        gradeId: gradeId || null,
-        classId: classId || null,
-        semesterId: semesterId || null,
-      },
-      include: {
-        grade: { select: { id: true, name: true } },
-        class: { select: { id: true, name: true } },
-        semester: { select: { id: true, name: true } },
-      },
-    })
-
-    // Auto-assign to applicable students
-    const studentWhere = { tenantId: req.tenantId, isActive: true }
-    if (classId) {
-      studentWhere.classId = classId
-    } else if (gradeId) {
-      studentWhere.class = { gradeId }
-    }
-
-    const students = await prisma.student.findMany({
-      where: studentWhere,
-      select: { id: true },
-    })
-
-    if (students.length > 0) {
-      await prisma.studentFee.createMany({
-        data: students.map(s => ({
+    const { fee, assignedCount } = await prisma.$transaction(async (tx) => {
+      const fee = await tx.fee.create({
+        data: {
           tenantId: req.tenantId,
-          feeId: fee.id,
-          studentId: s.id,
-          amount: fee.amount,
-        })),
-        skipDuplicates: true,
+          name,
+          description,
+          amount,
+          category,
+          isRequired: isRequired !== false,
+          dueDate: dueDate ? new Date(dueDate) : null,
+          gradeId: gradeId || null,
+          classId: classId || null,
+          semesterId: semesterId || null,
+        },
+        include: {
+          grade: { select: { id: true, name: true } },
+          class: { select: { id: true, name: true } },
+          semester: { select: { id: true, name: true } },
+        },
       })
-    }
 
-    res.status(201).json({ data: fee, assignedCount: students.length })
+      // Auto-assign to applicable students
+      const studentWhere = { tenantId: req.tenantId, isActive: true }
+      if (classId) {
+        studentWhere.classId = classId
+      } else if (gradeId) {
+        studentWhere.class = { gradeId }
+      }
+
+      const students = await tx.student.findMany({
+        where: studentWhere,
+        select: { id: true },
+      })
+
+      if (students.length > 0) {
+        await tx.studentFee.createMany({
+          data: students.map(s => ({
+            tenantId: req.tenantId,
+            feeId: fee.id,
+            studentId: s.id,
+            amount: fee.amount,
+          })),
+          skipDuplicates: true,
+        })
+      }
+
+      return { fee, assignedCount: students.length }
+    })
+
+    res.status(201).json({ data: fee, assignedCount })
   } catch (error) {
     next(error)
   }

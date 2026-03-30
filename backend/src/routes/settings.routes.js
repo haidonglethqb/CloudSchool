@@ -1,7 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const prisma = require('../lib/prisma')
-const { authenticate, authorize } = require('../middleware/auth')
+const { authenticate, authorize, invalidateSettingsCache } = require('../middleware/auth')
 const { body, param, validationResult } = require('express-validator')
 const { AppError } = require('../middleware/errorHandler')
 
@@ -85,6 +85,7 @@ router.put('/', authenticate, authorize('SUPER_ADMIN'), [
       data: updateData
     })
 
+    invalidateSettingsCache(req.tenantId)
     res.json({ data: settings })
   } catch (error) {
     next(error)
@@ -150,6 +151,7 @@ router.put('/role-permissions', authenticate, authorize('SUPER_ADMIN'), [
       data: { rolePermissions: permissions }
     })
 
+    invalidateSettingsCache(req.tenantId)
     res.json({ data: settings.rolePermissions })
   } catch (error) {
     next(error)

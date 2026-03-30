@@ -3,6 +3,7 @@ const cors = require('cors')
 const helmet = require('helmet')
 const morgan = require('morgan')
 const cookieParser = require('cookie-parser')
+const rateLimit = require('express-rate-limit')
 require('dotenv').config()
 
 const authRoutes = require('./routes/auth.routes')
@@ -27,20 +28,43 @@ const { errorHandler } = require('./middleware/errorHandler')
 
 const app = express()
 
+// Global rate limiter: 200 req/min per IP
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { code: 'TOO_MANY_REQUESTS', message: 'Too many requests, please try again later' } }
+})
+
 // Middleware
+app.use(globalLimiter)
 app.use(helmet())
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true
 }))
 app.use(morgan('dev'))
-app.use(express.json())
+app.use(express.json({ limit: '1mb' }))
 app.use(express.urlencoded({ extended: true }))
 app.use(cookieParser())
 
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
+
+// Route-specific rate limiters
+const exportLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { error: { code: 'TOO_MANY_REQUESTS', message: 'Export rate limit exceeded' } }
+})
+
+const monitoringLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 4,
+  message: { error: { code: 'TOO_MANY_REQUESTS', message: 'Monitoring rate limit exceeded' } }
 })
 
 // API Routes
@@ -58,8 +82,8 @@ app.use('/api/promotion', yearEndPromotionRoutes)
 app.use('/api/reports', reportRoutes)
 app.use('/api/settings', settingsRoutes)
 app.use('/api/parents', parentRoutes)
-app.use('/api/export', exportRoutes)
-app.use('/api/monitoring', monitoringRoutes)
+app.use('/api/export', exportLimiter, exportRoutes)
+app.use('/api/monitoring', monitoringLimiter, monitoringRoutes)
 app.use('/api/fees', feeRoutes)
 app.use('/api/academic-years', academicYearRoutes)
 

@@ -116,10 +116,11 @@ router.post('/calculate', authenticate, authorize('SUPER_ADMIN'), async (req, re
       results.push({ studentId: student.id, classId: student.classId, semesterId, average, result })
     }
 
-    // Upsert promotions
-    const promotions = await Promise.all(
-      results.map(r =>
-        prisma.promotion.upsert({
+    // Upsert promotions and handle retentions atomically
+    const promotions = await prisma.$transaction(async (tx) => {
+      const upserted = []
+      for (const r of results) {
+        const p = await tx.promotion.upsert({
           where: {
             studentId_classId_semesterId: {
               studentId: r.studentId,
@@ -134,28 +135,37 @@ router.post('/calculate', authenticate, authorize('SUPER_ADMIN'), async (req, re
             class: { select: { id: true, name: true } }
           }
         })
-      )
-    )
-
-    // QĐ9: Auto-deactivate students who exceeded maxRetentions
-    for (const p of promotions) {
-      if (p.result !== 'FAIL') continue
-
-      const failCount = await prisma.promotion.count({
-        where: { studentId: p.studentId, tenantId: req.tenantId, result: 'FAIL' }
-      })
-
-      if (failCount >= settings.maxRetentions) {
-        await prisma.student.update({
-          where: { id: p.studentId },
-          data: { isActive: false }
-        })
-        await prisma.promotion.update({
-          where: { id: p.id },
-          data: { note: `Ngừng tiếp nhận - vượt quá ${settings.maxRetentions} lần lưu ban` }
-        })
+        upserted.push(p)
       }
-    }
+
+      // QĐ9: Auto-deactivate students who exceeded maxRetentions (batch)
+      const failStudentIds = upserted.filter(p => p.result === 'FAIL').map(p => p.studentId)
+      if (failStudentIds.length > 0) {
+        const failCounts = await tx.promotion.groupBy({
+          by: ['studentId'],
+          where: { studentId: { in: failStudentIds }, tenantId: req.tenantId, result: 'FAIL' },
+          _count: { _all: true }
+        })
+
+        for (const fc of failCounts) {
+          if (fc._count._all >= settings.maxRetentions) {
+            await tx.student.update({
+              where: { id: fc.studentId },
+              data: { isActive: false }
+            })
+            const promo = upserted.find(p => p.studentId === fc.studentId)
+            if (promo) {
+              await tx.promotion.update({
+                where: { id: promo.id },
+                data: { note: `Ngừng tiếp nhận - vượt quá ${settings.maxRetentions} lần lưu ban` }
+              })
+            }
+          }
+        }
+      }
+
+      return upserted
+    })
 
     res.json({ data: promotions })
   } catch (error) {

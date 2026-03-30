@@ -172,19 +172,19 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), async
     }
 
     const students = await prisma.student.findMany({
-      where: { classId, isActive: true },
+      where: { classId, tenantId: req.tenantId, isActive: true },
       orderBy: { fullName: 'asc' }
     })
 
     const scoreComponents = await prisma.scoreComponent.findMany({
-      where: { subjectId },
+      where: { subjectId, tenantId: req.tenantId },
       orderBy: { weight: 'desc' }
     })
 
     const [classInfo, subject, semester] = await Promise.all([
-      prisma.class.findUnique({ where: { id: classId }, include: { grade: true } }),
-      prisma.subject.findUnique({ where: { id: subjectId } }),
-      prisma.semester.findUnique({ where: { id: semesterId } })
+      prisma.class.findFirst({ where: { id: classId, tenantId: req.tenantId }, include: { grade: true } }),
+      prisma.subject.findFirst({ where: { id: subjectId, tenantId: req.tenantId } }),
+      prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId } })
     ])
 
     const headers = ['STT', 'Mã HS', 'Họ tên', ...scoreComponents.map(sc => `${sc.name} (${sc.weight}%)`), 'ĐTB']
@@ -194,7 +194,8 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), async
       where: {
         studentId: { in: students.map(s => s.id) },
         subjectId,
-        semesterId
+        semesterId,
+        tenantId: req.tenantId
       }
     })
     const scoresByStudent = {}

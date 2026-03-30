@@ -3,9 +3,22 @@ const router = express.Router()
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const { body, validationResult } = require('express-validator')
+const rateLimit = require('express-rate-limit')
 const prisma = require('../lib/prisma')
 const { AppError } = require('../middleware/errorHandler')
 const { authenticate } = require('../middleware/auth')
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: { code: 'TOO_MANY_REQUESTS', message: 'Too many login attempts, try again later' } }
+})
+
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { error: { code: 'TOO_MANY_REQUESTS', message: 'Too many registrations, try again later' } }
+})
 
 const generateToken = (user) => {
   return jwt.sign(
@@ -24,7 +37,7 @@ const setTokenCookie = (res, token) => {
 }
 
 // POST /auth/login
-router.post('/login', [
+router.post('/login', loginLimiter, [
   body('email').isEmail().withMessage('Invalid email'),
   body('password').notEmpty().withMessage('Password is required')
 ], async (req, res, next) => {
@@ -125,7 +138,7 @@ router.get('/plans', async (req, res, next) => {
 })
 
 // POST /auth/register-school
-router.post('/register-school', [
+router.post('/register-school', registerLimiter, [
   body('schoolName').notEmpty().withMessage('School name is required'),
   body('adminEmail').optional().isEmail(),
   body('email').optional().isEmail(),

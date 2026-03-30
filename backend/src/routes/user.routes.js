@@ -3,7 +3,7 @@ const router = express.Router()
 const bcrypt = require('bcryptjs')
 const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
-const { authenticate, authorize } = require('../middleware/auth')
+const { authenticate, authorize, invalidateUserCache } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
 
 // GET /users - List users (SUPER_ADMIN, STAFF)
@@ -127,6 +127,7 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next
       select: { id: true, email: true, fullName: true, role: true, department: true, isActive: true }
     })
 
+    invalidateUserCache(req.params.id)
     res.json({ data: user })
   } catch (error) {
     next(error)
@@ -141,10 +142,11 @@ router.patch('/:id/disable', authenticate, authorize('SUPER_ADMIN'), async (req,
     })
     if (!existingUser) throw new AppError('User not found', 404, 'NOT_FOUND')
 
-    const user = await prisma.user.update({
+    await prisma.user.update({
       where: { id: req.params.id },
       data: { isActive: false }
     })
+    invalidateUserCache(req.params.id)
     res.json({ data: { message: 'User disabled' } })
   } catch (error) {
     next(error)
@@ -174,24 +176,25 @@ router.put('/:id/assignments', authenticate, authorize('SUPER_ADMIN'), async (re
     if (validClasses.length !== classIds.length) throw new AppError('One or more classes not found', 404, 'NOT_FOUND')
     if (validSubjects.length !== subjectIds.length) throw new AppError('One or more subjects not found', 404, 'NOT_FOUND')
 
-    // Delete all existing assignments for this teacher
-    await prisma.teacherAssignment.deleteMany({
-      where: { teacherId: req.params.id },
-    })
-
-    // Create new assignments
-    if (assignments.length > 0) {
-      await prisma.teacherAssignment.createMany({
-        data: assignments.map(a => ({
-          tenantId: req.tenantId,
-          teacherId: req.params.id,
-          classId: a.classId,
-          subjectId: a.subjectId,
-          isHomeroom: a.isHomeroom || false,
-        })),
-        skipDuplicates: true,
+    // Delete all existing assignments for this teacher, then create new ones atomically
+    await prisma.$transaction(async (tx) => {
+      await tx.teacherAssignment.deleteMany({
+        where: { teacherId: req.params.id, tenantId: req.tenantId },
       })
-    }
+
+      if (assignments.length > 0) {
+        await tx.teacherAssignment.createMany({
+          data: assignments.map(a => ({
+            tenantId: req.tenantId,
+            teacherId: req.params.id,
+            classId: a.classId,
+            subjectId: a.subjectId,
+            isHomeroom: a.isHomeroom || false,
+          })),
+          skipDuplicates: true,
+        })
+      }
+    })
 
     const updated = await prisma.user.findFirst({
       where: { id: req.params.id },
@@ -221,6 +224,7 @@ router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, n
     if (!existingUser) throw new AppError('User not found', 404, 'NOT_FOUND')
 
     await prisma.user.delete({ where: { id: req.params.id } })
+    invalidateUserCache(req.params.id)
     res.json({ data: { message: 'User deleted' } })
   } catch (error) {
     next(error)

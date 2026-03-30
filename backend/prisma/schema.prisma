@@ -153,6 +153,7 @@ model User {
   studentProfile     Student?         @relation("StudentUser")
 
   @@unique([tenantId, email])
+  @@index([tenantId, role])
   @@map("users")
 }
 
@@ -170,6 +171,7 @@ model Grade {
   updatedAt DateTime @updatedAt
 
   @@unique([tenantId, level])
+  @@index([tenantId])
   @@map("grades")
 }
 
@@ -195,6 +197,8 @@ model Class {
   enrollments        ClassEnrollment[]
 
   @@unique([tenantId, name, academicYear])
+  @@index([tenantId, gradeId])
+  @@index([tenantId, isActive])
   @@map("classes")
 }
 
@@ -213,6 +217,8 @@ model TeacherAssignment {
   updatedAt DateTime @updatedAt
 
   @@unique([teacherId, classId, subjectId])
+  @@index([tenantId, teacherId])
+  @@index([classId, tenantId])
   @@map("teacher_assignments")
 }
 
@@ -257,6 +263,7 @@ model Semester {
   transferHistories TransferHistory[]
 
   @@unique([tenantId, year, semesterNum])
+  @@index([tenantId, isActive])
   @@map("semesters")
 }
 
@@ -350,6 +357,7 @@ model Score {
   @@unique([studentId, subjectId, semesterId, scoreComponentId])
   @@index([tenantId, subjectId, semesterId])
   @@index([studentId, subjectId, semesterId])
+  @@index([tenantId, studentId])
   @@map("scores")
 }
 
@@ -372,6 +380,8 @@ model Promotion {
   updatedAt  DateTime        @updatedAt
 
   @@unique([studentId, classId, semesterId])
+  @@index([tenantId, studentId, semesterId])
+  @@index([classId, semesterId])
   @@map("promotions")
 }
 
@@ -393,6 +403,8 @@ model TransferHistory {
   transferredBy String?
   createdAt     DateTime @default(now())
 
+  @@index([tenantId, studentId])
+  @@index([semesterId, tenantId])
   @@map("transfer_histories")
 }
 
@@ -429,6 +441,7 @@ model AcademicYear {
   enrollments ClassEnrollment[]
 
   @@unique([tenantId, startYear, endYear])
+  @@index([tenantId])
   @@map("academic_years")
 }
 
@@ -478,6 +491,8 @@ model Fee {
   studentFees StudentFee[]
 
   @@index([tenantId, isActive])
+  @@index([tenantId, gradeId])
+  @@index([tenantId, classId])
   @@map("fees")
 }
 
@@ -500,5 +515,6 @@ model StudentFee {
   @@unique([feeId, studentId])
   @@index([tenantId, studentId])
   @@index([tenantId, status])
+  @@index([feeId, tenantId])
   @@map("student_fees")
 }

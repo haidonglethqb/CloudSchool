@@ -35,25 +35,37 @@ router.get('/dashboard', async (req, res, next) => {
       prisma.subscriptionPlan.count({ where: { isActive: true } })
     ])
 
-    // School and Student growth over last 6 months (parallelized)
+    // School and Student growth over last 6 months (2 queries instead of 12)
     const now = new Date()
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1)
     const months = Array.from({ length: 6 }, (_, i) => {
-      const start = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
-      const end = new Date(now.getFullYear(), now.getMonth() - (5 - i) + 1, 1)
-      return { start, end, label: `T${start.getMonth() + 1}` }
+      const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
+      return { label: `T${d.getMonth() + 1}`, key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
     })
 
-    const [schoolCounts, studentCounts] = await Promise.all([
-      Promise.all(months.map(m => prisma.tenant.count({
-        where: { createdAt: { gte: m.start, lt: m.end } }
-      }))),
-      Promise.all(months.map(m => prisma.student.count({
-        where: { createdAt: { gte: m.start, lt: m.end } }
-      })))
+    const [schoolGrowthRaw, studentGrowthRaw] = await Promise.all([
+      prisma.$queryRaw`
+        SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') as month,
+               count(*)::int as count
+        FROM tenants
+        WHERE "createdAt" >= ${sixMonthsAgo}
+        GROUP BY date_trunc('month', "createdAt")
+        ORDER BY date_trunc('month', "createdAt")
+      `,
+      prisma.$queryRaw`
+        SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') as month,
+               count(*)::int as count
+        FROM students
+        WHERE "createdAt" >= ${sixMonthsAgo}
+        GROUP BY date_trunc('month', "createdAt")
+        ORDER BY date_trunc('month', "createdAt")
+      `
     ])
 
-    const schoolGrowth = months.map((m, i) => ({ month: m.label, count: schoolCounts[i] }))
-    const studentGrowth = months.map((m, i) => ({ month: m.label, count: studentCounts[i] }))
+    const schoolMap = new Map(schoolGrowthRaw.map(r => [r.month, r.count]))
+    const studentMap = new Map(studentGrowthRaw.map(r => [r.month, r.count]))
+    const schoolGrowth = months.map(m => ({ month: m.label, count: schoolMap.get(m.key) || 0 }))
+    const studentGrowth = months.map(m => ({ month: m.label, count: studentMap.get(m.key) || 0 }))
 
     res.json({
       data: {

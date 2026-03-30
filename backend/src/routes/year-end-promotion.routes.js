@@ -39,17 +39,16 @@ router.post('/promote', authenticate, authorize('SUPER_ADMIN'), async (req, res,
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
     const maxGradeLevel = settings.maxGradeLevel
 
-    const [passPromotions, failPromotions, grades] = await Promise.all([
+    const [allPromotions, grades] = await Promise.all([
       prisma.promotion.findMany({
-        where: { tenantId: req.tenantId, semesterId, result: 'PASS' },
-        include: { student: true, class: { include: { grade: true } } }
-      }),
-      prisma.promotion.findMany({
-        where: { tenantId: req.tenantId, semesterId, result: 'FAIL' },
-        include: { student: true, class: { include: { grade: true } } }
+        where: { tenantId: req.tenantId, semesterId },
+        include: { student: { select: { id: true, fullName: true, studentCode: true, classId: true } }, class: { include: { grade: true } } }
       }),
       prisma.grade.findMany({ where: { tenantId: req.tenantId }, orderBy: { level: 'asc' } })
     ])
+
+    const passPromotions = allPromotions.filter(p => p.result === 'PASS')
+    const failPromotions = allPromotions.filter(p => p.result === 'FAIL')
 
     const gradeByLevel = {}
     for (const g of grades) gradeByLevel[g.level] = g
@@ -61,10 +60,11 @@ router.post('/promote', authenticate, authorize('SUPER_ADMIN'), async (req, res,
     const promoted = []
     const graduated = []
     const retained = []
+    const classCache = new Map()
 
     await prisma.$transaction(async (tx) => {
-      await processPassStudents(tx, passPromotions, { req, maxGradeLevel, gradeByLevel, yearStr, settings, semesterId, promoted, graduated })
-      await processFailStudents(tx, failPromotions, { req, gradeByLevel, yearStr, settings, semesterId, retained })
+      await processPassStudents(tx, passPromotions, { req, maxGradeLevel, gradeByLevel, yearStr, settings, semesterId, promoted, graduated, classCache })
+      await processFailStudents(tx, failPromotions, { req, gradeByLevel, yearStr, settings, semesterId, retained, classCache })
     })
 
     await prisma.activityLog.create({
@@ -84,7 +84,7 @@ router.post('/promote', authenticate, authorize('SUPER_ADMIN'), async (req, res,
 })
 
 async function processPassStudents(tx, passPromotions, ctx) {
-  const { req, maxGradeLevel, gradeByLevel, yearStr, settings, semesterId, promoted, graduated } = ctx
+  const { req, maxGradeLevel, gradeByLevel, yearStr, settings, semesterId, promoted, graduated, classCache } = ctx
 
   for (const p of passPromotions) {
     const currentLevel = p.class.grade.level
@@ -103,7 +103,7 @@ async function processPassStudents(tx, passPromotions, ctx) {
 
     const baseName = p.class.name.replace(/-LB$/i, '').trim()
     const nextClassName = baseName.replace(/\d+/, String(currentLevel + 1))
-    let targetClass = await findOrCreateClass(tx, req.tenantId, nextGrade.id, nextClassName, yearStr, settings.maxClassSize)
+    let targetClass = await findOrCreateClassCached(tx, req.tenantId, nextGrade.id, nextClassName, yearStr, settings.maxClassSize, classCache)
 
     await tx.student.update({ where: { id: p.studentId }, data: { classId: targetClass.id } })
 
@@ -124,14 +124,14 @@ async function processPassStudents(tx, passPromotions, ctx) {
 }
 
 async function processFailStudents(tx, failPromotions, ctx) {
-  const { req, gradeByLevel, yearStr, settings, semesterId, retained } = ctx
+  const { req, gradeByLevel, yearStr, settings, semesterId, retained, classCache } = ctx
 
   for (const p of failPromotions) {
     const currentGrade = gradeByLevel[p.class.grade.level]
     if (!currentGrade) continue
 
     const retainBaseName = p.class.name.replace(/-LB$/i, '').trim()
-    let targetClass = await findOrCreateClass(tx, req.tenantId, currentGrade.id, `${retainBaseName}-LB`, yearStr, settings.maxClassSize)
+    let targetClass = await findOrCreateClassCached(tx, req.tenantId, currentGrade.id, `${retainBaseName}-LB`, yearStr, settings.maxClassSize, classCache)
 
     await tx.student.update({ where: { id: p.studentId }, data: { classId: targetClass.id } })
 
@@ -149,6 +149,14 @@ async function processFailStudents(tx, failPromotions, ctx) {
       fromClass: p.class.name, toClass: targetClass.name, grade: p.class.grade.name
     })
   }
+}
+
+async function findOrCreateClassCached(tx, tenantId, gradeId, name, academicYear, capacity, cache) {
+  const key = `${tenantId}::${gradeId}::${name}::${academicYear}`
+  if (cache.has(key)) return cache.get(key)
+  const cls = await findOrCreateClass(tx, tenantId, gradeId, name, academicYear, capacity)
+  cache.set(key, cls)
+  return cls
 }
 
 async function findOrCreateClass(tx, tenantId, gradeId, name, academicYear, capacity) {

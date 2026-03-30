@@ -40,7 +40,7 @@ router.get('/', authenticate, async (req, res, next) => {
     // Teacher only sees assigned classes
     if (req.user.role === 'TEACHER') {
       const assignments = await prisma.teacherAssignment.findMany({
-        where: { teacherId: req.user.id },
+        where: { teacherId: req.user.id, tenantId: req.tenantId },
         select: { classId: true }
       })
       where.id = { in: assignments.map(a => a.classId) }

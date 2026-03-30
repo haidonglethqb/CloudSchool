@@ -17,7 +17,7 @@ router.get('/class/:classId', authenticate, async (req, res, next) => {
     // Teacher can only see assigned classes
     if (req.user.role === 'TEACHER') {
       const assignment = await prisma.teacherAssignment.findFirst({
-        where: { teacherId: req.user.id, classId: req.params.classId, subjectId }
+        where: { teacherId: req.user.id, classId: req.params.classId, subjectId, tenantId: req.tenantId }
       })
       if (!assignment) {
         throw new AppError('Not assigned to this class/subject', 403, 'FORBIDDEN')
@@ -164,31 +164,34 @@ router.get('/student/:studentId', authenticate, async (req, res, next) => {
 
     // Ranking (among classmates) - use per-subject averages to match overallAverage logic
     let ranking = null
+    let totalStudents = null
     if (student.classId && semesterId) {
-      const classmates = await prisma.student.findMany({
-        where: { classId: student.classId, tenantId: req.tenantId, isActive: true },
-        include: { scores: { where: { semesterId }, include: { scoreComponent: true } } }
+      const classmateScores = await prisma.score.findMany({
+        where: { student: { classId: student.classId, tenantId: req.tenantId, isActive: true }, semesterId, tenantId: req.tenantId },
+        select: { studentId: true, subjectId: true, value: true, scoreComponent: { select: { weight: true } } }
       })
 
-      const classmateAverages = classmates.map(cm => {
-        // Group scores by subject
-        const bySubject = {}
-        for (const s of cm.scores) {
-          if (!bySubject[s.subjectId]) bySubject[s.subjectId] = []
-          bySubject[s.subjectId].push(s)
-        }
-        // Per-subject weighted average, then overall average
+      // Group by student → subject
+      const byStudent = {}
+      for (const s of classmateScores) {
+        if (!byStudent[s.studentId]) byStudent[s.studentId] = {}
+        if (!byStudent[s.studentId][s.subjectId]) byStudent[s.studentId][s.subjectId] = []
+        byStudent[s.studentId][s.subjectId].push(s)
+      }
+
+      const classmateAverages = Object.entries(byStudent).map(([id, subjects]) => {
         const subjectAvgs = []
-        for (const scores of Object.values(bySubject)) {
+        for (const scores of Object.values(subjects)) {
           let wSum = 0; let wTotal = 0
           for (const s of scores) { wSum += s.value * s.scoreComponent.weight; wTotal += s.scoreComponent.weight }
           if (wTotal > 0) subjectAvgs.push(wSum / wTotal)
         }
         const avg = subjectAvgs.length > 0 ? subjectAvgs.reduce((a, b) => a + b, 0) / subjectAvgs.length : 0
-        return { id: cm.id, average: avg }
+        return { id, average: avg }
       }).sort((a, b) => b.average - a.average)
 
       ranking = classmateAverages.findIndex(c => c.id === student.id) + 1
+      totalStudents = classmateAverages.length
     }
 
     res.json({
@@ -197,7 +200,7 @@ router.get('/student/:studentId', authenticate, async (req, res, next) => {
         subjectScores,
         overallAverage,
         ranking,
-        totalStudents: student.classId ? await prisma.student.count({ where: { classId: student.classId, tenantId: req.tenantId, isActive: true } }) : null
+        totalStudents
       }
     })
   } catch (error) {
@@ -248,7 +251,7 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), [
       const student = await prisma.student.findFirst({ where: { id: studentId, tenantId: req.tenantId } })
       if (!student) throw new AppError('Student not found', 404, 'NOT_FOUND')
       const assignment = await prisma.teacherAssignment.findFirst({
-        where: { teacherId: req.user.id, classId: student.classId, subjectId }
+        where: { teacherId: req.user.id, classId: student.classId, subjectId, tenantId: req.tenantId }
       })
       if (!assignment) {
         throw new AppError('Not assigned to this class/subject', 403, 'FORBIDDEN')
@@ -334,7 +337,7 @@ router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER')
     }
 
     if (req.user.role === 'TEACHER') {
-      // Collect unique studentId+subjectId pairs to validate assignments
+      // Batch validate all student+subject pairs at once
       const pairsToCheck = new Map()
       for (const s of scores) {
         const key = `${s.studentId}::${s.subjectId}`
@@ -343,15 +346,26 @@ router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER')
         }
       }
 
+      const studentIds = [...new Set(scores.map(s => s.studentId))]
+      const batchStudents = await prisma.student.findMany({
+        where: { id: { in: studentIds }, tenantId: req.tenantId },
+        select: { id: true, classId: true }
+      })
+      const studentMap = new Map(batchStudents.map(s => [s.id, s]))
+
+      const classIds = [...new Set(batchStudents.filter(s => s.classId).map(s => s.classId))]
+      const assignments = await prisma.teacherAssignment.findMany({
+        where: { teacherId: req.user.id, classId: { in: classIds }, tenantId: req.tenantId },
+        select: { classId: true, subjectId: true }
+      })
+      const assignmentSet = new Set(assignments.map(a => `${a.classId}::${a.subjectId}`))
+
       for (const { studentId, subjectId } of pairsToCheck.values()) {
-        const student = await prisma.student.findFirst({ where: { id: studentId, tenantId: req.tenantId } })
+        const student = studentMap.get(studentId)
         if (!student || !student.classId) {
           throw new AppError('Student not found or not assigned to a class', 400, 'INVALID_STUDENT')
         }
-        const assignment = await prisma.teacherAssignment.findFirst({
-          where: { teacherId: req.user.id, classId: student.classId, subjectId }
-        })
-        if (!assignment) {
+        if (!assignmentSet.has(`${student.classId}::${subjectId}`)) {
           throw new AppError('Not assigned to this class/subject', 403, 'FORBIDDEN')
         }
       }
@@ -359,6 +373,7 @@ router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER')
       // Check locked scores
       const existingScores = await prisma.score.findMany({
         where: {
+          tenantId: req.tenantId,
           OR: scores.map(s => ({
             studentId: s.studentId,
             subjectId: s.subjectId,
@@ -375,7 +390,7 @@ router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER')
       }
     }
 
-    const results = await Promise.all(
+    const results = await prisma.$transaction(
       scores.map(({ studentId, subjectId, semesterId, scoreComponentId, value }) => {
         return prisma.score.upsert({
           where: {
@@ -546,7 +561,7 @@ router.get('/student/:studentId/yearly', authenticate, async (req, res, next) =>
     // Get all scores for ALL semesters of this year
     const semesterIds = semesters.map(s => s.id)
     const scores = await prisma.score.findMany({
-      where: { studentId, semesterId: { in: semesterIds } },
+      where: { studentId, semesterId: { in: semesterIds }, tenantId: req.tenantId },
       include: { scoreComponent: true, subject: true }
     })
 

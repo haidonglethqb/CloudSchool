@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs')
 const { body, validationResult, param } = require('express-validator')
 const prisma = require('../lib/prisma')
 const { AppError } = require('../middleware/errorHandler')
-const { authenticate, authorize } = require('../middleware/auth')
+const { authenticate, authorize, invalidateUserCache } = require('../middleware/auth')
 
 router.use(authenticate)
 
@@ -77,7 +77,7 @@ router.get('/my-children/:studentId/scores', authorize('PARENT'), async (req, re
     })
     if (!student) throw new AppError('Student not found', 404, 'NOT_FOUND')
 
-    const where = { studentId }
+    const where = { studentId, tenantId: req.user.tenantId }
     if (semesterId) where.semesterId = semesterId
 
     const scores = await prisma.score.findMany({
@@ -235,6 +235,7 @@ router.put('/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => 
     if (password) updateData.password = await bcrypt.hash(password, 10)
 
     const updated = await prisma.user.update({ where: { id: req.params.id }, data: updateData })
+    invalidateUserCache(req.params.id)
     res.json({ data: updated })
   } catch (error) {
     next(error)
@@ -245,6 +246,15 @@ router.put('/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => 
 router.post('/:id/students', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const { studentId, relationship = 'PARENT' } = req.body
+
+    // Validate parent belongs to this tenant
+    const parent = await prisma.user.findFirst({ where: { id: req.params.id, tenantId: req.tenantId, role: 'PARENT' } })
+    if (!parent) throw new AppError('Parent not found', 404, 'NOT_FOUND')
+
+    // Validate student belongs to this tenant
+    const student = await prisma.student.findFirst({ where: { id: studentId, tenantId: req.tenantId } })
+    if (!student) throw new AppError('Student not found', 404, 'NOT_FOUND')
+
     await prisma.parentStudent.create({ data: { parentId: req.params.id, studentId, relationship } })
     res.status(201).json({ data: { message: 'Student linked' } })
   } catch (error) {
@@ -255,6 +265,10 @@ router.post('/:id/students', authorize('SUPER_ADMIN', 'STAFF'), async (req, res,
 // DELETE /parents/:id/students/:studentId - Unlink student
 router.delete('/:id/students/:studentId', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
+    // Validate parent belongs to this tenant
+    const parent = await prisma.user.findFirst({ where: { id: req.params.id, tenantId: req.tenantId, role: 'PARENT' } })
+    if (!parent) throw new AppError('Parent not found', 404, 'NOT_FOUND')
+
     await prisma.parentStudent.delete({
       where: { parentId_studentId: { parentId: req.params.id, studentId: req.params.studentId } }
     })
@@ -270,6 +284,7 @@ router.delete('/:id', authorize('SUPER_ADMIN'), async (req, res, next) => {
     const parent = await prisma.user.findFirst({ where: { id: req.params.id, tenantId: req.tenantId, role: 'PARENT' } })
     if (!parent) throw new AppError('Parent not found', 404, 'NOT_FOUND')
     await prisma.user.delete({ where: { id: req.params.id } })
+    invalidateUserCache(req.params.id)
     res.json({ data: { message: 'Parent deleted' } })
   } catch (error) {
     next(error)
