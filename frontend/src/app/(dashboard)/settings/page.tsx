@@ -20,6 +20,13 @@ interface Settings {
   maxAge: number
   maxClassSize: number
   passScore: number
+  minGradeLevel: number
+  maxGradeLevel: number
+  maxSubjects: number
+  minScore: number
+  maxScore: number
+  maxSemesters: number
+  maxRetentions: number
 }
 
 interface Grade {
@@ -64,6 +71,13 @@ export default function SettingsPage() {
         maxAge: editedSettings.maxAge,
         maxClassSize: editedSettings.maxClassSize,
         passScore: editedSettings.passScore,
+        minGradeLevel: editedSettings.minGradeLevel,
+        maxGradeLevel: editedSettings.maxGradeLevel,
+        maxSubjects: editedSettings.maxSubjects,
+        minScore: editedSettings.minScore,
+        maxScore: editedSettings.maxScore,
+        maxSemesters: editedSettings.maxSemesters,
+        maxRetentions: editedSettings.maxRetentions,
       })
       toast.success('Lưu cài đặt thành công')
       fetchData()
@@ -170,6 +184,72 @@ export default function SettingsPage() {
                 <div className="max-w-xs">
                   <label className="label">Điểm trung bình đạt</label>
                   <input type="number" step="0.1" min="0" max="10" className="input" value={editedSettings.passScore || ''} onChange={e => setEditedSettings({ ...editedSettings, passScore: parseFloat(e.target.value) })} disabled={!isAdmin} />
+                </div>
+              </div>
+
+              {/* Grade Level */}
+              <div className="space-y-4 pt-4 border-t border-gray-100">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <Users className="w-5 h-5 text-primary" />
+                  Quy định khối lớp
+                </h3>
+                <div className="grid grid-cols-2 gap-4 max-w-md">
+                  <div>
+                    <label className="label">Khối tối thiểu</label>
+                    <input type="number" className="input" value={editedSettings.minGradeLevel || ''} onChange={e => setEditedSettings({ ...editedSettings, minGradeLevel: parseInt(e.target.value) })} disabled={!isAdmin} />
+                  </div>
+                  <div>
+                    <label className="label">Khối tối đa</label>
+                    <input type="number" className="input" value={editedSettings.maxGradeLevel || ''} onChange={e => setEditedSettings({ ...editedSettings, maxGradeLevel: parseInt(e.target.value) })} disabled={!isAdmin} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Max Subjects */}
+              <div className="space-y-4 pt-4 border-t border-gray-100">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <Award className="w-5 h-5 text-primary" />
+                  Số môn học tối đa
+                </h3>
+                <div className="max-w-xs">
+                  <label className="label">Số môn/khối</label>
+                  <input type="number" className="input" value={editedSettings.maxSubjects || ''} onChange={e => setEditedSettings({ ...editedSettings, maxSubjects: parseInt(e.target.value) })} disabled={!isAdmin} />
+                </div>
+              </div>
+
+              {/* Score Range */}
+              <div className="space-y-4 pt-4 border-t border-gray-100">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <Award className="w-5 h-5 text-primary" />
+                  Thang điểm
+                </h3>
+                <div className="grid grid-cols-2 gap-4 max-w-md">
+                  <div>
+                    <label className="label">Điểm tối thiểu</label>
+                    <input type="number" step="0.1" className="input" value={editedSettings.minScore ?? ''} onChange={e => setEditedSettings({ ...editedSettings, minScore: parseFloat(e.target.value) })} disabled={!isAdmin} />
+                  </div>
+                  <div>
+                    <label className="label">Điểm tối đa</label>
+                    <input type="number" step="0.1" className="input" value={editedSettings.maxScore || ''} onChange={e => setEditedSettings({ ...editedSettings, maxScore: parseFloat(e.target.value) })} disabled={!isAdmin} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Max Semesters & Retentions */}
+              <div className="space-y-4 pt-4 border-t border-gray-100">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <Award className="w-5 h-5 text-primary" />
+                  Học kỳ và lưu ban
+                </h3>
+                <div className="grid grid-cols-2 gap-4 max-w-md">
+                  <div>
+                    <label className="label">Số học kỳ tối đa</label>
+                    <input type="number" className="input" value={editedSettings.maxSemesters || ''} onChange={e => setEditedSettings({ ...editedSettings, maxSemesters: parseInt(e.target.value) })} disabled={!isAdmin} />
+                  </div>
+                  <div>
+                    <label className="label">Số lần lưu ban tối đa</label>
+                    <input type="number" className="input" value={editedSettings.maxRetentions || ''} onChange={e => setEditedSettings({ ...editedSettings, maxRetentions: parseInt(e.target.value) })} disabled={!isAdmin} />
+                  </div>
                 </div>
               </div>
 

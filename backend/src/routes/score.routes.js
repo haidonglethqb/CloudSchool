@@ -198,7 +198,7 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), [
   body('subjectId').notEmpty(),
   body('semesterId').notEmpty(),
   body('scoreComponentId').notEmpty(),
-  body('value').isFloat({ min: 0, max: 10 }).withMessage('Score must be 0-10')
+  body('value').isFloat().withMessage('Score must be a number')
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req)
@@ -207,6 +207,15 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), [
     }
 
     const { studentId, subjectId, semesterId, scoreComponentId, value } = req.body
+
+    // QĐ6: Validate score range from settings
+    const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    if (value < settings.minScore || value > settings.maxScore) {
+      throw new AppError(
+        `Điểm phải nằm trong khoảng ${settings.minScore}-${settings.maxScore}`,
+        400, 'INVALID_SCORE_RANGE'
+      )
+    }
 
     // Check if score is locked (teachers can't edit locked scores)
     const existingScore = await prisma.score.findUnique({
@@ -267,8 +276,10 @@ router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER')
       throw new AppError('Scores array is required', 400, 'INVALID_INPUT')
     }
 
+    // QĐ6: Validate score range from settings
+    const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
     for (const s of scores) {
-      if (s.value < 0 || s.value > 10) {
+      if (s.value < settings.minScore || s.value > settings.maxScore) {
         throw new AppError(`Invalid score: ${s.value}`, 400, 'INVALID_SCORE')
       }
     }
@@ -436,6 +447,94 @@ router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, n
   try {
     await prisma.score.delete({ where: { id: req.params.id } })
     res.json({ data: { message: 'Score deleted' } })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /scores/student/:studentId/yearly - BM7: Tra cứu điểm cả năm
+router.get('/student/:studentId/yearly', authenticate, async (req, res, next) => {
+  try {
+    const { studentId } = req.params
+    const { year } = req.query
+
+    const student = await prisma.student.findFirst({
+      where: { id: studentId, tenantId: req.tenantId },
+      include: { class: { include: { grade: true } } }
+    })
+    if (!student) throw new AppError('Student not found', 404, 'NOT_FOUND')
+
+    // Find semesters for this year
+    const semesterWhere = { tenantId: req.tenantId }
+    if (year) semesterWhere.year = year
+
+    const semesters = await prisma.semester.findMany({
+      where: semesterWhere,
+      orderBy: { semesterNum: 'asc' }
+    })
+
+    const sem1 = semesters.find(s => s.semesterNum === 1)
+    const sem2 = semesters.find(s => s.semesterNum === 2)
+
+    const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+
+    // Get all scores for both semesters
+    const semesterIds = [sem1?.id, sem2?.id].filter(Boolean)
+    const scores = await prisma.score.findMany({
+      where: { studentId, semesterId: { in: semesterIds } },
+      include: { scoreComponent: true, subject: true }
+    })
+
+    // Group by subject then by semester
+    const subjectMap = {}
+    for (const s of scores) {
+      if (!subjectMap[s.subjectId]) {
+        subjectMap[s.subjectId] = { subject: s.subject, sem1: [], sem2: [] }
+      }
+      if (sem1 && s.semesterId === sem1.id) subjectMap[s.subjectId].sem1.push(s)
+      if (sem2 && s.semesterId === sem2.id) subjectMap[s.subjectId].sem2.push(s)
+    }
+
+    const calcWeightedAvg = (scores) => {
+      if (!scores.length) return null
+      let weightedSum = 0
+      let totalWeight = 0
+      for (const s of scores) {
+        weightedSum += s.value * s.scoreComponent.weight
+        totalWeight += s.scoreComponent.weight
+      }
+      return totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) / 100 : null
+    }
+
+    const subjects = Object.values(subjectMap).map(({ subject, sem1: s1, sem2: s2 }) => {
+      const semester1Average = calcWeightedAvg(s1)
+      const semester2Average = calcWeightedAvg(s2)
+      const yearlyAverage = semester1Average != null && semester2Average != null
+        ? Math.round(((semester1Average + semester2Average) / 2) * 100) / 100
+        : semester1Average ?? semester2Average
+      return {
+        subject: { id: subject.id, name: subject.name },
+        semester1Average,
+        semester2Average,
+        yearlyAverage,
+        isPassed: yearlyAverage != null ? yearlyAverage >= settings.passScore : null
+      }
+    })
+
+    const avg = (vals) => {
+      const valid = vals.filter(v => v != null)
+      return valid.length ? Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 100) / 100 : null
+    }
+
+    res.json({
+      data: {
+        student: { id: student.id, studentCode: student.studentCode, fullName: student.fullName, class: student.class },
+        subjects,
+        overallSemester1: avg(subjects.map(s => s.semester1Average)),
+        overallSemester2: avg(subjects.map(s => s.semester2Average)),
+        overallYearly: avg(subjects.map(s => s.yearlyAverage))
+      }
+    })
   } catch (error) {
     next(error)
   }

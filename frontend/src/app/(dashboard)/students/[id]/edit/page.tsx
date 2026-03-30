@@ -27,6 +27,7 @@ export default function StudentEditPage() {
     parentName: '',
     parentPhone: '',
     address: '',
+    email: '',
     classId: '',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -53,6 +54,7 @@ export default function StudentEditPage() {
           parentName: student.parentName || '',
           parentPhone: student.parentPhone || '',
           address: student.address || '',
+          email: student.email || '',
           classId: student.classId || '',
         })
 
@@ -94,6 +96,7 @@ export default function StudentEditPage() {
         parentName: formData.parentName || undefined,
         parentPhone: formData.parentPhone || undefined,
         address: formData.address || undefined,
+        email: formData.email || undefined,
         classId: formData.classId || undefined,
       })
       toast.success('Cập nhật họ sinh thành công')
@@ -211,6 +214,18 @@ export default function StudentEditPage() {
               className="input"
               value={formData.address}
               onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+            />
+          </div>
+
+          {/* Email */}
+          <div>
+            <label className="label">Email</label>
+            <input
+              type="email"
+              className="input"
+              placeholder="email@example.com"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             />
           </div>
 

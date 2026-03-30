@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { studentApi, classApi, scoreApi, subjectApi } from '@/lib/api'
+import { studentApi, classApi, scoreApi, subjectApi, academicYearApi } from '@/lib/api'
 import { formatDate, getGenderLabel } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
 import {
@@ -102,14 +102,20 @@ export default function StudentDetailPage() {
   const [selectedSemester, setSelectedSemester] = useState('')
   const [scoreData, setScoreData] = useState<ScoreData | null>(null)
   const [loadingScores, setLoadingScores] = useState(false)
+  const [scoreView, setScoreView] = useState<'semester' | 'yearly'>('semester')
+  const [yearlyData, setYearlyData] = useState<any>(null)
+  const [loadingYearly, setLoadingYearly] = useState(false)
+  const [academicYears, setAcademicYears] = useState<Array<{ id: string; startYear: number; endYear: number }>>([])
+  const [selectedYear, setSelectedYear] = useState('')
 
   useEffect(() => {
     const fetchStudent = async () => {
       try {
-        const [response, historyRes, semRes] = await Promise.all([
+        const [response, historyRes, semRes, ayRes] = await Promise.all([
           studentApi.get(id as string),
           studentApi.getTransferHistory(id as string).catch(() => ({ data: { data: [] } })),
           subjectApi.getSemesters().catch(() => ({ data: { data: [] } })),
+          academicYearApi.list().catch(() => ({ data: { data: [] } })),
         ])
         setStudent(response.data.data)
         setTransferHistory(historyRes.data.data || [])
@@ -117,6 +123,9 @@ export default function StudentDetailPage() {
         setSemesters(sems)
         const active = sems.find((s: Semester) => s.isActive)
         if (active) setSelectedSemester(active.id)
+        const ays = ayRes.data.data || []
+        setAcademicYears(ays)
+        if (ays.length > 0) setSelectedYear(`${ays[0].startYear}-${ays[0].endYear}`)
       } catch (error: any) {
         console.error('Failed to fetch student:', error)
         if (error.response?.status === 404) {
@@ -146,6 +155,23 @@ export default function StudentDetailPage() {
   useEffect(() => {
     if (student) fetchScores()
   }, [student, fetchScores])
+
+  const fetchYearly = useCallback(async () => {
+    if (!id || !selectedYear) return
+    setLoadingYearly(true)
+    try {
+      const res = await scoreApi.getYearly(id as string, selectedYear)
+      setYearlyData(res.data.data)
+    } catch {
+      setYearlyData(null)
+    } finally {
+      setLoadingYearly(false)
+    }
+  }, [id, selectedYear])
+
+  useEffect(() => {
+    if (student && scoreView === 'yearly') fetchYearly()
+  }, [student, scoreView, fetchYearly])
 
   const handleTransfer = async () => {
     if (!transferClassId) { toast.error('Vui lòng chọn lớp'); return }
@@ -435,6 +461,31 @@ export default function StudentDetailPage() {
 
           {/* Score Section */}
           <div className="card overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100">
+              <div className="flex border-b border-gray-100 -mb-4">
+                <button
+                  onClick={() => setScoreView('semester')}
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    scoreView === 'semester' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4 inline-block mr-2" />
+                  Bảng điểm theo HK
+                </button>
+                <button
+                  onClick={() => setScoreView('yearly')}
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    scoreView === 'yearly' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <Award className="w-4 h-4 inline-block mr-2" />
+                  BM7 - Bảng điểm cả năm
+                </button>
+              </div>
+            </div>
+
+            {scoreView === 'semester' ? (
+            <>
             <div className="px-6 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-primary" />
@@ -599,6 +650,97 @@ export default function StudentDetailPage() {
                   </table>
                 </div>
               </>
+            )}
+            </>
+            ) : (
+            /* Yearly Score View - BM7 */
+            <div>
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
+                <label className="text-sm font-medium text-gray-700">Năm học:</label>
+                <select
+                  className="input py-1.5 text-sm w-48"
+                  value={selectedYear}
+                  onChange={e => setSelectedYear(e.target.value)}
+                >
+                  {academicYears.map(ay => (
+                    <option key={ay.id} value={`${ay.startYear}-${ay.endYear}`}>
+                      {ay.startYear}-{ay.endYear}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {loadingYearly ? (
+                <div className="p-12 flex justify-center">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : !yearlyData || yearlyData.subjects.length === 0 ? (
+                <div className="p-12 text-center">
+                  <BookOpen className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                  <p className="text-gray-500">Chưa có dữ liệu điểm cả năm</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="table-header">STT</th>
+                        <th className="table-header">Môn học</th>
+                        <th className="table-header text-center">HK I</th>
+                        <th className="table-header text-center">HK II</th>
+                        <th className="table-header text-center">TB cả năm</th>
+                        <th className="table-header text-center">Đạt</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {yearlyData.subjects.map((s: any, idx: number) => (
+                        <tr key={s.subject.id} className="hover:bg-gray-50">
+                          <td className="table-cell text-center">{idx + 1}</td>
+                          <td className="table-cell font-medium">{s.subject.name}</td>
+                          <td className="table-cell text-center">
+                            {s.semester1Average != null ? (
+                              <span className={s.semester1Average >= 5 ? 'text-gray-900' : 'text-red-600'}>{s.semester1Average.toFixed(2)}</span>
+                            ) : '-'}
+                          </td>
+                          <td className="table-cell text-center">
+                            {s.semester2Average != null ? (
+                              <span className={s.semester2Average >= 5 ? 'text-gray-900' : 'text-red-600'}>{s.semester2Average.toFixed(2)}</span>
+                            ) : '-'}
+                          </td>
+                          <td className="table-cell text-center font-bold">
+                            {s.yearlyAverage != null ? (
+                              <span className={s.yearlyAverage >= 5 ? 'text-green-600' : 'text-red-600'}>{s.yearlyAverage.toFixed(2)}</span>
+                            ) : '-'}
+                          </td>
+                          <td className="table-cell text-center">
+                            {s.isPassed != null ? (
+                              s.isPassed ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                  <CheckCircle className="w-3 h-3" /> Đạt
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                                  <XCircle className="w-3 h-3" /> Chưa đạt
+                                </span>
+                              )
+                            ) : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+                        <td className="table-cell" colSpan={2}>Tổng TB</td>
+                        <td className="table-cell text-center">{yearlyData.overallSemester1 != null ? yearlyData.overallSemester1.toFixed(2) : '-'}</td>
+                        <td className="table-cell text-center">{yearlyData.overallSemester2 != null ? yearlyData.overallSemester2.toFixed(2) : '-'}</td>
+                        <td className="table-cell text-center">{yearlyData.overallYearly != null ? yearlyData.overallYearly.toFixed(2) : '-'}</td>
+                        <td className="table-cell"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
             )}
           </div>
         </div>

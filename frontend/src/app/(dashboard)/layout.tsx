@@ -28,6 +28,7 @@ import {
   Activity,
   FileText,
   Download,
+  CalendarRange,
 } from 'lucide-react'
 
 interface MenuItem {
@@ -60,6 +61,7 @@ const superAdminMenu: MenuItem[] = [
   { href: '/parents', icon: UserCheck, label: 'Quản lý Phụ huynh', module: 'parents' },
   { href: '/fees', icon: CreditCard, label: 'Quản lý học phí' },
   { href: '/settings', icon: Settings, label: 'Quy định', module: 'settings' },
+  { href: '/settings/academic-years', icon: CalendarRange, label: 'Năm học', module: 'settings' },
   { href: '/settings/permissions', icon: Layers, label: 'Phân quyền' },
 ]
 

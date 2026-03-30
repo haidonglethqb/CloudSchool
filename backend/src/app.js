@@ -21,6 +21,7 @@ const parentRoutes = require('./routes/parent.routes')
 const exportRoutes = require('./routes/export.routes')
 const monitoringRoutes = require('./routes/monitoring.routes')
 const feeRoutes = require('./routes/fee.routes')
+const academicYearRoutes = require('./routes/academic-year.routes')
 const { errorHandler } = require('./middleware/errorHandler')
 
 const app = express()
@@ -58,6 +59,7 @@ app.use('/api/parents', parentRoutes)
 app.use('/api/export', exportRoutes)
 app.use('/api/monitoring', monitoringRoutes)
 app.use('/api/fees', feeRoutes)
+app.use('/api/academic-years', academicYearRoutes)
 
 // Error handling
 app.use(errorHandler)

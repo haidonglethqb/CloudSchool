@@ -16,6 +16,8 @@ const studentSchema = z.object({
   gender: z.enum(['MALE', 'FEMALE', 'OTHER'], { required_error: 'Chọn giới tính' }),
   dateOfBirth: z.string().min(1, 'Chọn ngày sinh'),
   address: z.string().min(5, 'Địa chỉ ít nhất 5 ký tự'),
+  email: z.string().email('Email không hợp lệ').optional().or(z.literal('')),
+  admissionDate: z.string().optional(),
   parentName: z.string().optional().or(z.literal('')),
   parentPhone: z.string().optional().or(z.literal('')),
   classId: z.string().uuid('Chọn lớp'),
@@ -53,6 +55,8 @@ export default function NewStudentPage() {
     resolver: zodResolver(studentSchema),
     defaultValues: {
       gender: undefined,
+      email: '',
+      admissionDate: new Date().toISOString().split('T')[0],
       parentName: '',
       parentPhone: '',
     },
@@ -116,6 +120,8 @@ export default function NewStudentPage() {
       setSubmitting(true)
       await studentApi.create({
         ...data,
+        email: data.email || undefined,
+        admissionDate: data.admissionDate || undefined,
         parentName: data.parentName || undefined,
         parentPhone: data.parentPhone || undefined,
       })
@@ -230,6 +236,30 @@ export default function NewStudentPage() {
             {errors.address && (
               <p className="text-red-500 text-xs mt-1">{errors.address.message}</p>
             )}
+          </div>
+
+          {/* Email & Admission Date */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Email</label>
+              <input
+                type="email"
+                className={`input ${errors.email ? 'border-red-500' : ''}`}
+                placeholder="email@example.com"
+                {...register('email')}
+              />
+              {errors.email && (
+                <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>
+              )}
+            </div>
+            <div>
+              <label className="label">Ngày tiếp nhận</label>
+              <input
+                type="date"
+                className="input"
+                {...register('admissionDate')}
+              />
+            </div>
           </div>
 
           {/* Phụ huynh */}

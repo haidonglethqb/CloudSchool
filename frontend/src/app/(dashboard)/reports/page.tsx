@@ -10,6 +10,8 @@ import {
   TrendingUp,
   TrendingDown,
   AlertCircle,
+  ArrowRightLeft,
+  UserX,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -49,7 +51,25 @@ interface ReportData {
   }
 }
 
-type ReportType = 'subject' | 'semester'
+type ReportType = 'subject' | 'semester' | 'transfer' | 'retention'
+
+interface TransferEntry {
+  id: string
+  reason: string | null
+  createdAt: string
+  student: { id: string; studentCode: string; fullName: string }
+  fromClass: { id: string; name: string } | null
+  toClass: { id: string; name: string } | null
+  semester: { id: string; name: string; year: string } | null
+}
+
+interface RetentionEntry {
+  student: { id: string; studentCode: string; fullName: string; isActive: boolean }
+  class: { id: string; name: string }
+  semester: { id: string; name: string; year: string }
+  retentionCount: number
+  handling: string
+}
 
 export default function ReportsPage() {
   const [reportType, setReportType] = useState<ReportType>('subject')
@@ -58,6 +78,8 @@ export default function ReportsPage() {
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedSemester, setSelectedSemester] = useState('')
   const [reportData, setReportData] = useState<ReportData | null>(null)
+  const [transferData, setTransferData] = useState<TransferEntry[] | null>(null)
+  const [retentionData, setRetentionData] = useState<{ retentions: RetentionEntry[]; maxRetentions: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingReport, setLoadingReport] = useState(false)
 
@@ -88,7 +110,7 @@ export default function ReportsPage() {
   }, [])
 
   const fetchReport = async () => {
-    if (!selectedSemester) {
+    if (!selectedSemester && reportType !== 'transfer') {
       toast.error('Vui lòng chọn học kỳ')
       return
     }
@@ -100,15 +122,28 @@ export default function ReportsPage() {
 
     try {
       setLoadingReport(true)
-      let response
 
-      if (reportType === 'subject') {
-        response = await reportApi.subjectSummary(selectedSubject, selectedSemester)
+      if (reportType === 'transfer') {
+        const response = await reportApi.transferReport({ semesterId: selectedSemester || undefined })
+        setTransferData(response.data.data.transfers)
+        setReportData(null)
+        setRetentionData(null)
+      } else if (reportType === 'retention') {
+        const response = await reportApi.retentionReport({ semesterId: selectedSemester || undefined })
+        setRetentionData(response.data.data)
+        setReportData(null)
+        setTransferData(null)
       } else {
-        response = await reportApi.semesterSummary(selectedSemester)
+        let response
+        if (reportType === 'subject') {
+          response = await reportApi.subjectSummary(selectedSubject, selectedSemester)
+        } else {
+          response = await reportApi.semesterSummary(selectedSemester)
+        }
+        setReportData(response.data.data)
+        setTransferData(null)
+        setRetentionData(null)
       }
-
-      setReportData(response.data.data)
     } catch (error: any) {
       console.error('Failed to fetch report:', error)
       toast.error('Không thể tải báo cáo')
@@ -142,6 +177,8 @@ export default function ReportsPage() {
             onClick={() => {
               setReportType('subject')
               setReportData(null)
+              setTransferData(null)
+              setRetentionData(null)
             }}
             className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
               reportType === 'subject'
@@ -150,12 +187,14 @@ export default function ReportsPage() {
             }`}
           >
             <FileText className="w-4 h-4 inline-block mr-2" />
-            BM5.1 - Tổng kết môn học
+            BM5.1 - Tổng kết môn
           </button>
           <button
             onClick={() => {
               setReportType('semester')
               setReportData(null)
+              setTransferData(null)
+              setRetentionData(null)
             }}
             className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
               reportType === 'semester'
@@ -164,7 +203,39 @@ export default function ReportsPage() {
             }`}
           >
             <BarChart3 className="w-4 h-4 inline-block mr-2" />
-            BM5.2 - Tổng kết học kỳ
+            BM5.2 - Tổng kết HK
+          </button>
+          <button
+            onClick={() => {
+              setReportType('transfer')
+              setReportData(null)
+              setTransferData(null)
+              setRetentionData(null)
+            }}
+            className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              reportType === 'transfer'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <ArrowRightLeft className="w-4 h-4 inline-block mr-2" />
+            BM8 - Chuyển lớp
+          </button>
+          <button
+            onClick={() => {
+              setReportType('retention')
+              setReportData(null)
+              setTransferData(null)
+              setRetentionData(null)
+            }}
+            className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              reportType === 'retention'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <UserX className="w-4 h-4 inline-block mr-2" />
+            BM9 - Lưu ban
           </button>
         </div>
 
@@ -343,10 +414,97 @@ export default function ReportsPage() {
             </div>
           </div>
         </div>
+      ) : transferData ? (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <h3 className="font-semibold text-gray-900">Báo cáo chuyển lớp ({transferData.length} lượt)</h3>
+          </div>
+          {transferData.length === 0 ? (
+            <div className="p-8 text-center text-gray-400">Không có dữ liệu chuyển lớp</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="table-header">STT</th>
+                    <th className="table-header">Mã HS</th>
+                    <th className="table-header">Họ tên</th>
+                    <th className="table-header">Lớp cũ</th>
+                    <th className="table-header">Lớp mới</th>
+                    <th className="table-header">Lý do</th>
+                    <th className="table-header">Học kỳ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {transferData.map((t, idx) => (
+                    <tr key={t.id} className="hover:bg-gray-50">
+                      <td className="table-cell text-center">{idx + 1}</td>
+                      <td className="table-cell font-mono text-sm">{t.student.studentCode}</td>
+                      <td className="table-cell font-medium">{t.student.fullName}</td>
+                      <td className="table-cell">{t.fromClass?.name || '-'}</td>
+                      <td className="table-cell">{t.toClass?.name || '-'}</td>
+                      <td className="table-cell text-sm text-gray-500">{t.reason || '-'}</td>
+                      <td className="table-cell text-sm">{t.semester?.name || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : retentionData ? (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <h3 className="font-semibold text-gray-900">
+              Báo cáo lưu ban ({retentionData.retentions.length} học sinh)
+              <span className="text-sm font-normal text-gray-500 ml-2">
+                Tối đa {retentionData.maxRetentions} lần lưu ban (QĐ9)
+              </span>
+            </h3>
+          </div>
+          {retentionData.retentions.length === 0 ? (
+            <div className="p-8 text-center text-gray-400">Không có học sinh lưu ban</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="table-header">STT</th>
+                    <th className="table-header">Mã HS</th>
+                    <th className="table-header">Họ tên</th>
+                    <th className="table-header">Lớp</th>
+                    <th className="table-header text-center">Số lần lưu ban</th>
+                    <th className="table-header text-center">Cách xử lý</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {retentionData.retentions.map((r, idx) => (
+                    <tr key={`${r.student.id}-${idx}`} className="hover:bg-gray-50">
+                      <td className="table-cell text-center">{idx + 1}</td>
+                      <td className="table-cell font-mono text-sm">{r.student.studentCode}</td>
+                      <td className="table-cell font-medium">{r.student.fullName}</td>
+                      <td className="table-cell">{r.class.name}</td>
+                      <td className="table-cell text-center font-semibold">{r.retentionCount}</td>
+                      <td className="table-cell text-center">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          r.handling === 'Ngừng tiếp nhận'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {r.handling}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       ) : (
         <div className="card p-8 text-center">
           <AlertCircle className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-          <p className="text-gray-500">Chọn các tiêu chí và nhấn "Xem báo cáo"</p>
+          <p className="text-gray-500">Chọn các tiêu chí và nhấn &quot;Xem báo cáo&quot;</p>
         </div>
       )}
     </div>

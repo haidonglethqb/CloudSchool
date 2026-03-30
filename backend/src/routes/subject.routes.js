@@ -28,7 +28,7 @@ router.get('/semesters/list', authenticate, semesterListHandler)
 router.post('/semesters', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
   body('name').notEmpty(),
   body('year').notEmpty(),
-  body('semesterNum').isInt({ min: 1, max: 2 })
+  body('semesterNum').isInt({ min: 1 })
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req)
@@ -37,6 +37,21 @@ router.post('/semesters', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
     }
 
     const { name, year, semesterNum, startDate, endDate } = req.body
+
+    // QĐ8: Enforce maxSemesters from settings
+    const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    const maxSemesters = settings?.maxSemesters ?? 2
+
+    if (semesterNum > maxSemesters) {
+      throw new AppError(`Số học kỳ không được vượt quá ${maxSemesters} (QĐ8)`, 400, 'EXCEEDS_MAX_SEMESTERS')
+    }
+
+    const existingCount = await prisma.semester.count({
+      where: { tenantId: req.tenantId, year }
+    })
+    if (existingCount >= maxSemesters) {
+      throw new AppError(`Năm ${year} đã đạt tối đa ${maxSemesters} học kỳ (QĐ8)`, 400, 'MAX_SEMESTERS_REACHED')
+    }
 
     const semester = await prisma.semester.create({
       data: {
@@ -151,6 +166,18 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
       where: { tenantId: req.tenantId, code: code.toUpperCase() }
     })
     if (existing) throw new AppError('Subject code already exists', 409, 'DUPLICATE')
+
+    // QĐ5: Validate max subjects
+    const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    const subjectCount = await prisma.subject.count({
+      where: { tenantId: req.tenantId, isActive: true }
+    })
+    if (subjectCount >= settings.maxSubjects) {
+      throw new AppError(
+        `Số môn học không được vượt quá ${settings.maxSubjects}`,
+        400, 'MAX_SUBJECTS_EXCEEDED'
+      )
+    }
 
     const subject = await prisma.subject.create({
       data: {

@@ -86,7 +86,7 @@ export const studentApi = {
   list: (params?: { search?: string; classId?: string; gradeId?: string; page?: number; limit?: number }) =>
     api.get('/students', { params }),
   get: (id: string) => api.get(`/students/${id}`),
-  create: (data: { fullName: string; gender: string; dateOfBirth: string; address?: string; phone?: string; classId: string; parentName?: string; parentPhone?: string }) =>
+  create: (data: { fullName: string; gender: string; dateOfBirth: string; address?: string; phone?: string; email?: string; admissionDate?: string; classId: string; parentName?: string; parentPhone?: string }) =>
     api.post('/students', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/students/${id}`, data),
   delete: (id: string) => api.delete(`/students/${id}`),
@@ -162,6 +162,8 @@ export const scoreApi = {
   unlockClass: (classId: string, data: { subjectId: string; semesterId: string }) =>
     api.post(`/scores/class/${classId}/unlock`, data),
   delete: (id: string) => api.delete(`/scores/${id}`),
+  getYearly: (studentId: string, year?: string) =>
+    api.get(`/scores/student/${studentId}/yearly`, { params: { year } }),
 }
 
 // ==================== Promotion ====================
@@ -181,12 +183,20 @@ export const reportApi = {
   semesterSummary: (semesterId: string) =>
     api.get('/reports/semester-summary', { params: { semesterId } }),
   dashboard: () => api.get('/reports/dashboard'),
+  transferReport: (params?: { semesterId?: string }) =>
+    api.get('/reports/transfer-report', { params }),
+  retentionReport: (params?: { semesterId?: string }) =>
+    api.get('/reports/retention-report', { params }),
 }
 
 // ==================== Settings ====================
 export const settingsApi = {
   get: () => api.get('/settings'),
-  update: (data: Partial<{ minAge: number; maxAge: number; maxClassSize: number; passScore: number }>) =>
+  update: (data: Partial<{
+    minAge: number; maxAge: number; maxClassSize: number; passScore: number;
+    minGradeLevel: number; maxGradeLevel: number; maxSubjects: number;
+    minScore: number; maxScore: number; maxSemesters: number; maxRetentions: number
+  }>) =>
     api.put('/settings', data),
   // Grades
   getGrades: () => api.get('/settings/grades'),
@@ -270,4 +280,15 @@ export function downloadBlob(blob: Blob, filename: string) {
   a.click()
   document.body.removeChild(a)
   window.URL.revokeObjectURL(url)
+}
+
+// ==================== Academic Years ====================
+export const academicYearApi = {
+  list: () => api.get('/academic-years'),
+  get: (id: string) => api.get(`/academic-years/${id}`),
+  create: (data: { startYear: number; endYear: number }) =>
+    api.post('/academic-years', data),
+  update: (id: string, data: { startYear?: number; endYear?: number }) =>
+    api.put(`/academic-years/${id}`, data),
+  delete: (id: string) => api.delete(`/academic-years/${id}`),
 }

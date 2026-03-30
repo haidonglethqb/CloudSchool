@@ -116,6 +116,26 @@ router.post('/calculate', authenticate, authorize('SUPER_ADMIN'), async (req, re
       )
     )
 
+    // QĐ9: Auto-deactivate students who exceeded maxRetentions
+    for (const p of promotions) {
+      if (p.result !== 'FAIL') continue
+
+      const failCount = await prisma.promotion.count({
+        where: { studentId: p.studentId, tenantId: req.tenantId, result: 'FAIL' }
+      })
+
+      if (failCount >= settings.maxRetentions) {
+        await prisma.student.update({
+          where: { id: p.studentId },
+          data: { isActive: false }
+        })
+        await prisma.promotion.update({
+          where: { id: p.id },
+          data: { note: `Ngừng tiếp nhận - vượt quá ${settings.maxRetentions} lần lưu ban` }
+        })
+      }
+    }
+
     res.json({ data: promotions })
   } catch (error) {
     next(error)

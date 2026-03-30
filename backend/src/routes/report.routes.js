@@ -1,7 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const prisma = require('../lib/prisma')
-const { authenticate } = require('../middleware/auth')
+const { authenticate, authorize } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
 
 // Helper: Calculate weighted average from scores with scoreComponent
@@ -222,6 +222,91 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
       data: {
         stats: { totalStudents, totalClasses, totalSubjects, maxClassSize: settings.maxClassSize },
         activeSemester, recentStudents, gradeStats
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /reports/transfer-report - BM8: Báo cáo chuyển lớp
+router.get('/transfer-report', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+  try {
+    const { semesterId } = req.query
+
+    const where = {
+      tenantId: req.tenantId,
+      ...(semesterId && { semesterId })
+    }
+
+    const transfers = await prisma.transferHistory.findMany({
+      where,
+      include: {
+        student: { select: { id: true, studentCode: true, fullName: true } },
+        fromClass: { select: { id: true, name: true } },
+        toClass: { select: { id: true, name: true } },
+        semester: { select: { id: true, name: true, year: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    })
+
+    res.json({
+      data: {
+        transfers,
+        totalTransfers: transfers.length
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /reports/retention-report - BM9: Báo cáo HS lưu ban
+router.get('/retention-report', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+  try {
+    const { semesterId } = req.query
+
+    const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+
+    const failWhere = {
+      tenantId: req.tenantId,
+      result: 'FAIL',
+      ...(semesterId && { semesterId })
+    }
+
+    const failPromotions = await prisma.promotion.findMany({
+      where: failWhere,
+      include: {
+        student: { select: { id: true, studentCode: true, fullName: true, isActive: true } },
+        class: { select: { id: true, name: true } },
+        semester: { select: { id: true, name: true, year: true } }
+      }
+    })
+
+    // Count total FAIL records per student (across all semesters)
+    const studentFailCounts = {}
+    const allFails = await prisma.promotion.findMany({
+      where: { tenantId: req.tenantId, result: 'FAIL' },
+      select: { studentId: true }
+    })
+    for (const f of allFails) {
+      studentFailCounts[f.studentId] = (studentFailCounts[f.studentId] || 0) + 1
+    }
+
+    const retentions = failPromotions.map(p => ({
+      student: p.student,
+      class: p.class,
+      semester: p.semester,
+      retentionCount: studentFailCounts[p.studentId] || 1,
+      handling: (studentFailCounts[p.studentId] || 1) >= settings.maxRetentions
+        ? 'Ngừng tiếp nhận'
+        : 'Lưu ban'
+    }))
+
+    res.json({
+      data: {
+        retentions,
+        maxRetentions: settings.maxRetentions
       }
     })
   } catch (error) {

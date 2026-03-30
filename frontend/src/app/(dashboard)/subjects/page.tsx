@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { subjectApi, scoreComponentApi } from '@/lib/api'
+import { subjectApi, scoreComponentApi, settingsApi } from '@/lib/api'
 import toast from 'react-hot-toast'
 import {
   Plus, Loader2, X, Trash2, Pencil, BookOpen,
@@ -52,13 +52,15 @@ export default function SubjectsPage() {
   const [showSemForm, setShowSemForm] = useState(false)
   const [semForm, setSemForm] = useState({ name: '', year: String(new Date().getFullYear()), semesterNum: 1 })
   const [savingSem, setSavingSem] = useState(false)
+  const [maxSubjects, setMaxSubjects] = useState<number>(9)
 
   const fetchData = useCallback(() => {
     setLoading(true)
-    Promise.all([subjectApi.list(), subjectApi.getSemesters()])
-      .then(([subRes, semRes]) => {
+    Promise.all([subjectApi.list(), subjectApi.getSemesters(), settingsApi.get()])
+      .then(([subRes, semRes, settRes]) => {
         setSubjects(subRes.data.data || [])
         setSemesters(semRes.data.data || [])
+        if (settRes.data.data?.maxSubjects) setMaxSubjects(settRes.data.data.maxSubjects)
       })
       .catch(() => toast.error('Lỗi tải dữ liệu'))
       .finally(() => setLoading(false))
@@ -197,12 +199,18 @@ export default function SubjectsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Môn học & Cột điểm</h1>
           <p className="text-gray-600 mt-1">Quản lý môn học, cột điểm (ScoreComponent) và học kỳ</p>
+          {subjects.length >= maxSubjects - 1 && subjects.length < maxSubjects && (
+            <p className="text-amber-600 text-sm mt-1">⚠️ Sắp đạt giới hạn môn học ({subjects.length}/{maxSubjects})</p>
+          )}
+          {subjects.length >= maxSubjects && (
+            <p className="text-red-600 text-sm mt-1">🚫 Đã đạt giới hạn tối đa {maxSubjects} môn học (QĐ5)</p>
+          )}
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowSemForm(true)} className="btn-outline">
             <Plus className="w-4 h-4 mr-1" /> Học kỳ
           </button>
-          <button onClick={openCreateSubject} className="btn-primary">
+          <button onClick={openCreateSubject} disabled={subjects.length >= maxSubjects} className="btn-primary disabled:opacity-50">
             <Plus className="w-4 h-4 mr-1" /> Môn học
           </button>
         </div>

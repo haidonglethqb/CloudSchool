@@ -23,7 +23,14 @@ router.put('/', authenticate, authorize('SUPER_ADMIN'), [
   body('minAge').optional().isInt({ min: 1, max: 100 }),
   body('maxAge').optional().isInt({ min: 1, max: 100 }),
   body('maxClassSize').optional().isInt({ min: 1, max: 200 }),
-  body('passScore').optional().isFloat({ min: 0, max: 10 })
+  body('passScore').optional().isFloat({ min: 0, max: 10 }),
+  body('minGradeLevel').optional().isInt({ min: 1, max: 20 }),
+  body('maxGradeLevel').optional().isInt({ min: 1, max: 20 }),
+  body('maxSubjects').optional().isInt({ min: 1, max: 50 }),
+  body('minScore').optional().isFloat({ min: 0, max: 100 }),
+  body('maxScore').optional().isFloat({ min: 0, max: 100 }),
+  body('maxSemesters').optional().isInt({ min: 1, max: 4 }),
+  body('maxRetentions').optional().isInt({ min: 1, max: 10 }),
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req)
@@ -31,18 +38,33 @@ router.put('/', authenticate, authorize('SUPER_ADMIN'), [
       return res.status(400).json({ error: { code: 'VALIDATION_ERROR', details: errors.array() } })
     }
 
-    const { minAge, maxAge, maxClassSize, passScore } = req.body
-
-    if (minAge && maxAge && minAge > maxAge) {
-      throw new AppError('Min age cannot exceed max age', 400, 'INVALID_AGE_RANGE')
-    }
+    const {
+      minAge, maxAge, maxClassSize, passScore,
+      minGradeLevel, maxGradeLevel, maxSubjects,
+      minScore, maxScore, maxSemesters, maxRetentions
+    } = req.body
 
     const current = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
-    if (minAge && !maxAge && minAge > current.maxAge) {
-      throw new AppError('Min age cannot exceed current max age', 400, 'INVALID_AGE_RANGE')
+
+    // Validate age range
+    const effectiveMinAge = minAge ?? current.minAge
+    const effectiveMaxAge = maxAge ?? current.maxAge
+    if (effectiveMinAge > effectiveMaxAge) {
+      throw new AppError('Tuổi tối thiểu không được lớn hơn tuổi tối đa', 400, 'INVALID_AGE_RANGE')
     }
-    if (maxAge && !minAge && maxAge < current.minAge) {
-      throw new AppError('Max age cannot be less than current min age', 400, 'INVALID_AGE_RANGE')
+
+    // Validate grade level range
+    const effectiveMinGrade = minGradeLevel ?? current.minGradeLevel
+    const effectiveMaxGrade = maxGradeLevel ?? current.maxGradeLevel
+    if (effectiveMinGrade > effectiveMaxGrade) {
+      throw new AppError('Khối tối thiểu không được lớn hơn khối tối đa', 400, 'INVALID_GRADE_RANGE')
+    }
+
+    // Validate score range
+    const effectiveMinScore = minScore ?? current.minScore
+    const effectiveMaxScore = maxScore ?? current.maxScore
+    if (effectiveMinScore > effectiveMaxScore) {
+      throw new AppError('Điểm tối thiểu không được lớn hơn điểm tối đa', 400, 'INVALID_SCORE_RANGE')
     }
 
     const updateData = {}
@@ -50,6 +72,13 @@ router.put('/', authenticate, authorize('SUPER_ADMIN'), [
     if (maxAge !== undefined) updateData.maxAge = maxAge
     if (maxClassSize !== undefined) updateData.maxClassSize = maxClassSize
     if (passScore !== undefined) updateData.passScore = passScore
+    if (minGradeLevel !== undefined) updateData.minGradeLevel = minGradeLevel
+    if (maxGradeLevel !== undefined) updateData.maxGradeLevel = maxGradeLevel
+    if (maxSubjects !== undefined) updateData.maxSubjects = maxSubjects
+    if (minScore !== undefined) updateData.minScore = minScore
+    if (maxScore !== undefined) updateData.maxScore = maxScore
+    if (maxSemesters !== undefined) updateData.maxSemesters = maxSemesters
+    if (maxRetentions !== undefined) updateData.maxRetentions = maxRetentions
 
     const settings = await prisma.tenantSettings.update({
       where: { tenantId: req.tenantId },
@@ -159,6 +188,15 @@ router.post('/grades', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
       where: { tenantId: req.tenantId, level }
     })
     if (existing) throw new AppError('Grade level already exists', 409, 'DUPLICATE')
+
+    // QĐ3: Validate grade level within settings range
+    const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    if (level < settings.minGradeLevel || level > settings.maxGradeLevel) {
+      throw new AppError(
+        `Khối phải nằm trong khoảng ${settings.minGradeLevel}-${settings.maxGradeLevel}`,
+        400, 'INVALID_GRADE_LEVEL'
+      )
+    }
 
     const grade = await prisma.grade.create({
       data: { tenantId: req.tenantId, name, level }
