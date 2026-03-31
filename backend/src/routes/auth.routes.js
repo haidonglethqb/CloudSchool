@@ -8,15 +8,23 @@ const prisma = require('../lib/prisma')
 const { AppError } = require('../middleware/errorHandler')
 const { authenticate } = require('../middleware/auth')
 
+// Rate limit bypass for automated testing (Playwright)
+const skipIfBypassToken = (req) => {
+  const bypassSecret = process.env.RATE_LIMIT_BYPASS_SECRET
+  return bypassSecret && req.headers['x-ratelimit-bypass'] === bypassSecret
+}
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 50,
+  skip: skipIfBypassToken,
   message: { error: { code: 'TOO_MANY_REQUESTS', message: 'Too many login attempts, try again later' } }
 })
 
 const registerLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 10,
+  max: 20,
+  skip: skipIfBypassToken,
   message: { error: { code: 'TOO_MANY_REQUESTS', message: 'Too many registrations, try again later' } }
 })
 

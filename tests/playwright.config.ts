@@ -19,6 +19,7 @@ export default defineConfig({
     baseURL: BASE_URL,
     extraHTTPHeaders: {
       'Content-Type': 'application/json',
+      'X-RateLimit-Bypass': process.env.RATE_LIMIT_BYPASS_SECRET || '',
     },
   },
   globalSetup: './global-setup.ts',

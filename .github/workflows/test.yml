@@ -56,6 +56,7 @@ jobs:
           PARENT_PASSWORD: ${{ secrets.PARENT_PASSWORD }}
           PLATFORM_ADMIN_EMAIL: ${{ secrets.PLATFORM_ADMIN_EMAIL }}
           PLATFORM_ADMIN_PASSWORD: ${{ secrets.PLATFORM_ADMIN_PASSWORD }}
+          RATE_LIMIT_BYPASS_SECRET: ${{ secrets.RATE_LIMIT_BYPASS_SECRET }}
 
       - name: Run performance tests
         working-directory: tests
@@ -74,6 +75,7 @@ jobs:
           PARENT_PASSWORD: ${{ secrets.PARENT_PASSWORD }}
           PLATFORM_ADMIN_EMAIL: ${{ secrets.PLATFORM_ADMIN_EMAIL }}
           PLATFORM_ADMIN_PASSWORD: ${{ secrets.PLATFORM_ADMIN_PASSWORD }}
+          RATE_LIMIT_BYPASS_SECRET: ${{ secrets.RATE_LIMIT_BYPASS_SECRET }}
 
       # ── Reports ──
       - name: Upload test report

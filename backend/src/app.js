@@ -28,12 +28,19 @@ const { errorHandler } = require('./middleware/errorHandler')
 
 const app = express()
 
-// Global rate limiter: 200 req/min per IP
+// Rate limit bypass for automated testing (Playwright)
+const skipIfBypassToken = (req) => {
+  const bypassSecret = process.env.RATE_LIMIT_BYPASS_SECRET
+  return bypassSecret && req.headers['x-ratelimit-bypass'] === bypassSecret
+}
+
+// Global rate limiter: 500 req/min per IP
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 200,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipIfBypassToken,
   message: { error: { code: 'TOO_MANY_REQUESTS', message: 'Too many requests, please try again later' } }
 })
 
