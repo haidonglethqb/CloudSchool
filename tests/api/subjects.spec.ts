@@ -24,7 +24,7 @@ test.describe('Subjects', () => {
       expect(response.status()).toBe(200);
 
       const body = await response.json();
-      const subjects = body.subjects || body;
+      const subjects = body.data;
       expect(Array.isArray(subjects)).toBe(true);
       expect(subjects.length).toBeGreaterThanOrEqual(8);
     });
@@ -63,7 +63,7 @@ test.describe('Subjects', () => {
     test('STAFF can update subject', async () => {
       const listRes = await staffCtx.get('/api/subjects');
       const listBody = await listRes.json();
-      const subjects = listBody.subjects || listBody;
+      const subjects = listBody.data;
       const subjectId = subjects[0]?.id;
 
       if (subjectId) {
@@ -80,7 +80,7 @@ test.describe('Subjects', () => {
       // Find the auto-created test subject
       const listRes = await superAdminCtx.get('/api/subjects');
       const listBody = await listRes.json();
-      const subjects = listBody.subjects || listBody;
+      const subjects = listBody.data;
       const testSubject = subjects.find((s: any) => s.code === 'IT-AUTOTEST');
 
       if (testSubject) {

@@ -24,7 +24,7 @@ test.describe('Settings', () => {
       expect(response.status()).toBe(200);
 
       const body = await response.json();
-      const settings = body.settings || body;
+      const settings = body.data;
       expect(settings).toBeTruthy();
       expect(settings.minAge).toBeDefined();
       expect(settings.maxAge).toBeDefined();
@@ -46,7 +46,7 @@ test.describe('Settings', () => {
       expect(response.status()).toBe(200);
 
       const body = await response.json();
-      const settings = body.settings || body;
+      const settings = body.data;
       expect(settings.maxClassSize).toBe(40);
     });
 

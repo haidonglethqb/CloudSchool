@@ -19,31 +19,31 @@ test.describe('Data-Intensive Operations', () => {
     // Get required IDs
     const classesRes = await superAdminCtx.get('/api/classes');
     const classesBody = await classesRes.json();
-    const classes = classesBody.classes || classesBody;
+    const classes = classesBody.data;
 
     const subjectsRes = await superAdminCtx.get('/api/subjects');
     const subjectsBody = await subjectsRes.json();
-    const subjects = subjectsBody.subjects || subjectsBody;
+    const subjects = subjectsBody.data;
     const subjectId = subjects[0]?.id;
 
     const componentsRes = await superAdminCtx.get(`/api/score-components?subjectId=${subjectId}`);
     let scoreComponentId: string | undefined;
     if (componentsRes.ok()) {
       const componentsBody = await componentsRes.json();
-      const components = componentsBody.scoreComponents || componentsBody;
+      const components = componentsBody.data;
       scoreComponentId = components?.[0]?.id;
     }
 
     const classId = classes[0]?.id;
     const studentsRes = await superAdminCtx.get(`/api/students?classId=${classId}`);
     const studentsBody = await studentsRes.json();
-    const students = studentsBody.students || [];
+    const students = studentsBody.data || [];
 
     const ayRes = await superAdminCtx.get('/api/academic-years');
     let semesterId: string | undefined;
     if (ayRes.ok()) {
       const ayBody = await ayRes.json();
-      const years = ayBody.academicYears || ayBody;
+      const years = ayBody.data;
       semesterId = years?.[0]?.semesters?.[0]?.id;
     }
 
@@ -94,7 +94,7 @@ test.describe('Data-Intensive Operations', () => {
     let semesterId: string | undefined;
     if (ayRes.ok()) {
       const ayBody = await ayRes.json();
-      const years = ayBody.academicYears || ayBody;
+      const years = ayBody.data;
       semesterId = years?.[0]?.semesters?.[0]?.id;
     }
 

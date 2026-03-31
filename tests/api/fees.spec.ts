@@ -29,7 +29,7 @@ test.describe('Fees', () => {
       expect(response.status()).toBe(200);
 
       const body = await response.json();
-      const fees = body.fees || body;
+      const fees = body.data;
       expect(Array.isArray(fees)).toBe(true);
     });
 
@@ -53,7 +53,7 @@ test.describe('Fees', () => {
 
       if (response.ok()) {
         const body = await response.json();
-        createdFeeId = body.fee?.id || body.id;
+        createdFeeId = body.data?.id;
       }
     });
 
@@ -79,7 +79,7 @@ test.describe('Fees', () => {
       expect(response.status()).toBe(200);
 
       const body = await response.json();
-      const fee = body.fee || body;
+      const fee = body.data;
       expect(fee.name).toBe('Học phí AutoTest');
     });
   });

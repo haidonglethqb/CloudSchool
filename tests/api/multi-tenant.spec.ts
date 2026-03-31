@@ -20,7 +20,7 @@ test.describe('Multi-Tenant Isolation', () => {
     expect(response.status()).toBe(200);
 
     const body = await response.json();
-    const students = body.students || body;
+    const students = body.data;
 
     // All students should belong to the same tenant
     // We verify this by checking they all have data (no cross-tenant leak)
@@ -32,7 +32,7 @@ test.describe('Multi-Tenant Isolation', () => {
     expect(response.status()).toBe(200);
 
     const body = await response.json();
-    const classes = body.classes || body;
+    const classes = body.data;
     expect(Array.isArray(classes)).toBe(true);
 
     // Verify all classes are from the demo tenant (academicYear matches seed)
@@ -48,7 +48,7 @@ test.describe('Multi-Tenant Isolation', () => {
     expect(response.status()).toBe(200);
 
     const body = await response.json();
-    const subjects = body.subjects || body;
+    const subjects = body.data;
     expect(Array.isArray(subjects)).toBe(true);
     // Seed has 8 subjects for THPT-DEMO
     expect(subjects.length).toBeGreaterThanOrEqual(8);
@@ -74,7 +74,7 @@ test.describe('Multi-Tenant Isolation', () => {
     expect(response.status()).toBe(200);
 
     const body = await response.json();
-    const settings = body.settings || body;
+    const settings = body.data;
 
     // Should match THPT-DEMO seed values
     expect(settings.minAge).toBe(15);

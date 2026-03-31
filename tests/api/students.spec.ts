@@ -25,9 +25,9 @@ test.describe('Students', () => {
       expect(response.status()).toBe(200);
 
       const body = await response.json();
-      expect(body.students).toBeTruthy();
-      expect(Array.isArray(body.students)).toBe(true);
-      expect(body.students.length).toBeGreaterThan(0);
+      expect(body.data).toBeTruthy();
+      expect(Array.isArray(body.data)).toBe(true);
+      expect(body.data.length).toBeGreaterThan(0);
     });
 
     test('list students with pagination', async () => {
@@ -35,8 +35,8 @@ test.describe('Students', () => {
       expect(response.status()).toBe(200);
 
       const body = await response.json();
-      expect(body.students.length).toBeLessThanOrEqual(2);
-      expect(body.pagination).toBeTruthy();
+      expect(body.data.length).toBeLessThanOrEqual(2);
+      expect(body.meta).toBeTruthy();
     });
 
     test('list students with search filter', async () => {
@@ -44,7 +44,7 @@ test.describe('Students', () => {
       expect(response.status()).toBe(200);
 
       const body = await response.json();
-      expect(body.students.length).toBeGreaterThan(0);
+      expect(body.data.length).toBeGreaterThan(0);
     });
 
     test('TEACHER can list students', async () => {
@@ -58,7 +58,7 @@ test.describe('Students', () => {
       // First get a class to assign
       const classesRes = await staffCtx.get('/api/classes');
       const classesBody = await classesRes.json();
-      const classId = classesBody.classes?.[0]?.id || classesBody[0]?.id;
+      const classId = classesBody.data?.[0]?.id;
 
       const response = await staffCtx.post('/api/students', {
         data: {
@@ -73,7 +73,7 @@ test.describe('Students', () => {
 
       if (response.status() === 201 || response.status() === 200) {
         const body = await response.json();
-        createdStudentId = body.student?.id || body.id;
+        createdStudentId = body.data?.id;
         expect(createdStudentId).toBeTruthy();
       } else {
         // Class may be full or validation failed, that's ok
@@ -84,7 +84,7 @@ test.describe('Students', () => {
     test('create student with invalid age returns 400', async () => {
       const classesRes = await staffCtx.get('/api/classes');
       const classesBody = await classesRes.json();
-      const classId = classesBody.classes?.[0]?.id || classesBody[0]?.id;
+      const classId = classesBody.data?.[0]?.id;
 
       const response = await staffCtx.post('/api/students', {
         data: {
@@ -110,14 +110,14 @@ test.describe('Students', () => {
       // List students to get a valid ID
       const listRes = await superAdminCtx.get('/api/students?limit=1');
       const listBody = await listRes.json();
-      const studentId = listBody.students?.[0]?.id;
+      const studentId = listBody.data?.[0]?.id;
 
       if (studentId) {
         const response = await superAdminCtx.get(`/api/students/${studentId}`);
         expect(response.status()).toBe(200);
 
         const body = await response.json();
-        expect(body.student || body).toBeTruthy();
+        expect(body.data).toBeTruthy();
       }
     });
 
@@ -131,7 +131,7 @@ test.describe('Students', () => {
     test('STAFF can update student', async () => {
       const listRes = await staffCtx.get('/api/students?limit=1');
       const listBody = await listRes.json();
-      const studentId = listBody.students?.[0]?.id;
+      const studentId = listBody.data?.[0]?.id;
 
       if (studentId) {
         const response = await staffCtx.put(`/api/students/${studentId}`, {
@@ -153,7 +153,7 @@ test.describe('Students', () => {
     test('STAFF cannot delete student', async () => {
       const listRes = await staffCtx.get('/api/students?limit=1');
       const listBody = await listRes.json();
-      const studentId = listBody.students?.[0]?.id;
+      const studentId = listBody.data?.[0]?.id;
 
       if (studentId) {
         const response = await staffCtx.delete(`/api/students/${studentId}`);

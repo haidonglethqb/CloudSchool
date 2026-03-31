@@ -24,7 +24,7 @@ test.describe('Classes', () => {
       expect(response.status()).toBe(200);
 
       const body = await response.json();
-      const grades = body.grades || body;
+      const grades = body.data;
       expect(Array.isArray(grades)).toBe(true);
       expect(grades.length).toBeGreaterThanOrEqual(3);
     });
@@ -36,7 +36,7 @@ test.describe('Classes', () => {
       expect(response.status()).toBe(200);
 
       const body = await response.json();
-      const classes = body.classes || body;
+      const classes = body.data;
       expect(Array.isArray(classes)).toBe(true);
       expect(classes.length).toBeGreaterThan(0);
     });
@@ -51,7 +51,7 @@ test.describe('Classes', () => {
     test('get class by ID includes students and assignments', async () => {
       const listRes = await superAdminCtx.get('/api/classes');
       const listBody = await listRes.json();
-      const classes = listBody.classes || listBody;
+      const classes = listBody.data;
       const classId = classes[0]?.id;
 
       if (classId) {
@@ -59,7 +59,7 @@ test.describe('Classes', () => {
         expect(response.status()).toBe(200);
 
         const body = await response.json();
-        const cls = body.class || body;
+        const cls = body.data;
         expect(cls.name).toBeTruthy();
       }
     });
@@ -70,7 +70,7 @@ test.describe('Classes', () => {
       // Get a grade first
       const gradesRes = await staffCtx.get('/api/classes/grades');
       const gradesBody = await gradesRes.json();
-      const grades = gradesBody.grades || gradesBody;
+      const grades = gradesBody.data;
       const gradeId = grades[0]?.id;
 
       if (gradeId) {
@@ -89,7 +89,7 @@ test.describe('Classes', () => {
     test('create class with missing name returns 400', async () => {
       const gradesRes = await staffCtx.get('/api/classes/grades');
       const gradesBody = await gradesRes.json();
-      const grades = gradesBody.grades || gradesBody;
+      const grades = gradesBody.data;
       const gradeId = grades[0]?.id;
 
       const response = await staffCtx.post('/api/classes', {
@@ -104,17 +104,17 @@ test.describe('Classes', () => {
       // Get class, teacher, and subject IDs
       const classesRes = await superAdminCtx.get('/api/classes');
       const classesBody = await classesRes.json();
-      const classes = classesBody.classes || classesBody;
+      const classes = classesBody.data;
       const classId = classes[0]?.id;
 
       const usersRes = await superAdminCtx.get('/api/users');
       const usersBody = await usersRes.json();
-      const users = usersBody.users || usersBody;
+      const users = usersBody.data;
       const teacher = users?.find?.((u: any) => u.role === 'TEACHER');
 
       const subjectsRes = await superAdminCtx.get('/api/subjects');
       const subjectsBody = await subjectsRes.json();
-      const subjects = subjectsBody.subjects || subjectsBody;
+      const subjects = subjectsBody.data;
 
       if (classId && teacher?.id && subjects?.[0]?.id) {
         const response = await superAdminCtx.post(`/api/classes/${classId}/assign-teacher`, {

@@ -20,15 +20,15 @@ test.afterAll(async () => {
 });
 
 test.describe('Response Time Benchmarks', () => {
-  test('GET /health < 200ms', async ({ request }) => {
+  test('GET /api/auth/plans < 200ms', async ({ request }) => {
     const times: number[] = [];
     for (let i = 0; i < 10; i++) {
-      const { duration } = await measureResponseTime(() => request.get('/health'));
+      const { duration } = await measureResponseTime(() => request.get('/api/auth/plans'));
       times.push(duration);
     }
     const p95 = times.sort((a, b) => a - b)[Math.floor(times.length * 0.95)];
 
-    console.log(`  /health p95: ${p95}ms (avg: ${Math.round(times.reduce((a, b) => a + b, 0) / times.length)}ms)`);
+    console.log(`  /api/auth/plans p95: ${p95}ms (avg: ${Math.round(times.reduce((a, b) => a + b, 0) / times.length)}ms)`);
     expect(p95).toBeLessThan(200);
   });
 

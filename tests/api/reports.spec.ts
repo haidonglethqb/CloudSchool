@@ -30,14 +30,14 @@ test.describe('Reports', () => {
       // Get required params
       const subjectsRes = await superAdminCtx.get('/api/subjects');
       const subjectsBody = await subjectsRes.json();
-      const subjects = subjectsBody.subjects || subjectsBody;
+      const subjects = subjectsBody.data;
       const subjectId = subjects[0]?.id;
 
       const ayRes = await superAdminCtx.get('/api/academic-years');
       let semesterId: string | undefined;
       if (ayRes.ok()) {
         const ayBody = await ayRes.json();
-        const years = ayBody.academicYears || ayBody;
+        const years = ayBody.data;
         semesterId = years?.[0]?.semesters?.[0]?.id;
       }
 
@@ -56,7 +56,7 @@ test.describe('Reports', () => {
       let semesterId: string | undefined;
       if (ayRes.ok()) {
         const ayBody = await ayRes.json();
-        const years = ayBody.academicYears || ayBody;
+        const years = ayBody.data;
         semesterId = years?.[0]?.semesters?.[0]?.id;
       }
 

@@ -28,19 +28,19 @@ test.describe('Scores', () => {
     // Get required IDs from seed data
     const classesRes = await superAdminCtx.get('/api/classes');
     const classesBody = await classesRes.json();
-    const classes = classesBody.classes || classesBody;
+    const classes = classesBody.data;
     classId = classes[0]?.id;
 
     const subjectsRes = await superAdminCtx.get('/api/subjects');
     const subjectsBody = await subjectsRes.json();
-    const subjects = subjectsBody.subjects || subjectsBody;
+    const subjects = subjectsBody.data;
     subjectId = subjects[0]?.id;
 
     // Get score components for the subject
     const componentsRes = await superAdminCtx.get(`/api/score-components?subjectId=${subjectId}`);
     if (componentsRes.ok()) {
       const componentsBody = await componentsRes.json();
-      const components = componentsBody.scoreComponents || componentsBody;
+      const components = componentsBody.data;
       scoreComponentId = components?.[0]?.id;
     }
 
@@ -48,14 +48,14 @@ test.describe('Scores', () => {
     const studentsRes = await superAdminCtx.get(`/api/students?classId=${classId}&limit=1`);
     if (studentsRes.ok()) {
       const studentsBody = await studentsRes.json();
-      studentId = studentsBody.students?.[0]?.id;
+      studentId = studentsBody.data?.[0]?.id;
     }
 
     // Get the active semester
     const academicYearsRes = await superAdminCtx.get('/api/academic-years');
     if (academicYearsRes.ok()) {
       const ayBody = await academicYearsRes.json();
-      const years = ayBody.academicYears || ayBody;
+      const years = ayBody.data;
       if (years?.[0]?.semesters) {
         semesterId = years[0].semesters[0]?.id;
       }

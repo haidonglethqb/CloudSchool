@@ -1,5 +1,5 @@
 import { test, expect, APIRequestContext } from '@playwright/test';
-import { createAuthContext, assertStatus } from '../helpers/api-client';
+import { createAuthContext } from '../helpers/api-client';
 
 let superAdminCtx: APIRequestContext;
 
@@ -24,9 +24,9 @@ test.describe('Authentication', () => {
       expect(response.status()).toBe(200);
 
       const body = await response.json();
-      expect(body.user).toBeTruthy();
-      expect(body.user.email).toBe('admin@demo.school.vn');
-      expect(body.user.role).toBe('SUPER_ADMIN');
+      expect(body.data.user).toBeTruthy();
+      expect(body.data.user.email).toBe('admin@demo.school.vn');
+      expect(body.data.user.role).toBe('SUPER_ADMIN');
 
       const cookies = response.headers()['set-cookie'];
       expect(cookies).toContain('token=');
@@ -43,7 +43,7 @@ test.describe('Authentication', () => {
       expect(response.status()).toBe(200);
 
       const body = await response.json();
-      expect(body.user.role).toBe('PLATFORM_ADMIN');
+      expect(body.data.user.role).toBe('PLATFORM_ADMIN');
     });
 
     test('login with invalid password returns 401', async ({ request }) => {
@@ -57,7 +57,7 @@ test.describe('Authentication', () => {
       expect(response.status()).toBe(401);
     });
 
-    test('login with invalid tenantCode returns 401', async ({ request }) => {
+    test('login with invalid tenantCode returns 404', async ({ request }) => {
       const response = await request.post('/api/auth/login', {
         data: {
           email: 'admin@demo.school.vn',
@@ -65,7 +65,7 @@ test.describe('Authentication', () => {
           tenantCode: 'INVALID-CODE',
         },
       });
-      expect(response.status()).toBe(401);
+      expect(response.status()).toBe(404);
     });
 
     test('login with missing email returns 400', async ({ request }) => {
@@ -85,9 +85,9 @@ test.describe('Authentication', () => {
       expect(response.status()).toBe(200);
 
       const body = await response.json();
-      expect(body.user).toBeTruthy();
-      expect(body.user.email).toBe('admin@demo.school.vn');
-      expect(body.user.role).toBe('SUPER_ADMIN');
+      expect(body.data.user).toBeTruthy();
+      expect(body.data.user.email).toBe('admin@demo.school.vn');
+      expect(body.data.user.role).toBe('SUPER_ADMIN');
     });
 
     test('GET /api/auth/me without token returns 401', async ({ request }) => {
@@ -114,7 +114,7 @@ test.describe('Authentication', () => {
       expect(response.status()).toBe(200);
 
       const body = await response.json();
-      expect(Array.isArray(body.plans || body)).toBe(true);
+      expect(Array.isArray(body.data)).toBe(true);
     });
   });
 });

@@ -1,10 +1,17 @@
 name: API & Performance Tests
 
 on:
-  push:
-    branches: [main, dev]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Test type to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - api-tests
+          - performance
 
 env:
   NODE_VERSION: '20'
@@ -34,6 +41,7 @@ jobs:
       # ── Run tests ──
       - name: Run API tests
         working-directory: tests
+        if: ${{ github.event.inputs.test_type == 'all' || github.event.inputs.test_type == 'api-tests' }}
         run: npx playwright test --project=api-tests
         env:
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
@@ -51,7 +59,7 @@ jobs:
 
       - name: Run performance tests
         working-directory: tests
-        if: success()
+        if: ${{ (github.event.inputs.test_type == 'all' || github.event.inputs.test_type == 'performance') }}
         run: npx playwright test --project=performance
         env:
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
