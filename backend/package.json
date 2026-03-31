@@ -12,7 +12,10 @@
     "db:migrate:prod": "prisma migrate deploy",
     "db:seed": "node prisma/seed.js",
     "db:studio": "prisma studio",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:api": "cd ../tests && npx playwright test --project=api-tests",
+    "test:perf": "cd ../tests && npx playwright test --project=performance",
+    "test:all": "cd ../tests && npx playwright test"
   },
   "keywords": [],
   "author": "",

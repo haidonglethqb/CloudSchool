@@ -1,0 +1,18 @@
+{
+  "name": "cloudschool-tests",
+  "version": "1.0.0",
+  "description": "CloudSchool API & Performance Tests with Playwright",
+  "scripts": {
+    "test": "npx playwright test --project=api-tests",
+    "test:perf": "npx playwright test --project=performance",
+    "test:all": "npx playwright test",
+    "test:ci": "npx playwright test --reporter=github,json",
+    "report": "npx playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^25.5.0",
+    "dotenv": "^16.4.5",
+    "typescript": "^6.0.2"
+  }
+}

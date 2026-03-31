@@ -1,0 +1,85 @@
+name: API & Performance Tests
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm ci
+
+      - name: Install Playwright
+        working-directory: tests
+        run: npx playwright install --with-deps
+
+      # ── Run tests ──
+      - name: Run API tests
+        working-directory: tests
+        run: npx playwright test --project=api-tests
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          TENANT_CODE: ${{ secrets.TENANT_CODE }}
+          SUPER_ADMIN_EMAIL: ${{ secrets.SUPER_ADMIN_EMAIL }}
+          SUPER_ADMIN_PASSWORD: ${{ secrets.SUPER_ADMIN_PASSWORD }}
+          STAFF_EMAIL: ${{ secrets.STAFF_EMAIL }}
+          STAFF_PASSWORD: ${{ secrets.STAFF_PASSWORD }}
+          TEACHER_EMAIL: ${{ secrets.TEACHER_EMAIL }}
+          TEACHER_PASSWORD: ${{ secrets.TEACHER_PASSWORD }}
+          PARENT_EMAIL: ${{ secrets.PARENT_EMAIL }}
+          PARENT_PASSWORD: ${{ secrets.PARENT_PASSWORD }}
+          PLATFORM_ADMIN_EMAIL: ${{ secrets.PLATFORM_ADMIN_EMAIL }}
+          PLATFORM_ADMIN_PASSWORD: ${{ secrets.PLATFORM_ADMIN_PASSWORD }}
+
+      - name: Run performance tests
+        working-directory: tests
+        if: success()
+        run: npx playwright test --project=performance
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          TENANT_CODE: ${{ secrets.TENANT_CODE }}
+          SUPER_ADMIN_EMAIL: ${{ secrets.SUPER_ADMIN_EMAIL }}
+          SUPER_ADMIN_PASSWORD: ${{ secrets.SUPER_ADMIN_PASSWORD }}
+          STAFF_EMAIL: ${{ secrets.STAFF_EMAIL }}
+          STAFF_PASSWORD: ${{ secrets.STAFF_PASSWORD }}
+          TEACHER_EMAIL: ${{ secrets.TEACHER_EMAIL }}
+          TEACHER_PASSWORD: ${{ secrets.TEACHER_PASSWORD }}
+          PARENT_EMAIL: ${{ secrets.PARENT_EMAIL }}
+          PARENT_PASSWORD: ${{ secrets.PARENT_PASSWORD }}
+          PLATFORM_ADMIN_EMAIL: ${{ secrets.PLATFORM_ADMIN_EMAIL }}
+          PLATFORM_ADMIN_PASSWORD: ${{ secrets.PLATFORM_ADMIN_PASSWORD }}
+
+      # ── Reports ──
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: tests/playwright-report/
+          retention-days: 14
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: tests/test-results/
+          retention-days: 7
