@@ -67,11 +67,11 @@ CloudSchool là nền tảng SaaS cho phép:
 
 - **Docker** + **Docker Compose** (bắt buộc cho PostgreSQL)
 - **Node.js** >= 18
-- **npm** hoặc **yarn**
+- **npm**
 
 ---
 
-### 🚀 Development (Khuyến nghị)
+### 🚀 Development — Chạy nhanh (copy & paste)
 
 #### Bước 1: Clone repo
 
@@ -80,15 +80,21 @@ git clone <repo-url> cloudschool
 cd cloudschool
 ```
 
-#### Bước 2: Cấu hình biến môi trường
+#### Bước 2: Tạo file cấu hình môi trường
 
+**Linux / macOS:**
 ```bash
-# Copy file env mẫu
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env.local
 ```
 
-> Mở file `backend/.env` và `frontend/.env.local` để chỉnh sửa nếu cần (port, database URL, JWT secret, ...).
+**Windows (PowerShell):**
+```powershell
+Copy-Item backend/.env.example backend/.env
+Copy-Item frontend/.env.example frontend/.env.local
+```
+
+> File `.env.example` đã có sẵn giá trị mặc định khớp với `docker-compose.dev.yml`, **không cần chỉnh sửa gì** nếu chạy local.
 
 #### Bước 3: Khởi động PostgreSQL bằng Docker
 
@@ -96,48 +102,42 @@ cp frontend/.env.example frontend/.env.local
 docker-compose -f docker-compose.dev.yml up -d
 ```
 
-> Lệnh này khởi chạy PostgreSQL 16 trên port `5432` với user/pass/db khớp với `DATABASE_URL` ở bước 2.
+> PostgreSQL 16 sẽ chạy trên port `5432` với user `postgres`, password `postgres123`, database `cloudschool`.
 
-#### Bước 4: Cài dependencies
+#### Bước 4: Cài dependencies & khởi tạo database
 
 ```bash
-# Backend
+# Cài packages cho backend
 cd backend
 npm install
 
-# Frontend
+# Tạo Prisma client + database tables + seed dữ liệu mẫu
+npx prisma generate
+npx prisma db push
+npm run db:seed
+
+# Cài packages cho frontend
 cd ../frontend
 npm install
 ```
 
-#### Bước 5: Khởi tạo database
+#### Bước 5: Chạy ứng dụng
+
+Mở **2 terminal riêng biệt**:
 
 ```bash
-cd ../backend
-
-# Tạo Prisma client
-npx prisma generate
-
-# Tạo database tables
-npx prisma db push
-
-# Seed dữ liệu mẫu
-npm run db:seed
-```
-
-> Script seed hiện có thể chạy lại an toàn để cập nhật gói dịch vụ mẫu mà không tạo trùng tenant demo.
-
-#### Bước 6: Chạy ứng dụng
-
-```bash
-# Terminal 1 — Backend (port 5000, hoặc 5001 nếu macOS đang chiếm port 5000)
+# Terminal 1 — Backend (port 5001)
 cd backend
 npm run dev
+```
 
+```bash
 # Terminal 2 — Frontend (port 3000)
 cd frontend
 npm run dev
 ```
+
+> Mở trình duyệt tại **http://localhost:3000** để sử dụng. Backend API chạy tại **http://localhost:5001/api**.
 
 ---
 
@@ -161,11 +161,9 @@ docker-compose exec backend npm run db:seed
 | Service | URL |
 |---------|-----|
 | Frontend | http://localhost:3000 |
-| Backend API | http://localhost:5000/api |
-| Health check | http://localhost:5000/health |
+| Backend API | http://localhost:5001/api |
+| Health check | http://localhost:5001/health |
 | Prisma Studio | `cd backend && npx prisma studio` |
-
-> Trên một số máy macOS, port `5000` bị chiếm sẵn bởi hệ thống. Khi đó hãy chạy backend ở port `5001` và đặt `NEXT_PUBLIC_API_URL=http://localhost:5001/api` trong `frontend/.env.local`.
 
 ---
 
