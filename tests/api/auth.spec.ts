@@ -30,7 +30,7 @@ test.describe('Authentication', () => {
 
       const cookies = response.headers()['set-cookie'];
       expect(cookies).toContain('token=');
-      expect(cookies).toContain('httponly');
+      expect(cookies?.toLowerCase()).toContain('httponly');
     });
 
     test('platform admin login without tenantCode', async ({ request }) => {

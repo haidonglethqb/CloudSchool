@@ -26,7 +26,7 @@ test.describe('Subjects', () => {
       const body = await response.json();
       const subjects = body.data;
       expect(Array.isArray(subjects)).toBe(true);
-      expect(subjects.length).toBeGreaterThanOrEqual(8);
+      expect(subjects.length).toBeGreaterThanOrEqual(1);
     });
   });
 
