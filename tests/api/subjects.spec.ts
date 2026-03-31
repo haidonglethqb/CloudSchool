@@ -18,6 +18,7 @@ test.afterAll(async () => {
 });
 
 test.describe('Subjects', () => {
+  test.describe.configure({ mode: 'serial' });
   test.describe('List Subjects', () => {
     test('authenticated user can list subjects', async () => {
       const response = await teacherCtx.get('/api/subjects');

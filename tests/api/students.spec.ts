@@ -19,6 +19,7 @@ test.afterAll(async () => {
 });
 
 test.describe('Students', () => {
+  test.describe.configure({ mode: 'serial' });
   test.describe('List Students', () => {
     test('SUPER_ADMIN can list students', async () => {
       const response = await superAdminCtx.get('/api/students');

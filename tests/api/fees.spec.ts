@@ -21,6 +21,7 @@ test.afterAll(async () => {
 });
 
 test.describe('Fees', () => {
+  test.describe.configure({ mode: 'serial' });
   let createdFeeId: string;
 
   test.describe('List Fees', () => {

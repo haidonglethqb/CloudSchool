@@ -8,10 +8,10 @@ const BASE_URL = process.env.API_BASE_URL || 'http://localhost:5001';
 
 export default defineConfig({
   testDir: '.',
-  fullyParallel: false,
+  fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: 1,
+  workers: process.env.CI ? 4 : 2,
   reporter: process.env.CI
     ? [['github'], ['json', { outputFile: 'test-results/results.json' }], ['html', { open: 'never' }]]
     : [['list'], ['html', { open: 'on-failure' }]],

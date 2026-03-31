@@ -36,7 +36,7 @@ test.describe('RBAC - Role-Based Access Control', () => {
     test('TEACHER cannot delete student', async () => {
       const listRes = await superAdminCtx.get('/api/students?limit=1');
       const listBody = await listRes.json();
-      const studentId = listBody.students?.[0]?.id;
+      const studentId = listBody.data?.[0]?.id;
 
       if (studentId) {
         const response = await teacherCtx.delete(`/api/students/${studentId}`);
@@ -109,7 +109,7 @@ test.describe('RBAC - Role-Based Access Control', () => {
     test('STAFF cannot delete student', async () => {
       const listRes = await staffCtx.get('/api/students?limit=1');
       const listBody = await listRes.json();
-      const studentId = listBody.students?.[0]?.id;
+      const studentId = listBody.data?.[0]?.id;
 
       if (studentId) {
         const response = await staffCtx.delete(`/api/students/${studentId}`);
