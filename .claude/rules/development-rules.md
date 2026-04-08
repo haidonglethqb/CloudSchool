@@ -17,10 +17,12 @@
 - Use `ai-multimodal` skill and `imagemagick` skill for generating and editing images, videos, documents, etc. if needed
 - Use `sequential-thinking` and `debug` skills for sequential thinking, analyzing code, debugging, etc. if needed
 - **[IMPORTANT]** Follow the codebase structure and code standards in `./docs` during implementation.
+- **[IMPORTANT]** Reference `./docs/system/README.md` as the system documentation hub before working on features
 - **[IMPORTANT]** Do not just simulate the implementation or mocking them, always implement the real code.
 
 ## Code Quality Guidelines
 - Read and follow codebase structure and code standards in `./docs`
+- Reference `./docs/system/` for system specifications before implementing changes
 - Don't be too harsh on code linting, but **make sure there are no syntax errors and code are compilable**
 - Prioritize functionality and readability over strict style enforcement and code formatting
 - Use reasonable code quality standards that enhance developer productivity
@@ -40,6 +42,19 @@
 - Implement features according to specifications
 - Handle edge cases and error scenarios
 - **DO NOT** create new enhanced files, update to the existing files directly.
+- **[MANDATORY] After implementation, update relevant `./docs/system/` documentation if the change affects system behavior, API contracts, database schema, or business logic**
+
+## Documentation Updates
+- **After every feature implementation, bug fix, or refactoring**, review and update relevant files in `./docs/system/`:
+  - Changed endpoints → `./docs/system/backend/api-endpoints.md`
+  - New models/fields → `./docs/system/database/*.md`
+  - Modified business rules → `./docs/system/business-rules/*.md`
+  - Security changes → `./docs/system/security/*.md`
+  - New workflows → `./docs/system/data-flows/*.md`
+  - Auth/RBAC changes → `./docs/system/authentication/*.md`
+- Keep each file under 100 lines; split content if needed
+- Update cross-references ("Related" sections) when adding/removing links
+- Delegate to `docs-manager` agent for complex documentation updates
 
 ## Visual Aids
 - Use `/preview --explain` when explaining unfamiliar code patterns or complex logic

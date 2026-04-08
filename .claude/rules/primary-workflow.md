@@ -3,6 +3,22 @@
 **IMPORTANT:** Analyze the skills catalog and activate the skills that are needed for the task during the process.
 **IMPORTANT**: Ensure token efficiency while maintaining high quality.
 
+#### 0. System Understanding (MANDATORY FIRST STEP)
+- **BEFORE** planning or implementing, read `./docs/system/README.md` to understand the documentation navigation hub
+- Based on the task, navigate to the relevant subfolder in `./docs/system/`:
+  - Architecture questions → `./docs/system/architecture/`
+  - Auth/RBAC → `./docs/system/authentication/`
+  - Database changes → `./docs/system/database/`
+  - Scoring logic → `./docs/system/scoring-system/`
+  - Frontend changes → `./docs/system/frontend/`
+  - Backend changes → `./docs/system/backend/`
+  - Business rules → `./docs/system/business-rules/`
+  - Security concerns → `./docs/system/security/`
+  - User flows → `./docs/system/data-flows/`
+  - Deployment → `./docs/system/deployment/`
+- Each file is <100 lines with cross-references for efficient reading
+- Use this documentation as the **source of truth** for system behavior
+
 #### 1. Code Implementation
 - Before you start, delegate to `planner` agent to create a implementation plan with TODO tasks in `./plans` directory.
 - When in planning phase, use multiple `researcher` agents in parallel to conduct research on different relevant technical topics and report back to `planner` agent to create implementation plan.
@@ -37,6 +53,14 @@
 - Follow API contracts precisely
 - Maintain backward compatibility
 - Document breaking changes
+- **[MANDATORY] After implementation, update relevant documentation in `./docs/system/` if the feature/fix changes existing behavior:**
+  - Modified API endpoints → Update `./docs/system/backend/api-endpoints.md`
+  - New/changed database fields → Update relevant `./docs/system/database/*.md`
+  - New business rules → Update `./docs/system/business-rules/*.md`
+  - Security changes → Update `./docs/system/security/*.md`
+  - New user flows → Update `./docs/system/data-flows/*.md`
+  - Architecture changes → Update `./docs/system/architecture/*.md`
+  - Scoring/promotion logic → Update `./docs/system/scoring-system/*.md`
 - Delegate to `docs-manager` agent to update docs in `./docs` directory if any.
 
 #### 5. Debugging

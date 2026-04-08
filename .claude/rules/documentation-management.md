@@ -21,11 +21,27 @@ The `project-manager` agent MUST update these documents when:
 - Project timeline or scope adjustments are made
 - External dependencies or breaking changes occur
 
+### System Documentation Triggers (`./docs/system/`)
+**After EVERY implementation, bug fix, or refactoring**, the implementing agent MUST:
+- Review if the change affects any documented behavior in `./docs/system/`
+- Update the relevant subfolder file(s) if behavior changed:
+  - API changes → `./docs/system/backend/api-endpoints.md`, `./docs/system/backend/route-logic.md`
+  - Database changes → `./docs/system/database/*.md` (relevant model file)
+  - Auth/RBAC changes → `./docs/system/authentication/*.md`
+  - Scoring logic → `./docs/system/scoring-system/*.md`
+  - Security fixes → `./docs/system/security/*.md`
+  - New user flows → `./docs/system/data-flows/*.md`
+  - Business rule changes → `./docs/system/business-rules/*.md`
+- Keep files under 100 lines; split content or restructure if needed
+- Update "Related" sections with new/removed cross-references
+- If unsure which file to update, check `./docs/system/README.md` navigation hub
+
 ### Update Protocol
 1. **Before Updates**: Always read current roadmap and changelog status
 2. **During Updates**: Maintain version consistency and proper formatting
 3. **After Updates**: Verify links, dates, and cross-references are accurate
 4. **Quality Check**: Ensure updates align with actual implementation progress
+5. **System Docs**: When modifying code features, update the relevant file in `./docs/system/` subfolders. Use `./docs/system/README.md` as the navigation hub. Keep each file <100 lines.
 
 ### Plans
 

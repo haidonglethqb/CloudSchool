@@ -38,12 +38,26 @@ Keep all important docs in `./docs` folder:
 
 ```
 ./docs
+├── system/                          # System specification (modular framework)
+│   ├── README.md                    # Navigation hub
+│   ├── architecture/                # System architecture
+│   ├── authentication/              # Auth & authorization
+│   ├── database/                    # Database schema & models
+│   ├── scoring-system/              # Scoring logic & promotion
+│   ├── frontend/                    # Next.js frontend architecture
+│   ├── backend/                     # Express.js backend architecture
+│   ├── business-rules/              # Regulations & validations
+│   ├── security/                    # Security implementations
+│   ├── data-flows/                  # User journey documentation
+│   └── deployment/                  # Deployment configuration
 ├── project-overview-pdr.md
 ├── code-standards.md
 ├── codebase-summary.md
 ├── design-guidelines.md
 └── system-architecture.md
 ```
+
+**System Documentation Framework**: The `./docs/system/` folder contains a modular, cross-referenced documentation framework. Each subfolder focuses on a specific aspect with focused files (<100 lines each). Use `./docs/system/README.md` as the navigation hub.
 
 ## External Files
 
