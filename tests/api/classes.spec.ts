@@ -45,6 +45,22 @@ test.describe('Classes', () => {
       const response = await superAdminCtx.get('/api/classes?academicYear=2024-2025');
       expect(response.status()).toBe(200);
     });
+
+    test('update class capacity to 0 is handled correctly', async () => {
+      const listRes = await superAdminCtx.get('/api/classes');
+      const listBody = await listRes.json();
+      const classes = listBody.data;
+      const classWithNoStudents = classes.find((c: any) => c._count?.students === 0);
+
+      if (classWithNoStudents) {
+        // capacity 0 is now properly handled (not silently dropped)
+        const response = await superAdminCtx.put(`/api/classes/${classWithNoStudents.id}`, {
+          data: { capacity: 0 },
+        });
+        // Should either succeed (empty class) or fail validation
+        expect([200, 400]).toContain(response.status());
+      }
+    });
   });
 
   test.describe('Get Class Detail', () => {

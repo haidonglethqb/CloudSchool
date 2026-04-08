@@ -147,6 +147,7 @@ test.describe('Students', () => {
     test('only SUPER_ADMIN can delete student', async () => {
       if (createdStudentId) {
         const response = await superAdminCtx.delete(`/api/students/${createdStudentId}`);
+        // May fail if student has scores/promotions/fees — that's expected behavior
         expect([200, 204, 400, 409]).toContain(response.status());
       }
     });

@@ -72,5 +72,14 @@ test.describe('Settings', () => {
       });
       expect(response.status()).toBe(400);
     });
+
+    test('passScore outside minScore-maxScore range returns 400', async () => {
+      const response = await superAdminCtx.put('/api/settings', {
+        data: {
+          passScore: 15,
+        },
+      });
+      expect(response.status()).toBe(400);
+    });
   });
 });

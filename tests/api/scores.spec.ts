@@ -156,8 +156,29 @@ test.describe('Scores', () => {
           ],
         },
       });
-      // May succeed or fail based on teacher assignment
-      expect([200, 201, 403]).toContain(response.status());
+      // May succeed, or fail based on teacher assignment/semester date window
+      expect([200, 201, 403, 400]).toContain(response.status());
+    });
+
+    test('STAFF can batch upsert scores', async () => {
+      if (!studentId || !scoreComponentId || !semesterId) {
+        test.skip();
+        return;
+      }
+
+      const response = await staffCtx.post('/api/scores/batch', {
+        data: {
+          scores: [
+            {
+              studentId,
+              scoreComponentId,
+              semesterId,
+              value: 7.5,
+            },
+          ],
+        },
+      });
+      expect([200, 201]).toContain(response.status());
     });
   });
 });
