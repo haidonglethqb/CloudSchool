@@ -465,14 +465,6 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* Scroll indicator */}
-        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-10">
-          <div className="w-6 h-10 border-2 border-white/20 rounded-full flex justify-center">
-            <div className="w-1 h-2 bg-white/40 rounded-full mt-2 animate-scroll-indicator" />
-          </div>
-        </div>
-
-        {/* Fade to white */}
         <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-white to-transparent pointer-events-none" />
       </section>
 
