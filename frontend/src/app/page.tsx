@@ -28,6 +28,11 @@ import {
   Globe,
   Award,
   TrendingUp,
+  UserCheck,
+  FileText,
+  Award as AwardIcon,
+  Clock,
+  CalendarDays,
 } from 'lucide-react'
 
 // ==================== HOOKS ====================
@@ -444,9 +449,15 @@ export default function LandingPage() {
             <div className="mt-10 flex items-center justify-center gap-8 text-sm text-white/35">
               <div className="flex items-center gap-2">
                 <div className="flex -space-x-2">
-                  {['🏫', '📚', '🎓', '👨‍🏫', '👩‍🎓'].map((emoji, i) => (
-                    <div key={i} className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 border-2 border-[#070B14] flex items-center justify-center text-xs">
-                      {emoji}
+                  {[
+                    { icon: School, color: 'from-blue-400 to-blue-500' },
+                    { icon: Users, color: 'from-cyan-400 to-cyan-500' },
+                    { icon: BookOpen, color: 'from-indigo-400 to-indigo-500' },
+                    { icon: UserCheck, color: 'from-violet-400 to-violet-500' },
+                    { icon: FileText, color: 'from-emerald-400 to-emerald-500' },
+                  ].map(({ icon: Icon, color }, i) => (
+                    <div key={i} className={`w-8 h-8 rounded-full bg-gradient-to-br ${color} border-2 border-[#070B14] flex items-center justify-center`}>
+                      <Icon className="w-3.5 h-3.5 text-white" />
                     </div>
                   ))}
                 </div>

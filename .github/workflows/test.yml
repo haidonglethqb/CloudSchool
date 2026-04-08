@@ -12,9 +12,6 @@ on:
           - all
           - api-tests
           - performance
-  workflow_run:
-    workflows: ['Deploy to VPS']
-    types: [completed]
 
 env:
   NODE_VERSION: '20'
@@ -23,8 +20,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Skip if triggered by a failed deploy
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - name: Checkout repository
@@ -46,7 +41,7 @@ jobs:
       # ── Run tests ──
       - name: Run API tests
         working-directory: tests
-        if: ${{ github.event.inputs.test_type == 'all' || github.event.inputs.test_type == 'api-tests' || github.event_name == 'workflow_run' }}
+        if: ${{ github.event.inputs.test_type == 'all' || github.event.inputs.test_type == 'api-tests' }}
         run: npx playwright test --project=api-tests
         env:
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
@@ -65,7 +60,7 @@ jobs:
 
       - name: Run performance tests
         working-directory: tests
-        if: ${{ github.event.inputs.test_type == 'all' || github.event.inputs.test_type == 'performance' || github.event_name == 'workflow_run' }}
+        if: ${{ github.event.inputs.test_type == 'all' || github.event.inputs.test_type == 'performance' }}
         run: npx playwright test --project=performance
         env:
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
