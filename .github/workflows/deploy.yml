@@ -202,9 +202,25 @@ jobs:
             done
 
             # ── Bước 5: Deploy database migrations (SAFELY — no data loss) ─
-            # CloudSchool dùng Prisma migrations (không còn db push --accept-data-loss)
+            # Handle transition from db push to migrations:
+            # - Nếu DB chưa có migration history → baseline trước
+            # - Sau đó apply migrations mới
             echo "Deploying database migrations..."
-            docker compose run --rm --user root backend npx prisma migrate deploy
+
+            # Check if _prisma_migrations table exists (first migration deployment?)
+            MIGRATION_TABLE_EXISTS=$(docker compose exec -T postgres psql -U ${{ secrets.POSTGRES_USER }} -d ${{ secrets.POSTGRES_DB }} -t -c "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '_prisma_migrations');" 2>/dev/null | tr -d '[:space:]')
+
+            if [ "$MIGRATION_TABLE_EXISTS" = "f" ] || [ "$MIGRATION_TABLE_EXISTS" = "" ]; then
+              echo "First migration deployment — baselining existing database..."
+              # Sync current schema to DB (safe — only adds new columns, no data loss)
+              docker compose run --rm --user root backend npx prisma db push
+              # Mark our migration as already applied (since db push just synced the schema)
+              docker compose run --rm --user root backend npx prisma migrate resolve --applied 20260408000000_add_academic_year_relation_and_score_component_active
+            else
+              echo "Running pending migrations..."
+              docker compose run --rm --user root backend npx prisma migrate deploy
+            fi
+
             echo "Database migrations completed."
 
             # ── Bước 5.5: Seed database (idempotent - safe to run multiple times)
