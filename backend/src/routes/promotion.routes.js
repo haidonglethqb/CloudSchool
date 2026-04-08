@@ -141,9 +141,41 @@ router.post('/calculate', authenticate, authorize('SUPER_ADMIN'), async (req, re
       // QĐ9: Auto-deactivate students who exceeded maxRetentions (batch)
       const failStudentIds = upserted.filter(p => p.result === 'FAIL').map(p => p.studentId)
       if (failStudentIds.length > 0) {
+        // Scope retention count by current academic year via semester
+        const currentSemester = upserted[0] ? await tx.semester.findFirst({
+          where: { id: upserted[0].semesterId, tenantId: req.tenantId }
+        }) : null
+
+        // Build where clause for fail count: prefer academicYearId, fallback to year string match
+        let failWhere = {
+          studentId: { in: failStudentIds },
+          tenantId: req.tenantId,
+          result: 'FAIL',
+        }
+
+        if (currentSemester?.academicYearId) {
+          failWhere.semester = { academicYearId: currentSemester.academicYearId }
+        } else if (currentSemester?.year) {
+          // Fallback: match semesters by year string (e.g., "2024-2025")
+          const yearMatch = currentSemester.year.match(/(\d{4})-(\d{4})/)
+          if (yearMatch) {
+            const [, startYear, endYear] = yearMatch
+            const matchingSemesters = await tx.semester.findMany({
+              where: {
+                tenantId: req.tenantId,
+                year: currentSemester.year
+              },
+              select: { id: true }
+            })
+            if (matchingSemesters.length > 0) {
+              failWhere.semesterId = { in: matchingSemesters.map(s => s.id) }
+            }
+          }
+        }
+
         const failCounts = await tx.promotion.groupBy({
           by: ['studentId'],
-          where: { studentId: { in: failStudentIds }, tenantId: req.tenantId, result: 'FAIL' },
+          where: failWhere,
           _count: { _all: true }
         })
 

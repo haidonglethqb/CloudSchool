@@ -12,16 +12,25 @@ router.use(authenticate)
 function sendCSV(res, filename, headers, rows) {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8')
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+
+  // Escape CSV formula injection (=, +, -, @)
+  const escapeCsvValue = (val) => {
+    if (val === null || val === undefined) return ''
+    const str = String(val)
+    if (/^[=+\-@]/.test(str)) return `'${str}`
+    return str
+  }
 
   // BOM for Excel UTF-8 compatibility
   let csv = '\uFEFF'
   csv += headers.join(',') + '\n'
   for (const row of rows) {
     csv += row.map(cell => {
-      const val = cell === null || cell === undefined ? '' : String(cell)
-      return val.includes(',') || val.includes('"') || val.includes('\n')
-        ? `"${val.replace(/"/g, '""')}"`
-        : val
+      const escaped = escapeCsvValue(cell)
+      return escaped.includes(',') || escaped.includes('"') || escaped.includes('\n')
+        ? `"${escaped.replace(/"/g, '""')}"`
+        : escaped
     }).join(',') + '\n'
   }
   res.send(csv)
@@ -163,12 +172,25 @@ router.get('/classes', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), asyn
 
 // ==================== SCORE EXPORT ====================
 // GET /export/scores?format=csv|xlsx&classId=xxx&subjectId=xxx&semesterId=xxx
-router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), async (req, res, next) => {
+router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADMIN'), async (req, res, next) => {
   try {
     const { format = 'csv', classId, subjectId, semesterId } = req.query
 
     if (!classId || !subjectId || !semesterId) {
       throw new AppError('classId, subjectId, and semesterId are required', 400, 'MISSING_PARAMS')
+    }
+
+    // For TEACHER role, verify assignment
+    if (req.user.role === 'TEACHER') {
+      const assignment = await prisma.teacherAssignment.findFirst({
+        where: {
+          teacherId: req.user.id,
+          classId,
+          subjectId,
+          tenantId: req.tenantId
+        }
+      })
+      if (!assignment) throw new AppError('Not assigned to this class/subject', 403, 'FORBIDDEN')
     }
 
     const students = await prisma.student.findMany({

@@ -405,11 +405,13 @@ Logic:
 // store/auth.ts
 interface AuthState {
   user: User | null        // { id, email, fullName, role, tenantId }
+  token: string | null     // JWT token
   isAuthenticated: boolean
-  setAuth(user)            // set user + isAuthenticated
+  setAuth(user, token)     // set user + token + isAuthenticated
   logout()                 // clear state, remove cookie
 }
-// Sử dụng persist middleware → lưu vào localStorage
+// Sử dụng persist middleware → lưu vào sessionStorage (đóng tab = logout)
+// storage: createJSONStorage(() => sessionStorage)
 ```
 
 ### 5.4 API Client (Axios)
@@ -421,10 +423,12 @@ const api = axios.create({
   withCredentials: true    // Tự gửi cookie
 })
 
-// Response interceptor: 401 → redirect /login
-// 13 API modules: authApi, adminApi, userApi, studentApi, classApi,
+// Response interceptor: 401 → logout + redirect /login
+// Blob error handling: parse error response from Blob to JSON
+// 18 API modules: authApi, adminApi, userApi, studentApi, classApi,
 //   subjectApi, scoreComponentApi, scoreApi, promotionApi, reportApi,
-//   parentApi, settingsApi, tenantApi
+//   parentApi, settingsApi, tenantApi, exportApi, monitoringApi,
+//   feeApi, academicYearApi
 ```
 
 ---
@@ -590,9 +594,27 @@ Global errorHandler middleware bắt:
 - Prisma type safety
 
 ### 9.4 Other
-- Helmet.js: security headers
+- Helmet.js: security headers (CSP, X-Content-Type-Options, etc.)
 - CORS: whitelist CORS_ORIGIN
 - Error handler: không leak stack trace ở production
+- CSV Formula Injection Prevention: escape values starting with `=`, `+`, `-`, `@`
+- X-Content-Type-Options: nosniff on all export responses
+- Content Security Policy: default-src 'self', script-src 'self'
+
+### 9.5 Business Logic Protections
+- Race condition prevention: Serializable isolation level for class capacity checks
+- Student delete guard: blocks deletion if student has promotions, fees, transfers, parent links, enrollments, or scores
+- Fee delete guard: blocks deletion if fee has student payment records
+- Capacity guard: cannot reduce class capacity below current student count
+- Academic year overlap check: prevents overlapping year ranges on create/update
+- Role escalation prevention: only SUPER_ADMIN, STAFF, TEACHER roles allowed via user PUT
+- PassScore range validation: must be within [minScore, maxScore]
+- ScoreComponent-Subject validation: batch score entry validates component belongs to subject
+- Tenant verification: batch score entry verifies all students belong to tenant
+- Max retention scoping: counts failures by academic year (with year string fallback if no academicYearId)
+- Year-end promotion tracking: skipped students (missing grades) are tracked and reported in response
+- Ranking edge case: returns `null` ranking when student not found in classmate averages
+- Cache invalidation: `invalidateUserCache()` called on user disable
 
 ---
 
@@ -603,11 +625,14 @@ Global errorHandler middleware bắt:
 #### Backend (.env)
 ```
 PORT=5000
+NODE_ENV=production
 DATABASE_URL=postgresql://user:pass@host:5432/cloudschool
 JWT_SECRET=<random-256-bit-string>
 JWT_EXPIRES_IN=24h
 CORS_ORIGIN=https://your-domain.com
-NODE_ENV=production
+COOKIE_SECURE=true          # false cho development
+TZ_OFFSET_HOURS=7           # Timezone offset cho teacher semester check (mặc định UTC+7 Vietnam)
+RATE_LIMIT_BYPASS_SECRET=   # Secret cho automated testing
 ```
 
 #### Frontend (.env.local)

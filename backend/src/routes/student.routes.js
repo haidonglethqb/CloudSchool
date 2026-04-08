@@ -68,7 +68,10 @@ router.get('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), a
       where: { id: req.params.id, tenantId: req.tenantId },
       include: {
         class: { include: { grade: true } },
-        scores: { include: { subject: true, semester: true, scoreComponent: true } }
+        scores: {
+          where: { ...(req.query.semesterId && { semesterId: req.query.semesterId }) },
+          include: { subject: true, semester: true, scoreComponent: true }
+        }
       }
     })
 
@@ -84,6 +87,7 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
   body('fullName').notEmpty().withMessage('Name is required'),
   body('gender').isIn(['MALE', 'FEMALE', 'OTHER']).withMessage('Invalid gender'),
   body('dateOfBirth').isISO8601().withMessage('Invalid date'),
+  body('admissionDate').optional().isISO8601().withMessage('Invalid date format'),
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req)
@@ -235,7 +239,17 @@ router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, n
     })
     if (!existingStudent) throw new AppError('Student not found', 404, 'NOT_FOUND')
 
-    const scoreCount = await prisma.score.count({ where: { studentId: req.params.id } })
+    const [scoreCount, promotionCount, feeCount, transferCount, parentCount, enrollmentCount] = await Promise.all([
+      prisma.score.count({ where: { studentId: req.params.id } }),
+      prisma.promotion.count({ where: { studentId: req.params.id } }),
+      prisma.studentFee.count({ where: { studentId: req.params.id } }),
+      prisma.transferHistory.count({ where: { studentId: req.params.id } }),
+      prisma.parentStudent.count({ where: { studentId: req.params.id } }),
+      prisma.classEnrollment.count({ where: { studentId: req.params.id } })
+    ])
+    if (promotionCount > 0 || feeCount > 0 || transferCount > 0 || parentCount > 0 || enrollmentCount > 0) {
+      throw new AppError('Cannot delete student with existing records (promotions, fees, transfers, parent links, enrollments)', 400, 'HAS_RECORDS')
+    }
     if (scoreCount > 0) {
       throw new AppError('Cannot delete student with score records', 400, 'HAS_SCORES')
     }
@@ -268,6 +282,9 @@ router.post('/:id/transfer', authenticate, authorize('SUPER_ADMIN', 'STAFF'), as
     }
 
     const fromClassId = currentStudent.classId
+    if (!fromClassId) {
+      throw new AppError('Student has no current class to transfer from', 400, 'NO_FROM_CLASS')
+    }
     if (fromClassId === classId) {
       throw new AppError('Student is already in this class', 400, 'SAME_CLASS')
     }

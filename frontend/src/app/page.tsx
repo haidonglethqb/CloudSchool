@@ -256,13 +256,6 @@ export default function LandingPage() {
               </Link>
             </div>
 
-            <p className="mt-5 text-sm text-white/35">
-              Dùng thử demo: Mã trường{' '}
-              <code className="px-1.5 py-0.5 bg-white/10 border border-white/15 rounded text-white/65 font-mono hover:bg-white/15 hover:text-white transition-colors cursor-help" title="Sử dụng mã này khi đăng nhập">
-                THPT-DEMO
-              </code>
-            </p>
-
             {/* Social proof */}
             <div className="mt-10 flex items-center justify-center gap-8 text-sm text-white/35">
               <div className="flex items-center gap-2">

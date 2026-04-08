@@ -183,6 +183,8 @@ model Class {
   grade        Grade    @relation(fields: [gradeId], references: [id], onDelete: Cascade)
   name         String
   academicYear String   @default("2024-2025")
+  academicYearId String?
+  academicYearRef AcademicYear? @relation(fields: [academicYearId], references: [id])
   capacity     Int      @default(40)
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
@@ -328,6 +330,7 @@ model ScoreComponent {
   subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   name      String
   weight    Int
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -439,6 +442,7 @@ model AcademicYear {
 
   semesters   Semester[]
   enrollments ClassEnrollment[]
+  classes     Class[]
 
   @@unique([tenantId, startYear, endYear])
   @@index([tenantId])

@@ -20,7 +20,14 @@ api.interceptors.request.use(
 
 api.interceptors.response.use(
   (response) => response,
-  (error: AxiosError<{ error?: { message?: string; code?: string } }>) => {
+  async (error: AxiosError<{ error?: { message?: string; code?: string } }>) => {
+    // Handle blob error responses
+    if (error.config?.responseType === 'blob' && error.response?.data instanceof Blob) {
+      try {
+        const text = await (error.response.data as Blob).text()
+        error.response.data = JSON.parse(text)
+      } catch {}
+    }
     if (error.response?.status === 401) {
       useAuthStore.getState().logout()
       if (typeof window !== 'undefined') window.location.href = '/login'

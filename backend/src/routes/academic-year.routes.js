@@ -57,6 +57,18 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
       throw new AppError('Năm bắt đầu phải nhỏ hơn năm kết thúc', 400, 'INVALID_YEAR_RANGE')
     }
 
+    // Check for overlapping academic years
+    const overlap = await prisma.academicYear.findFirst({
+      where: {
+        tenantId: req.tenantId,
+        startYear: { lte: endYear },
+        endYear: { gte: startYear }
+      }
+    })
+    if (overlap) {
+      throw new AppError(`Academic year overlaps with existing year: ${overlap.startYear}-${overlap.endYear}`, 409, 'OVERLAPPING_YEAR')
+    }
+
     const existing = await prisma.academicYear.findFirst({
       where: { tenantId: req.tenantId, startYear, endYear }
     })
@@ -96,6 +108,19 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
 
     if (startYear >= endYear) {
       throw new AppError('Năm bắt đầu phải nhỏ hơn năm kết thúc', 400, 'INVALID_YEAR_RANGE')
+    }
+
+    // Check for overlapping academic years (exclude current year)
+    const overlap = await prisma.academicYear.findFirst({
+      where: {
+        tenantId: req.tenantId,
+        id: { not: req.params.id },
+        startYear: { lte: endYear },
+        endYear: { gte: startYear }
+      }
+    })
+    if (overlap) {
+      throw new AppError(`Academic year overlaps with existing year: ${overlap.startYear}-${overlap.endYear}`, 409, 'OVERLAPPING_YEAR')
     }
 
     const ay = await prisma.academicYear.update({

@@ -63,7 +63,16 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
       include: { subject: { select: { id: true, name: true } } }
     })
 
-    res.status(201).json({ data: component })
+    // Calculate total weight for subject and warn if not 100
+    const totalWeightPostCreate = (await prisma.scoreComponent.aggregate({
+      where: { subjectId },
+      _sum: { weight: true }
+    }))._sum.weight || 0
+    const response = { data: component }
+    if (totalWeightPostCreate !== 100) {
+      response.warning = `Total weight for this subject is ${totalWeightPostCreate}%, not 100%`
+    }
+    res.status(201).json(response)
   } catch (error) {
     next(error)
   }
@@ -79,8 +88,20 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
     })
     if (!current) throw new AppError('Not found', 404, 'NOT_FOUND')
 
+    // Check for duplicate name within same subject
+    if (name && name !== current.name) {
+      const dup = await prisma.scoreComponent.findFirst({
+        where: { tenantId: req.tenantId, subjectId: current.subjectId, name, id: { not: req.params.id } }
+      })
+      if (dup) throw new AppError('Score component name already exists for this subject', 409, 'DUPLICATE_NAME')
+    }
+
     // Validate total weight
-    if (weight) {
+    if (weight !== undefined) {
+      // Validate individual weight range
+      if (weight < 1 || weight > 100) {
+        throw new AppError('Weight must be between 1 and 100', 400, 'INVALID_WEIGHT')
+      }
       const others = await prisma.scoreComponent.findMany({
         where: { tenantId: req.tenantId, subjectId: current.subjectId, id: { not: current.id } }
       })
@@ -92,11 +113,21 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
 
     const component = await prisma.scoreComponent.update({
       where: { id: req.params.id },
-      data: { ...(name && { name }), ...(weight && { weight }) },
+      data: { ...(name && { name }), ...(weight !== undefined && { weight }) },
       include: { subject: { select: { id: true, name: true } } }
     })
 
-    res.json({ data: component })
+    // Calculate total weight for subject and warn if not 100
+    const effectiveSubjectId = name !== undefined ? current.subjectId : current.subjectId
+    const totalWeightPut = (await prisma.scoreComponent.aggregate({
+      where: { subjectId: effectiveSubjectId },
+      _sum: { weight: true }
+    }))._sum.weight || 0
+    const response = { data: component }
+    if (totalWeightPut !== 100) {
+      response.warning = `Total weight for this subject is ${totalWeightPut}%, not 100%`
+    }
+    res.json(response)
   } catch (error) {
     next(error)
   }

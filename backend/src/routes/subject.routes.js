@@ -222,6 +222,14 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
 
     const { name, code, description, isActive } = req.body
 
+    // Check for duplicate code
+    if (code && code.toUpperCase() !== existing.code.toUpperCase()) {
+      const dup = await prisma.subject.findFirst({
+        where: { tenantId: req.tenantId, code: code.toUpperCase(), id: { not: req.params.id } }
+      })
+      if (dup) throw new AppError('Subject code already exists', 409, 'DUPLICATE_CODE')
+    }
+
     const subject = await prisma.subject.update({
       where: { id: req.params.id },
       data: {
@@ -248,6 +256,12 @@ router.delete('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (re
 
     await prisma.subject.update({
       where: { id: req.params.id },
+      data: { isActive: false }
+    })
+
+    // Also deactivate score components
+    await prisma.scoreComponent.updateMany({
+      where: { subjectId: req.params.id },
       data: { isActive: false }
     })
 

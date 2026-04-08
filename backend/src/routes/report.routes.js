@@ -36,44 +36,51 @@ router.get('/subject-summary', authenticate, async (req, res, next) => {
       orderBy: { name: 'asc' }
     })
 
-    const classStats = await Promise.all(
-      classes.map(async (cls) => {
-        const studentIds = cls.students.map(s => s.id)
-        if (studentIds.length === 0) {
-          return { class: { id: cls.id, name: cls.name, grade: cls.grade }, totalStudents: 0, passedStudents: 0, passRate: 0, averageScore: 0 }
+    // Batch fetch ALL scores in 1 query instead of N+1 per class
+    const allStudentIds = classes.flatMap(cls => cls.students.map(s => s.id))
+    const allScores = allStudentIds.length > 0 ? await prisma.score.findMany({
+      where: { studentId: { in: allStudentIds }, subjectId, semesterId, tenantId: req.tenantId },
+      include: { scoreComponent: true }
+    }) : []
+
+    // Group scores by studentId in memory
+    const scoresByStudent = {}
+    for (const score of allScores) {
+      if (!scoresByStudent[score.studentId]) scoresByStudent[score.studentId] = []
+      scoresByStudent[score.studentId].push(score)
+    }
+
+    const classStats = classes.map((cls) => {
+      const studentIds = cls.students.map(s => s.id)
+      if (studentIds.length === 0) {
+        return { class: { id: cls.id, name: cls.name, grade: cls.grade }, totalStudents: 0, passedStudents: 0, passRate: 0, averageScore: 0 }
+      }
+
+      let passedCount = 0
+      let totalAvg = 0
+      let withScores = 0
+
+      for (const sid of studentIds) {
+        const studentScores = scoresByStudent[sid] || []
+        const avg = calcWeightedAverage(studentScores)
+        if (avg !== null) {
+          totalAvg += avg
+          withScores++
+          if (avg >= settings.passScore) passedCount++
         }
+      }
 
-        const scores = await prisma.score.findMany({
-          where: { studentId: { in: studentIds }, subjectId, semesterId, tenantId: req.tenantId },
-          include: { scoreComponent: true }
-        })
+      const avgScore = withScores > 0 ? Math.round((totalAvg / withScores) * 100) / 100 : 0
+      const passRate = studentIds.length > 0 ? Math.round((passedCount / studentIds.length) * 10000) / 100 : 0
 
-        let passedCount = 0
-        let totalAvg = 0
-        let withScores = 0
-
-        for (const sid of studentIds) {
-          const studentScores = scores.filter(s => s.studentId === sid)
-          const avg = calcWeightedAverage(studentScores)
-          if (avg !== null) {
-            totalAvg += avg
-            withScores++
-            if (avg >= settings.passScore) passedCount++
-          }
-        }
-
-        const avgScore = withScores > 0 ? Math.round((totalAvg / withScores) * 100) / 100 : 0
-        const passRate = studentIds.length > 0 ? Math.round((passedCount / studentIds.length) * 10000) / 100 : 0
-
-        return {
-          class: { id: cls.id, name: cls.name, grade: cls.grade },
-          totalStudents: studentIds.length,
-          passedStudents: passedCount,
-          passRate,
-          averageScore: avgScore
-        }
-      })
-    )
+      return {
+        class: { id: cls.id, name: cls.name, grade: cls.grade },
+        totalStudents: studentIds.length,
+        passedStudents: passedCount,
+        passRate,
+        averageScore: avgScore
+      }
+    })
 
     const [subject, semester] = await Promise.all([
       prisma.subject.findFirst({ where: { id: subjectId, tenantId: req.tenantId } }),
@@ -115,61 +122,69 @@ router.get('/semester-summary', authenticate, async (req, res, next) => {
       orderBy: { name: 'asc' }
     })
 
-    const classStats = await Promise.all(
-      classes.map(async (cls) => {
-        const studentIds = cls.students.map(s => s.id)
-        if (studentIds.length === 0) {
-          return { class: { id: cls.id, name: cls.name, grade: cls.grade }, totalStudents: 0, passedStudents: 0, passRate: 0, averageScore: 0 }
+    // Batch fetch ALL scores in 1 query instead of N+1 per class
+    const allStudentIds = classes.flatMap(cls => cls.students.map(s => s.id))
+    const allScores = allStudentIds.length > 0 ? await prisma.score.findMany({
+      where: { studentId: { in: allStudentIds }, semesterId, tenantId: req.tenantId },
+      include: { scoreComponent: true }
+    }) : []
+
+    // Group scores by studentId in memory
+    const scoresByStudent = {}
+    for (const score of allScores) {
+      if (!scoresByStudent[score.studentId]) scoresByStudent[score.studentId] = []
+      scoresByStudent[score.studentId].push(score)
+    }
+
+    const classStats = classes.map((cls) => {
+      const studentIds = cls.students.map(s => s.id)
+      if (studentIds.length === 0) {
+        return { class: { id: cls.id, name: cls.name, grade: cls.grade }, totalStudents: 0, passedStudents: 0, passRate: 0, averageScore: 0 }
+      }
+
+      // Pre-build Map: subjectId → scores[]
+      const scores = allScores.filter(s => studentIds.includes(s.studentId))
+      const scoreMap = new Map()
+      for (const s of scores) {
+        if (!scoreMap.has(s.studentId)) scoreMap.set(s.studentId, new Map())
+        const subjMap = scoreMap.get(s.studentId)
+        if (!subjMap.has(s.subjectId)) subjMap.set(s.subjectId, [])
+        subjMap.get(s.subjectId).push(s)
+      }
+
+      let passedCount = 0
+      let totalAvg = 0
+      let withScores = 0
+
+      for (const sid of studentIds) {
+        const subjMap = scoreMap.get(sid)
+        if (!subjMap) continue
+
+        const subjectAverages = []
+        for (const subjScores of subjMap.values()) {
+          const avg = calcWeightedAverage(subjScores)
+          if (avg !== null) subjectAverages.push(avg)
         }
 
-        const scores = await prisma.score.findMany({
-          where: { studentId: { in: studentIds }, semesterId, tenantId: req.tenantId },
-          include: { scoreComponent: true }
-        })
-
-        // Pre-build Map: studentId → subjectId → scores[]
-        const scoreMap = new Map()
-        for (const s of scores) {
-          if (!scoreMap.has(s.studentId)) scoreMap.set(s.studentId, new Map())
-          const subjMap = scoreMap.get(s.studentId)
-          if (!subjMap.has(s.subjectId)) subjMap.set(s.subjectId, [])
-          subjMap.get(s.subjectId).push(s)
+        if (subjectAverages.length > 0) {
+          const overallAvg = subjectAverages.reduce((a, b) => a + b, 0) / subjectAverages.length
+          totalAvg += overallAvg
+          withScores++
+          if (overallAvg >= settings.passScore) passedCount++
         }
+      }
 
-        let passedCount = 0
-        let totalAvg = 0
-        let withScores = 0
+      const avgScore = withScores > 0 ? Math.round((totalAvg / withScores) * 100) / 100 : 0
+      const passRate = studentIds.length > 0 ? Math.round((passedCount / studentIds.length) * 10000) / 100 : 0
 
-        for (const sid of studentIds) {
-          const subjMap = scoreMap.get(sid)
-          if (!subjMap) continue
-
-          const subjectAverages = []
-          for (const subjScores of subjMap.values()) {
-            const avg = calcWeightedAverage(subjScores)
-            if (avg !== null) subjectAverages.push(avg)
-          }
-
-          if (subjectAverages.length > 0) {
-            const overallAvg = subjectAverages.reduce((a, b) => a + b, 0) / subjectAverages.length
-            totalAvg += overallAvg
-            withScores++
-            if (overallAvg >= settings.passScore) passedCount++
-          }
-        }
-
-        const avgScore = withScores > 0 ? Math.round((totalAvg / withScores) * 100) / 100 : 0
-        const passRate = studentIds.length > 0 ? Math.round((passedCount / studentIds.length) * 10000) / 100 : 0
-
-        return {
-          class: { id: cls.id, name: cls.name, grade: cls.grade },
-          totalStudents: studentIds.length,
-          passedStudents: passedCount,
-          passRate,
-          averageScore: avgScore
-        }
-      })
-    )
+      return {
+        class: { id: cls.id, name: cls.name, grade: cls.grade },
+        totalStudents: studentIds.length,
+        passedStudents: passedCount,
+        passRate,
+        averageScore: avgScore
+      }
+    })
 
     const semester = await prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId } })
     const totalStudents = classStats.reduce((s, c) => s + c.totalStudents, 0)

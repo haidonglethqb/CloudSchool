@@ -67,6 +67,12 @@ router.put('/', authenticate, authorize('SUPER_ADMIN'), [
       throw new AppError('Điểm tối thiểu không được lớn hơn điểm tối đa', 400, 'INVALID_SCORE_RANGE')
     }
 
+    // Validate passScore range
+    const effectivePassScore = passScore ?? current.passScore ?? 5
+    if (effectivePassScore < effectiveMinScore || effectivePassScore > effectiveMaxScore) {
+      throw new AppError(`Pass score must be between ${effectiveMinScore} and ${effectiveMaxScore}`, 400, 'INVALID_PASS_SCORE')
+    }
+
     const updateData = {}
     if (minAge !== undefined) updateData.minAge = minAge
     if (maxAge !== undefined) updateData.maxAge = maxAge

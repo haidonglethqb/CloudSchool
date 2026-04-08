@@ -60,31 +60,32 @@ router.post('/promote', authenticate, authorize('SUPER_ADMIN'), async (req, res,
     const promoted = []
     const graduated = []
     const retained = []
+    const skipped = []
     const classCache = new Map()
 
     await prisma.$transaction(async (tx) => {
-      await processPassStudents(tx, passPromotions, { req, maxGradeLevel, gradeByLevel, yearStr, settings, semesterId, promoted, graduated, classCache })
+      await processPassStudents(tx, passPromotions, { req, maxGradeLevel, gradeByLevel, yearStr, settings, semesterId, promoted, graduated, retained, skipped, classCache })
       await processFailStudents(tx, failPromotions, { req, gradeByLevel, yearStr, settings, semesterId, retained, classCache })
     })
 
     await prisma.activityLog.create({
       data: {
         tenantId: req.tenantId, userId: req.user.id, action: 'YEAR_END_PROMOTE', entity: 'Promotion',
-        details: JSON.stringify({ semesterId, promoted: promoted.length, graduated: graduated.length, retained: retained.length })
+        details: JSON.stringify({ semesterId, promoted: promoted.length, graduated: graduated.length, retained: retained.length, skipped: skipped.length })
       }
     })
 
     res.json({
       data: {
-        promoted, graduated, retained,
-        summary: { totalPromoted: promoted.length, totalGraduated: graduated.length, totalRetained: retained.length }
+        promoted, graduated, retained, skipped,
+        summary: { totalPromoted: promoted.length, totalGraduated: graduated.length, totalRetained: retained.length, totalSkipped: skipped.length }
       }
     })
   } catch (error) { next(error) }
 })
 
 async function processPassStudents(tx, passPromotions, ctx) {
-  const { req, maxGradeLevel, gradeByLevel, yearStr, settings, semesterId, promoted, graduated, classCache } = ctx
+  const { req, maxGradeLevel, gradeByLevel, yearStr, settings, semesterId, promoted, graduated, retained, skipped, classCache } = ctx
 
   for (const p of passPromotions) {
     const currentLevel = p.class.grade.level
@@ -99,7 +100,13 @@ async function processPassStudents(tx, passPromotions, ctx) {
     }
 
     const nextGrade = gradeByLevel[currentLevel + 1]
-    if (!nextGrade) continue
+    if (!nextGrade) {
+      skipped.push({
+        student: { id: p.student.id, fullName: p.student.fullName, studentCode: p.student.studentCode },
+        reason: `No grade found for level ${currentLevel + 1}`
+      })
+      continue
+    }
 
     const baseName = p.class.name.replace(/-LB$/i, '').trim()
     const nextClassName = baseName.replace(/\d+/, String(currentLevel + 1))
@@ -107,10 +114,10 @@ async function processPassStudents(tx, passPromotions, ctx) {
 
     await tx.student.update({ where: { id: p.studentId }, data: { classId: targetClass.id } })
 
-    if (p.student.classId) {
+    if (p.classId) {
       await tx.transferHistory.create({
         data: {
-          tenantId: req.tenantId, studentId: p.studentId, fromClassId: p.student.classId,
+          tenantId: req.tenantId, studentId: p.studentId, fromClassId: p.classId,
           toClassId: targetClass.id, semesterId, reason: 'Lên lớp - xét cuối năm', transferredBy: req.user.id
         }
       })
@@ -168,9 +175,23 @@ async function findOrCreateClass(tx, tenantId, gradeId, name, academicYear, capa
   if (cls && cls._count.students >= cls.capacity) cls = null
 
   if (!cls) {
-    cls = await tx.class.create({
-      data: { tenantId, gradeId, name, academicYear, capacity }
-    })
+    let className = name
+    let attempts = 0
+    while (!cls && attempts < 10) {
+      try {
+        cls = await tx.class.create({
+          data: { tenantId, gradeId, name: className, academicYear, capacity }
+        })
+      } catch (e) {
+        if (e.code === 'P2002') {
+          attempts++
+          className = attempts === 1 ? `${name}-2` : `${name}-${attempts + 1}`
+        } else {
+          throw e
+        }
+      }
+    }
+    if (!cls) throw new AppError('Failed to create class after multiple attempts', 500, 'CLASS_CREATE_FAILED')
   }
 
   return cls

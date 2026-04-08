@@ -107,6 +107,11 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next
   try {
     const { fullName, email, role, department, phone, isActive, password } = req.body
 
+    const ALLOWED_TENANT_ROLES = ['SUPER_ADMIN', 'STAFF', 'TEACHER']
+    if (role && !ALLOWED_TENANT_ROLES.includes(role)) {
+      throw new AppError('Invalid role. Allowed roles: SUPER_ADMIN, STAFF, TEACHER', 400, 'INVALID_ROLE')
+    }
+
     const updateData = {}
     if (fullName) updateData.fullName = fullName
     if (email) updateData.email = email

@@ -43,16 +43,20 @@ CloudSchool là nền tảng SaaS cho phép:
 ### Backend
 - **Node.js** + **Express.js 5**
 - **Prisma ORM** + **PostgreSQL**
-- **JWT** (httpOnly cookie) authentication
+- **JWT** (httpOnly cookie, SameSite=Lax) authentication
 - **bcryptjs** password hashing
 - **express-validator** input validation
+- **helmet** security headers (CSP, X-Content-Type-Options)
+- **express-rate-limit** rate limiting
+- **LRU cache** for user/settings performance optimization
+- **ExcelJS** for Excel export, **json2csv** for CSV export (with formula injection prevention)
 
 ### Frontend
 - **Next.js 14** (App Router, TypeScript)
 - **Tailwind CSS** (custom theme)
-- **Zustand** (state management)
+- **Zustand** (state management, sessionStorage persistence)
 - **React Hook Form** + **Zod** (form validation)
-- **Axios** (API client with interceptors)
+- **Axios** (API client with interceptors, blob error handling)
 - **Lucide React** (icons)
 
 ### DevOps

@@ -39,7 +39,8 @@ const generateToken = (user) => {
 const setTokenCookie = (res, token) => {
   res.cookie('token', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.COOKIE_SECURE === 'true',
+    sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000
   })
 }
@@ -130,6 +131,7 @@ router.post('/login', loginLimiter, [
 // GET /auth/plans — Public (no auth required)
 router.get('/plans', async (req, res, next) => {
   try {
+    res.set('Cache-Control', 'public, max-age=3600')
     const plans = await prisma.subscriptionPlan.findMany({
       where: { isActive: true },
       orderBy: { price: 'asc' },

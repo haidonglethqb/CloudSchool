@@ -83,17 +83,17 @@ router.get('/system-stats', async (req, res, next) => {
     const dbStart = Date.now()
     let dbStatus = 'healthy'
     let dbVersion = ''
+    let dbTableCount = 0
+    let dbActiveConnections = 0
     try {
       const versionResult = await prisma.$queryRaw`SELECT version()`
       dbVersion = versionResult[0]?.version || ''
       const tableCountResult = await prisma.$queryRaw`SELECT count(*) as count FROM information_schema.tables WHERE table_schema = 'public'`
       const activeConnResult = await prisma.$queryRaw`SELECT count(*) as count FROM pg_stat_activity WHERE state = 'active'`
-      var dbTableCount = Number(tableCountResult[0]?.count || 0)
-      var dbActiveConnections = Number(activeConnResult[0]?.count || 0)
+      dbTableCount = Number(tableCountResult[0]?.count || 0)
+      dbActiveConnections = Number(activeConnResult[0]?.count || 0)
     } catch {
       dbStatus = 'unhealthy'
-      var dbTableCount = 0
-      var dbActiveConnections = 0
     }
     const dbLatency = Date.now() - dbStart
 

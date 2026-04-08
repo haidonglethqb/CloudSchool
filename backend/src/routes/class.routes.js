@@ -2,11 +2,11 @@ const express = require('express')
 const router = express.Router()
 const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
-const { authenticate, authorize } = require('../middleware/auth')
+const { authenticate, authorize, tenantGuard } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
 
 // GET /classes/grades - Get grades with classes
-router.get('/grades', authenticate, async (req, res, next) => {
+router.get('/grades', authenticate, tenantGuard, async (req, res, next) => {
   try {
     const grades = await prisma.grade.findMany({
       where: { tenantId: req.tenantId },
@@ -146,6 +146,18 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
       if (!grade) throw new AppError('Grade not found', 404, 'GRADE_NOT_FOUND')
     }
 
+    // Validate capacity is not less than current student count
+    if (capacity !== undefined) {
+      const cls = await prisma.class.findFirst({
+        where: { id: req.params.id, tenantId: req.tenantId },
+        include: { _count: { select: { students: true } } }
+      })
+      if (!cls) throw new AppError('Class not found', 404, 'NOT_FOUND')
+      if (capacity < cls._count.students) {
+        throw new AppError(`Capacity (${capacity}) cannot be less than current student count (${cls._count.students})`, 400, 'CAPACITY_TOO_LOW')
+      }
+    }
+
     const classInfo = await prisma.class.update({
       where: { id: req.params.id },
       data: {
@@ -176,6 +188,17 @@ router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, n
 
     if (classInfo._count.students > 0) {
       throw new AppError('Cannot delete class with students', 400, 'CLASS_HAS_STUDENTS')
+    }
+
+    const [assignmentCount, feeCount] = await Promise.all([
+      prisma.teacherAssignment.count({ where: { classId: req.params.id } }),
+      prisma.fee.count({ where: { classId: req.params.id } })
+    ])
+    if (assignmentCount > 0) {
+      throw new AppError('Cannot delete class with active teacher assignments', 400, 'HAS_ASSIGNMENTS')
+    }
+    if (feeCount > 0) {
+      throw new AppError('Cannot delete class with associated fees', 400, 'HAS_FEES')
     }
 
     await prisma.class.delete({ where: { id: req.params.id } })
@@ -278,7 +301,7 @@ router.post('/:id/students', authenticate, authorize('SUPER_ADMIN', 'STAFF'), as
         where: { id: studentId },
         data: { classId: req.params.id }
       })
-    })
+    }, { isolationLevel: 'Serializable' })
     res.json({ data: student })
   } catch (error) {
     next(error)

@@ -186,11 +186,12 @@ router.get('/student/:studentId', authenticate, async (req, res, next) => {
           for (const s of scores) { wSum += s.value * s.scoreComponent.weight; wTotal += s.scoreComponent.weight }
           if (wTotal > 0) subjectAvgs.push(wSum / wTotal)
         }
-        const avg = subjectAvgs.length > 0 ? subjectAvgs.reduce((a, b) => a + b, 0) / subjectAvgs.length : 0
+        const avg = subjectAvgs.length > 0 ? Math.round((subjectAvgs.reduce((a, b) => a + b, 0) / subjectAvgs.length) * 100) / 100 : 0
         return { id, average: avg }
       }).sort((a, b) => b.average - a.average)
 
-      ranking = classmateAverages.findIndex(c => c.id === student.id) + 1
+      const studentIndex = classmateAverages.findIndex(c => c.id === student.id)
+      ranking = studentIndex >= 0 ? studentIndex + 1 : null
       totalStudents = classmateAverages.length
     }
 
@@ -271,8 +272,12 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), [
 
     // Enforce semester date window for teachers
     if (req.user.role === 'TEACHER' && semesterCheck.startDate && semesterCheck.endDate) {
-      const now = new Date()
-      if (now < new Date(semesterCheck.startDate) || now > new Date(semesterCheck.endDate)) {
+      // Use configurable timezone offset (default Vietnam UTC+7)
+      const tzOffset = (parseInt(process.env.TZ_OFFSET_HOURS || '7') * 60 * 60 * 1000)
+      const now = new Date(Date.now() + tzOffset)
+      const start = new Date(new Date(semesterCheck.startDate).getTime() + tzOffset)
+      const end = new Date(new Date(semesterCheck.endDate).getTime() + tzOffset)
+      if (now < start || now > end) {
         throw new AppError(
           'Ngoài thời gian nhập điểm cho học kỳ này',
           403, 'SEMESTER_CLOSED'
@@ -333,6 +338,37 @@ router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER')
             )
           }
         }
+      }
+    }
+
+    // Verify all students belong to this tenant
+    const allStudentIds = [...new Set(scores.map(s => s.studentId))]
+    const students = await prisma.student.findMany({
+      where: { id: { in: allStudentIds }, tenantId: req.tenantId },
+      select: { id: true }
+    })
+    if (students.length !== allStudentIds.length) {
+      throw new AppError('One or more students not found in your school', 404, 'STUDENT_NOT_FOUND')
+    }
+
+    // Validate scoreComponents belong to their subjects
+    const componentIds = [...new Set(scores.map(s => s.scoreComponentId))]
+    const subjectIds = [...new Set(scores.map(s => s.subjectId))]
+    const [components, subjects] = await Promise.all([
+      prisma.scoreComponent.findMany({ where: { id: { in: componentIds }, tenantId: req.tenantId }, select: { id: true, subjectId: true } }),
+      prisma.subject.findMany({ where: { id: { in: subjectIds }, tenantId: req.tenantId }, select: { id: true } })
+    ])
+    const componentMap = new Map(components.map(c => [c.id, c.subjectId]))
+    const subjectSet = new Set(subjects.map(s => s.id))
+    for (const s of scores) {
+      if (!componentMap.has(s.scoreComponentId)) {
+        throw new AppError(`Score component ${s.scoreComponentId} not found`, 404, 'COMPONENT_NOT_FOUND')
+      }
+      if (componentMap.get(s.scoreComponentId) !== s.subjectId) {
+        throw new AppError(`Score component does not belong to the specified subject`, 400, 'COMPONENT_SUBJECT_MISMATCH')
+      }
+      if (!subjectSet.has(s.subjectId)) {
+        throw new AppError(`Subject ${s.subjectId} not found`, 404, 'SUBJECT_NOT_FOUND')
       }
     }
 
@@ -413,17 +449,15 @@ router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER')
 // PATCH /scores/:id/lock
 router.patch('/:id/lock', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
-    const existingScore = await prisma.score.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId }
-    })
-    if (!existingScore) throw new AppError('Score not found', 404, 'NOT_FOUND')
-
     const score = await prisma.score.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id, tenantId: req.tenantId },
       data: { isLocked: true }
     })
     res.json({ data: score })
   } catch (error) {
+    if (error.code === 'P2025') {
+      return next(new AppError('Score not found', 404, 'NOT_FOUND'))
+    }
     next(error)
   }
 })
@@ -431,17 +465,15 @@ router.patch('/:id/lock', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async
 // PATCH /scores/:id/unlock
 router.patch('/:id/unlock', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
-    const existingScore = await prisma.score.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId }
-    })
-    if (!existingScore) throw new AppError('Score not found', 404, 'NOT_FOUND')
-
     const score = await prisma.score.update({
-      where: { id: req.params.id },
+      where: { id: req.params.id, tenantId: req.tenantId },
       data: { isLocked: false }
     })
     res.json({ data: score })
   } catch (error) {
+    if (error.code === 'P2025') {
+      return next(new AppError('Score not found', 404, 'NOT_FOUND'))
+    }
     next(error)
   }
 })

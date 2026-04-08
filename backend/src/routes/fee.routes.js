@@ -250,8 +250,16 @@ router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, n
   try {
     const existing = await prisma.fee.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },
+      include: { _count: { select: { studentFees: true } } },
     })
     if (!existing) throw new AppError('Fee not found', 404, 'NOT_FOUND')
+
+    if (existing._count.studentFees > 0) {
+      throw new AppError(
+        `Cannot delete fee with ${existing._count.studentFees} student payment records. Delete student fees first or deactivate the fee instead.`,
+        400, 'HAS_STUDENT_FEES'
+      )
+    }
 
     await prisma.fee.delete({ where: { id: req.params.id } })
     res.json({ data: { message: 'Fee deleted' } })
@@ -279,7 +287,12 @@ router.patch('/:id/students/:studentId', authenticate, authorize('SUPER_ADMIN', 
     if (status) updateData.status = status
     if (paidAmount !== undefined) updateData.paidAmount = paidAmount
     if (note !== undefined) updateData.note = note
-    if (status === 'PAID') updateData.paidAt = new Date()
+    if (status === 'PAID') {
+      if (paidAmount === undefined || paidAmount < fee.amount) {
+        throw new AppError(`Paid amount (${paidAmount || 0}) must cover the full fee amount (${fee.amount})`, 400, 'INSUFFICIENT_PAYMENT')
+      }
+      updateData.paidAt = new Date()
+    }
 
     const updated = await prisma.studentFee.update({
       where: { id: studentFee.id },

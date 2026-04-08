@@ -30,6 +30,7 @@ const app = express()
 
 // Rate limit bypass for automated testing (Playwright)
 const skipIfBypassToken = (req) => {
+  if (process.env.NODE_ENV === 'test') return true
   const bypassSecret = process.env.RATE_LIMIT_BYPASS_SECRET
   return bypassSecret && req.headers['x-ratelimit-bypass'] === bypassSecret
 }
@@ -46,7 +47,18 @@ const globalLimiter = rateLimit({
 
 // Middleware
 app.use(globalLimiter)
-app.use(helmet())
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", process.env.CORS_ORIGIN || 'http://localhost:3000'],
+      fontSrc: ["'self'"]
+    }
+  }
+}))
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true
