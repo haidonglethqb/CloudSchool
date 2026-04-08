@@ -37,6 +37,7 @@ router.post('/promote', authenticate, authorize('SUPER_ADMIN'), async (req, res,
     }
 
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    if (!settings) throw new AppError('Tenant settings not configured', 400, 'SETTINGS_NOT_FOUND')
     const maxGradeLevel = settings.maxGradeLevel
 
     const [allPromotions, grades] = await Promise.all([
@@ -142,10 +143,10 @@ async function processFailStudents(tx, failPromotions, ctx) {
 
     await tx.student.update({ where: { id: p.studentId }, data: { classId: targetClass.id } })
 
-    if (p.student.classId && p.student.classId !== targetClass.id) {
+    if (p.classId && p.classId !== targetClass.id) {
       await tx.transferHistory.create({
         data: {
-          tenantId: req.tenantId, studentId: p.studentId, fromClassId: p.student.classId,
+          tenantId: req.tenantId, studentId: p.studentId, fromClassId: p.classId,
           toClassId: targetClass.id, semesterId, reason: 'Lưu ban - xét cuối năm', transferredBy: req.user.id
         }
       })

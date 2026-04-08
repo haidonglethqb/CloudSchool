@@ -1,10 +1,10 @@
 const express = require('express')
 const router = express.Router()
 const prisma = require('../lib/prisma')
-const { authenticate, authorize } = require('../middleware/auth')
+const { authenticate, authorize, tenantGuard } = require('../middleware/auth')
 
 // GET /tenants/current - Current tenant info
-router.get('/current', authenticate, async (req, res, next) => {
+router.get('/current', authenticate, tenantGuard, async (req, res, next) => {
   try {
     const tenant = await prisma.tenant.findUnique({
       where: { id: req.tenantId },
@@ -15,6 +15,7 @@ router.get('/current', authenticate, async (req, res, next) => {
       }
     })
 
+    if (!tenant) throw new AppError('Tenant not found', 404, 'NOT_FOUND')
     res.json({ data: tenant })
   } catch (error) {
     next(error)
@@ -22,7 +23,7 @@ router.get('/current', authenticate, async (req, res, next) => {
 })
 
 // PUT /tenants/current - Update tenant info
-router.put('/current', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+router.put('/current', authenticate, tenantGuard, authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
     const { name, address, phone, email } = req.body
 

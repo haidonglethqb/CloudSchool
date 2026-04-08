@@ -1,0 +1,39 @@
+{
+  "version": "PrismaMigrate",
+  "dialect": "postgresql",
+  "id": "20260408000000",
+  "prevId": "00000000000000",
+  "steps": [
+    {
+      "tag": "AddColumn",
+      "column": {
+        "name": "academicYearId",
+        "type": "text",
+        "default": null,
+        "isNullable": true
+      },
+      "table": "classes"
+    },
+    {
+      "tag": "AddForeignKey",
+      "table": "classes",
+      "column": "academicYearId",
+      "references": {
+        "table": "academic_years",
+        "column": "id",
+        "onUpdate": "CASCADE",
+        "onDelete": "SET NULL"
+      }
+    },
+    {
+      "tag": "AddColumn",
+      "column": {
+        "name": "isActive",
+        "type": "boolean",
+        "default": true,
+        "isNullable": false
+      },
+      "table": "score_components"
+    }
+  ]
+}

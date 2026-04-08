@@ -38,7 +38,13 @@ router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), asyn
         where: { teacherId: req.user.id, tenantId: req.tenantId },
         select: { classId: true }
       })
-      where.classId = { in: assignments.map(a => a.classId) }
+      const assignedClassIds = assignments.map(a => a.classId)
+      // Intersection: if classId from query is specified, it must also be in assigned classes
+      if (classId) {
+        where.classId = { in: assignedClassIds.filter(id => id === classId) }
+      } else {
+        where.classId = { in: assignedClassIds }
+      }
     }
 
     const [students, total] = await Promise.all([
@@ -137,7 +143,7 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
           phone,
           parentName,
           parentPhone,
-          admissionDate: admissionDate ? new Date(admissionDate) : new Date(),
+          admissionDate: (admissionDate && admissionDate.trim()) ? new Date(admissionDate) : new Date(),
           classId
         },
         include: { class: { include: { grade: true } } }

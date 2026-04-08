@@ -126,6 +126,19 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next
     })
     if (!existingUser) throw new AppError('User not found', 404, 'NOT_FOUND')
 
+    // Prevent self-disable
+    if (req.params.id === req.user.id && isActive === false) {
+      throw new AppError('Cannot disable yourself', 400, 'SELF_DISABLE')
+    }
+
+    // Check for duplicate email within tenant
+    if (email && email !== existingUser.email) {
+      const dup = await prisma.user.findFirst({
+        where: { tenantId: req.tenantId, email, id: { not: req.params.id } }
+      })
+      if (dup) throw new AppError('Email already exists', 409, 'DUPLICATE_EMAIL')
+    }
+
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: updateData,
@@ -142,6 +155,10 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next
 // PATCH /users/:id/disable
 router.patch('/:id/disable', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
+    // Prevent self-disable
+    if (req.params.id === req.user.id) {
+      throw new AppError('Cannot disable yourself', 400, 'SELF_DISABLE')
+    }
     const existingUser = await prisma.user.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId }
     })

@@ -328,10 +328,14 @@ router.post('/batch', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER')
       const semesters = await prisma.semester.findMany({
         where: { id: { in: semesterIds }, tenantId: req.tenantId }
       })
-      const now = new Date()
+      // Use same timezone as single-score endpoint
+      const tzOffset = (parseInt(process.env.TZ_OFFSET_HOURS || '7') * 60 * 60 * 1000)
+      const now = new Date(Date.now() + tzOffset)
       for (const sem of semesters) {
         if (sem.startDate && sem.endDate) {
-          if (now < new Date(sem.startDate) || now > new Date(sem.endDate)) {
+          const start = new Date(new Date(sem.startDate).getTime() + tzOffset)
+          const end = new Date(new Date(sem.endDate).getTime() + tzOffset)
+          if (now < start || now > end) {
             throw new AppError(
               `Ngoài thời gian nhập điểm cho học kỳ ${sem.name}`,
               403, 'SEMESTER_CLOSED'

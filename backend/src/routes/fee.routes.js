@@ -278,8 +278,8 @@ router.patch('/:id/students/:studentId', authenticate, authorize('SUPER_ADMIN', 
     })
     if (!fee) throw new AppError('Fee not found', 404, 'NOT_FOUND')
 
-    const studentFee = await prisma.studentFee.findUnique({
-      where: { feeId_studentId: { feeId: req.params.id, studentId: req.params.studentId } },
+    const studentFee = await prisma.studentFee.findFirst({
+      where: { feeId: req.params.id, studentId: req.params.studentId, tenantId: req.tenantId },
     })
     if (!studentFee) throw new AppError('Student fee record not found', 404, 'NOT_FOUND')
 
@@ -288,8 +288,9 @@ router.patch('/:id/students/:studentId', authenticate, authorize('SUPER_ADMIN', 
     if (paidAmount !== undefined) updateData.paidAmount = paidAmount
     if (note !== undefined) updateData.note = note
     if (status === 'PAID') {
-      if (paidAmount === undefined || paidAmount < fee.amount) {
-        throw new AppError(`Paid amount (${paidAmount || 0}) must cover the full fee amount (${fee.amount})`, 400, 'INSUFFICIENT_PAYMENT')
+      const effectivePaid = paidAmount !== undefined ? paidAmount : studentFee.paidAmount
+      if (effectivePaid < fee.amount) {
+        throw new AppError(`Paid amount (${effectivePaid}) must cover the full fee amount (${fee.amount})`, 400, 'INSUFFICIENT_PAYMENT')
       }
       updateData.paidAt = new Date()
     }

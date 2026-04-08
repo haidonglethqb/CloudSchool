@@ -26,6 +26,7 @@ router.get('/subject-summary', authenticate, async (req, res, next) => {
     }
 
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    if (!settings) throw new AppError('Tenant settings not configured', 400, 'SETTINGS_NOT_FOUND')
 
     const classes = await prisma.class.findMany({
       where: { tenantId: req.tenantId, isActive: true },
@@ -114,6 +115,7 @@ router.get('/semester-summary', authenticate, async (req, res, next) => {
     if (!semesterId) throw new AppError('semesterId is required', 400, 'MISSING_PARAMS')
 
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    if (!settings) throw new AppError('Tenant settings not configured', 400, 'SETTINGS_NOT_FOUND')
     const subjects = await prisma.subject.findMany({ where: { tenantId: req.tenantId, isActive: true } })
 
     const classes = await prisma.class.findMany({
@@ -211,6 +213,7 @@ router.get('/semester-summary', authenticate, async (req, res, next) => {
 router.get('/dashboard', authenticate, async (req, res, next) => {
   try {
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    if (!settings) throw new AppError('Tenant settings not configured', 400, 'SETTINGS_NOT_FOUND')
 
     const [totalStudents, totalClasses, totalSubjects, activeSemester, recentStudents, gradeDistribution] = await Promise.all([
       prisma.student.count({ where: { tenantId: req.tenantId, isActive: true } }),
@@ -290,6 +293,7 @@ router.get('/retention-report', authenticate, authorize('SUPER_ADMIN', 'STAFF'),
     const { semesterId } = req.query
 
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    if (!settings) throw new AppError('Tenant settings not configured', 400, 'SETTINGS_NOT_FOUND')
 
     const failWhere = {
       tenantId: req.tenantId,
@@ -306,10 +310,14 @@ router.get('/retention-report', authenticate, authorize('SUPER_ADMIN', 'STAFF'),
       }
     })
 
-    // Count total FAIL records per student using groupBy (instead of loading all records)
+    // Count total FAIL records per student using groupBy (scoped to semester if provided)
     const failCountsRaw = await prisma.promotion.groupBy({
       by: ['studentId'],
-      where: { tenantId: req.tenantId, result: 'FAIL' },
+      where: {
+        tenantId: req.tenantId,
+        result: 'FAIL',
+        ...(semesterId && { semesterId })
+      },
       _count: { _all: true }
     })
     const studentFailCounts = {}

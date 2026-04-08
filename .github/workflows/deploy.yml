@@ -174,6 +174,8 @@ jobs:
             CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}
             NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
             GITHUB_REPOSITORY=${{ needs.validate.outputs.image_name_lower }}
+            COOKIE_SECURE=true
+            TZ_OFFSET_HOURS=7
             ENVEOF
             sed -i 's/^[[:space:]]*//' .env
 
@@ -199,11 +201,11 @@ jobs:
               sleep 2
             done
 
-            # ── Bước 5: Sync database schema ───────────────────────
-            # CloudSchool dùng prisma db push (không có migration files)
-            echo "Syncing database schema..."
-            docker compose run --rm --user root backend npx prisma db push --accept-data-loss
-            echo "Schema sync completed."
+            # ── Bước 5: Deploy database migrations (SAFELY — no data loss) ─
+            # CloudSchool dùng Prisma migrations (không còn db push --accept-data-loss)
+            echo "Deploying database migrations..."
+            docker compose run --rm --user root backend npx prisma migrate deploy
+            echo "Database migrations completed."
 
             # ── Bước 5.5: Seed database (idempotent - safe to run multiple times)
             echo "Seeding database..."

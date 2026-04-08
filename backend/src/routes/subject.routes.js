@@ -86,13 +86,30 @@ router.patch('/semesters/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), 
 
     const { name, year, semesterNum, startDate, endDate, isActive } = req.body
 
+    // Check for duplicate semesterNum+year combination
+    if ((year || existing.year) && (semesterNum || existing.semesterNum) !== undefined) {
+      const targetYear = year ?? existing.year
+      const targetSemesterNum = semesterNum ?? existing.semesterNum
+      const dup = await prisma.semester.findFirst({
+        where: {
+          tenantId: req.tenantId,
+          year: targetYear,
+          semesterNum: targetSemesterNum,
+          id: { not: req.params.id }
+        }
+      })
+      if (dup) throw new AppError(`Semester ${targetSemesterNum} for year ${targetYear} already exists`, 409, 'DUPLICATE_SEMESTER')
+    }
+
     const semester = await prisma.semester.update({
       where: { id: req.params.id },
       data: {
-        name, year, semesterNum,
-        startDate: startDate ? new Date(startDate) : undefined,
-        endDate: endDate ? new Date(endDate) : undefined,
-        isActive
+        ...(name !== undefined && { name }),
+        ...(year !== undefined && { year }),
+        ...(semesterNum !== undefined && { semesterNum }),
+        ...(startDate !== undefined && { startDate: startDate ? new Date(startDate) : null }),
+        ...(endDate !== undefined && { endDate: endDate ? new Date(endDate) : null }),
+        ...(isActive !== undefined && { isActive })
       }
     })
 
@@ -110,8 +127,17 @@ router.delete('/semesters/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'),
     })
     if (!existing) throw new AppError('Semester not found', 404, 'NOT_FOUND')
 
-    const scores = await prisma.score.count({ where: { semesterId: req.params.id } })
-    if (scores > 0) throw new AppError('Cannot delete semester with existing scores', 400, 'HAS_SCORES')
+    const [scoreCount, promoCount, feeCount, enrollmentCount] = await Promise.all([
+      prisma.score.count({ where: { semesterId: req.params.id } }),
+      prisma.promotion.count({ where: { semesterId: req.params.id } }),
+      prisma.fee.count({ where: { semesterId: req.params.id } }),
+      prisma.classEnrollment.count({ where: { semesterId: req.params.id } })
+    ])
+
+    if (scoreCount > 0) throw new AppError('Cannot delete semester with existing scores', 400, 'HAS_SCORES')
+    if (promoCount > 0) throw new AppError('Cannot delete semester with existing promotion records', 400, 'HAS_PROMOTIONS')
+    if (feeCount > 0) throw new AppError('Cannot delete semester with associated fees', 400, 'HAS_FEES')
+    if (enrollmentCount > 0) throw new AppError('Cannot delete semester with class enrollments', 400, 'HAS_ENROLLMENTS')
 
     await prisma.semester.delete({ where: { id: req.params.id } })
     res.json({ data: { message: 'Semester deleted' } })

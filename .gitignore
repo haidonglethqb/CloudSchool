@@ -45,8 +45,8 @@ coverage/
 # Docker
 docker-compose.override.yml
 
-# Prisma
-backend/prisma/migrations/
+# Prisma (keep migrations for deployment!)
+# backend/prisma/migrations/  ← REMOVED to include migrations in repo
 
 # Misc
 *.tsbuildinfo

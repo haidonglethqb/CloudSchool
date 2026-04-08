@@ -164,7 +164,7 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
         ...(name && { name }),
         ...(gradeId && { gradeId }),
         ...(academicYear && { academicYear }),
-        ...(capacity && { capacity }),
+        ...(capacity !== undefined && { capacity }),
         ...(isActive !== undefined && { isActive })
       },
       include: { grade: true, _count: { select: { students: true } } }

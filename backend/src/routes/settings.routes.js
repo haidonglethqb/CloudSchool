@@ -45,6 +45,7 @@ router.put('/', authenticate, authorize('SUPER_ADMIN'), [
     } = req.body
 
     const current = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    if (!current) throw new AppError('Tenant settings not configured', 404, 'SETTINGS_NOT_FOUND')
 
     // Validate age range
     const effectiveMinAge = minAge ?? current.minAge

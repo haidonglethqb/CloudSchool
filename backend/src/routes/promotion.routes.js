@@ -59,6 +59,7 @@ router.post('/calculate', authenticate, authorize('SUPER_ADMIN'), async (req, re
     }
 
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    if (!settings) throw new AppError('Tenant settings not configured', 400, 'SETTINGS_NOT_FOUND')
 
     // Get all students in target classes
     const students = await prisma.student.findMany({

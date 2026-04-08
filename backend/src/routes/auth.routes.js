@@ -149,7 +149,7 @@ router.get('/plans', async (req, res, next) => {
 
 // POST /auth/register-school
 router.post('/register-school', registerLimiter, [
-  body('schoolName').notEmpty().withMessage('School name is required'),
+  body('schoolName').isString().isLength({ min: 1, max: 100 }).withMessage('School name required (1-100 chars)'),
   body('adminEmail').optional().isEmail(),
   body('email').optional().isEmail(),
   body('phone').optional(),

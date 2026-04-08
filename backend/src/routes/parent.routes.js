@@ -227,6 +227,14 @@ router.put('/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => 
     const parent = await prisma.user.findFirst({ where: { id: req.params.id, tenantId: req.tenantId, role: 'PARENT' } })
     if (!parent) throw new AppError('Parent not found', 404, 'NOT_FOUND')
 
+    // Check for duplicate email within tenant
+    if (email && email !== parent.email) {
+      const dup = await prisma.user.findFirst({
+        where: { tenantId: req.tenantId, email, id: { not: req.params.id } }
+      })
+      if (dup) throw new AppError('Email already exists', 409, 'DUPLICATE_EMAIL')
+    }
+
     const updateData = {}
     if (email) updateData.email = email
     if (fullName) updateData.fullName = fullName
