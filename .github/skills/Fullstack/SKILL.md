@@ -1,4 +1,5 @@
 ---
+name: fullstack
 description: use when using JavaScript, React, Next.js App Router, Zustand, Shadcn UI, Radix UI, Tailwind, and Stylus in fullstack projects
 # applyTo: 'Describe when these instructions should be loaded' # when provided, instructions will automatically be added to the request context when the pattern matches an attached file
 ---
