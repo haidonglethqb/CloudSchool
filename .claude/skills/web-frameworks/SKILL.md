@@ -1,5 +1,5 @@
 ---
-name: ck:web-frameworks
+name: web-frameworks
 description: Build with Next.js (App Router, RSC, SSR, ISR), Turborepo monorepos. Use for React apps, server rendering, build optimization, caching strategies, shared dependencies.
 license: MIT
 version: 1.0.0
@@ -237,7 +237,7 @@ export default async function Post({ params }: { params: { slug: string } }) {
 
 ```yaml
 # .github/workflows/ci.yml
-name: ck:CI
+name: CI
 on: [push, pull_request]
 
 jobs:

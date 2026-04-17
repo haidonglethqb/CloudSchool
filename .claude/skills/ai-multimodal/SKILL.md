@@ -1,5 +1,5 @@
 ---
-name: ck:ai-multimodal
+name: ai-multimodal
 description: Analyze images/audio/video with Gemini API (better vision than Claude). Generate images (Imagen 4), videos (Veo 3). Use for vision analysis, transcription, OCR, design extraction, multimodal AI.
 license: MIT
 allowed-tools:

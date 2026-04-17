@@ -1,5 +1,5 @@
 ---
-name: ck:code-review
+name: code-review
 description: "Review code quality, receive feedback with technical rigor, verify completion claims. Use before PRs, after implementing features, when claiming task completion. Includes scout-based edge case detection and native Task pipeline orchestration."
 argument-hint: "[context] OR codebase [parallel]"
 ---

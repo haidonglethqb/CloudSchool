@@ -1,5 +1,5 @@
 ---
-name: ck:docx
+name: docx
 description: Create, edit, analyze .docx Word documents. Use for document creation, tracked changes, comments, formatting preservation, text extraction, template modification.
 license: Proprietary. LICENSE.txt has complete terms
 ---

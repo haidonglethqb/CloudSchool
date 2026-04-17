@@ -1,5 +1,5 @@
 ---
-name: ck:preview
+name: preview
 description: "View files/directories OR generate visual explanations, slides, diagrams."
 argument-hint: "[path] OR --explain|--slides|--diagram|--ascii [topic]"
 ---

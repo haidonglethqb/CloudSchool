@@ -1,5 +1,5 @@
 ---
-name: ck:debug
+name: debug
 description: "Debug systematically with root cause analysis before fixes. Use for bugs, test failures, unexpected behavior, performance issues, call stack tracing, multi-layer validation, log analysis, CI/CD failures, database diagnostics, system investigation."
 version: 4.0.0
 languages: all

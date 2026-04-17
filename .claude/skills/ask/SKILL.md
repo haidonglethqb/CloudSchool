@@ -1,5 +1,5 @@
 ---
-name: ck:ask
+name: ask
 description: "Answer technical and architectural questions with expert consultation."
 argument-hint: "[technical-question]"
 ---

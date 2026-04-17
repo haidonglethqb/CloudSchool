@@ -1,5 +1,5 @@
 ---
-name: ck:use-mcp
+name: use-mcp
 description: "Utilize MCP server tools with intelligent discovery and execution."
 argument-hint: "[task]"
 ---

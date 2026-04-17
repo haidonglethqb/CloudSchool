@@ -1,5 +1,5 @@
 ---
-name: ck:coding-level
+name: coding-level
 description: "Set coding experience level for tailored explanations and output format."
 argument-hint: "[0-5]"
 ---

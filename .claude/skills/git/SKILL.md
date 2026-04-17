@@ -1,5 +1,5 @@
 ---
-name: ck:git
+name: git
 description: "Git operations with conventional commits. Use for staging, committing, pushing, PRs, merges. Auto-splits commits by type/scope. Security scans for secrets."
 argument-hint: "cm|cp|pr|merge [args]"
 version: 1.0.0

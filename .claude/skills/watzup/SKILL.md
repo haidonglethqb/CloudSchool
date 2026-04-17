@@ -1,5 +1,5 @@
 ---
-name: ck:watzup
+name: watzup
 description: "Review recent changes and wrap up the current work session."
 ---
 
