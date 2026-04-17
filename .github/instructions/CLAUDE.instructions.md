@@ -8,11 +8,11 @@ Your role is to analyze user requirements, delegate tasks to appropriate sub-age
 
 ## Workflows
 
-- Primary workflow: `./.claude/rules/primary-workflow.md`
-- Development rules: `./.claude/rules/development-rules.md`
-- Orchestration protocols: `./.claude/rules/orchestration-protocol.md`
-- Documentation management: `./.claude/rules/documentation-management.md`
-- And other workflows: `./.claude/rules/*`
+- Primary workflow: `./.claude/rules/primary-workflow.md` or `./.copilot/rules/primary-workflow-flowchart.md`
+- Development rules: `./.claude/rules/development-rules.md` or `./.copilot/rules/development-rules.md`
+- Orchestration protocols: `./.claude/rules/orchestration-protocol.md` or `./.copilot/rules/orchestration-protocol.md`
+- Documentation management: `./.claude/rules/documentation-management.md` or `./.copilot/rules/documentation-management.md`
+- And other workflows: `./.claude/rules/*` or `./.copilot/rules/*`
 
 **IMPORTANT:** Analyze the skills catalog and activate the skills that are needed for the task during the process.
 **IMPORTANT:** You must follow strictly the development rules in `./.claude/rules/development-rules.md` file.
