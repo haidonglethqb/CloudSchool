@@ -86,6 +86,19 @@ logging:
 | Prisma Studio | Exposed (5555) | Not included |
 | NODE_ENV | development | production |
 
+## CI Test Gates
+
+- Workflow: `.github/workflows/test.yml`
+- Auto triggers:
+  - `pull_request` to `dev`, `main` -> run `api-smoke`
+  - `push` to `dev` -> run `api-smoke`
+  - `push` to `main` -> run `all` (smoke + api-tests + performance)
+- Manual trigger (`workflow_dispatch`) supports: `api-smoke`, `api-tests`, `performance`, `all`
+- Critical smoke suite file: `tests/api/smoke-critical.spec.ts`
+- Smoke command: `cd tests && npm run test:smoke`
+- Performance gate command: `cd tests && npm run test:perf:ci`
+- Performance thresholds are controlled via workflow env vars: `PERF_*` (p95 and concurrent total duration limits)
+
 ## Related
 - [Environment Variables](./environment-variables.md)
 - [Ports & Services](./ports-services.md)

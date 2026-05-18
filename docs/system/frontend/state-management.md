@@ -31,7 +31,9 @@ interface AuthState {
   user: User | null
   token: string | null
   isAuthenticated: boolean
+  hasHydrated: boolean
   setAuth: (user: User, token: string) => void
+  setHasHydrated: (value: boolean) => void
   logout: () => void
 }
 
@@ -39,13 +41,27 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: null, token: null, isAuthenticated: false,
+      hasHydrated: false,
       setAuth: (user, token) => set({ user, token, isAuthenticated: true }),
+      setHasHydrated: (value) => set({ hasHydrated: value }),
       logout: () => set({ user: null, token: null, isAuthenticated: false }),
     }),
-    { name: 'auth-storage', storage: createJSONStorage(() => sessionStorage) }
+    {
+      name: 'auth-storage',
+      storage: createJSONStorage(() => sessionStorage),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true)
+      },
+    }
   )
 )
 ```
+
+## Hydration Safety
+
+- `hasHydrated` prevents route redirects before persisted session is restored.
+- Dashboard and landing pages now wait for `hasHydrated === true` before checking `isAuthenticated`.
+- This removes refresh-time redirect race conditions (false logout flashes).
 
 ## Why Zustand Over Redux
 
@@ -89,6 +105,7 @@ sequenceDiagram
 
 ```tsx
 const { user, isAuthenticated } = useAuthStore()
+const { user, isAuthenticated, hasHydrated } = useAuthStore()
 useAuthStore.getState().token  // read without re-render
 ```
 

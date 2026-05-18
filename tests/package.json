@@ -3,8 +3,10 @@
   "version": "1.0.0",
   "description": "CloudSchool API & Performance Tests with Playwright",
   "scripts": {
+    "test:smoke": "npx playwright test --project=api-tests api/smoke-critical.spec.ts",
     "test": "npx playwright test --project=api-tests",
     "test:perf": "npx playwright test --project=performance",
+    "test:perf:ci": "npx playwright test --project=performance --workers=2",
     "test:all": "npx playwright test",
     "test:ci": "npx playwright test --reporter=github,json",
     "report": "npx playwright show-report"

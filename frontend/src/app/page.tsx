@@ -257,7 +257,7 @@ const faqs = [
 
 export default function LandingPage() {
   const router = useRouter()
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, hasHydrated } = useAuthStore()
   const [mounted, setMounted] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
@@ -277,10 +277,10 @@ export default function LandingPage() {
   }, [])
 
   useEffect(() => {
-    if (mounted && isAuthenticated) {
+    if (mounted && hasHydrated && isAuthenticated) {
       router.push('/dashboard')
     }
-  }, [mounted, isAuthenticated, router])
+  }, [mounted, hasHydrated, isAuthenticated, router])
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20)
@@ -288,7 +288,7 @@ export default function LandingPage() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  if (!mounted) return null
+  if (!mounted || !hasHydrated) return null
   if (isAuthenticated) return null
 
   return (

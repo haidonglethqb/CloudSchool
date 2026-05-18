@@ -1,25 +1,64 @@
 name: API & Performance Tests
 
 on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  push:
+    branches:
+      - dev
+      - main
   workflow_dispatch:
     inputs:
       test_type:
         description: 'Test type to run'
         required: true
-        default: 'all'
+        default: 'api-tests'
         type: choice
         options:
           - all
+          - api-smoke
           - api-tests
           - performance
 
 env:
   NODE_VERSION: '20'
+  PERF_AUTH_PLANS_P95_MS: '900'
+  PERF_AUTH_LOGIN_P95_MS: '900'
+  PERF_COMMON_ENDPOINT_P95_MS: '900'
+  PERF_REPORTS_DASHBOARD_P95_MS: '1200'
+  PERF_SETTINGS_P95_MS: '700'
+  PERF_BATCH_UPSERT_MS: '2500'
+  PERF_DASHBOARD_GENERATION_MS: '2500'
+  PERF_STUDENTS_LARGE_PAGE_MS: '2500'
+  PERF_SEMESTER_SUMMARY_MS: '3500'
+  PERF_CONCURRENT_10_TOTAL_MS: '6000'
+  PERF_CONCURRENT_20_TOTAL_MS: '12000'
+  PERF_CONCURRENT_50_PUBLIC_TOTAL_MS: '18000'
+
+concurrency:
+  group: api-tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
+    env:
+      API_BASE_URL: ${{ secrets.API_BASE_URL }}
+      TENANT_CODE: ${{ secrets.TENANT_CODE }}
+      SUPER_ADMIN_EMAIL: ${{ secrets.SUPER_ADMIN_EMAIL }}
+      SUPER_ADMIN_PASSWORD: ${{ secrets.SUPER_ADMIN_PASSWORD }}
+      STAFF_EMAIL: ${{ secrets.STAFF_EMAIL }}
+      STAFF_PASSWORD: ${{ secrets.STAFF_PASSWORD }}
+      TEACHER_EMAIL: ${{ secrets.TEACHER_EMAIL }}
+      TEACHER_PASSWORD: ${{ secrets.TEACHER_PASSWORD }}
+      PARENT_EMAIL: ${{ secrets.PARENT_EMAIL }}
+      PARENT_PASSWORD: ${{ secrets.PARENT_PASSWORD }}
+      PLATFORM_ADMIN_EMAIL: ${{ secrets.PLATFORM_ADMIN_EMAIL }}
+      PLATFORM_ADMIN_PASSWORD: ${{ secrets.PLATFORM_ADMIN_PASSWORD }}
+      RATE_LIMIT_BYPASS_SECRET: ${{ secrets.RATE_LIMIT_BYPASS_SECRET }}
 
     steps:
       - name: Checkout repository
@@ -38,44 +77,34 @@ jobs:
         working-directory: tests
         run: npx playwright install --with-deps
 
+      - name: Resolve test type
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "test_type=${{ github.event.inputs.test_type }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ github.event_name }}" = "push" ]; then
+            echo "test_type=all" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "test_type=api-tests" >> "$GITHUB_OUTPUT"
+          else
+            echo "test_type=api-smoke" >> "$GITHUB_OUTPUT"
+          fi
+
       # ── Run tests ──
+      - name: Run API smoke tests
+        working-directory: tests
+        if: ${{ steps.resolve.outputs.test_type == 'all' || steps.resolve.outputs.test_type == 'api-smoke' || steps.resolve.outputs.test_type == 'api-tests' || steps.resolve.outputs.test_type == 'performance' }}
+        run: npm run test:smoke
+
       - name: Run API tests
         working-directory: tests
-        if: ${{ github.event.inputs.test_type == 'all' || github.event.inputs.test_type == 'api-tests' }}
+        if: ${{ steps.resolve.outputs.test_type == 'all' || steps.resolve.outputs.test_type == 'api-tests' }}
         run: npx playwright test --project=api-tests
-        env:
-          API_BASE_URL: ${{ secrets.API_BASE_URL }}
-          TENANT_CODE: ${{ secrets.TENANT_CODE }}
-          SUPER_ADMIN_EMAIL: ${{ secrets.SUPER_ADMIN_EMAIL }}
-          SUPER_ADMIN_PASSWORD: ${{ secrets.SUPER_ADMIN_PASSWORD }}
-          STAFF_EMAIL: ${{ secrets.STAFF_EMAIL }}
-          STAFF_PASSWORD: ${{ secrets.STAFF_PASSWORD }}
-          TEACHER_EMAIL: ${{ secrets.TEACHER_EMAIL }}
-          TEACHER_PASSWORD: ${{ secrets.TEACHER_PASSWORD }}
-          PARENT_EMAIL: ${{ secrets.PARENT_EMAIL }}
-          PARENT_PASSWORD: ${{ secrets.PARENT_PASSWORD }}
-          PLATFORM_ADMIN_EMAIL: ${{ secrets.PLATFORM_ADMIN_EMAIL }}
-          PLATFORM_ADMIN_PASSWORD: ${{ secrets.PLATFORM_ADMIN_PASSWORD }}
-          RATE_LIMIT_BYPASS_SECRET: ${{ secrets.RATE_LIMIT_BYPASS_SECRET }}
 
       - name: Run performance tests
         working-directory: tests
-        if: ${{ github.event.inputs.test_type == 'all' || github.event.inputs.test_type == 'performance' }}
-        run: npx playwright test --project=performance
-        env:
-          API_BASE_URL: ${{ secrets.API_BASE_URL }}
-          TENANT_CODE: ${{ secrets.TENANT_CODE }}
-          SUPER_ADMIN_EMAIL: ${{ secrets.SUPER_ADMIN_EMAIL }}
-          SUPER_ADMIN_PASSWORD: ${{ secrets.SUPER_ADMIN_PASSWORD }}
-          STAFF_EMAIL: ${{ secrets.STAFF_EMAIL }}
-          STAFF_PASSWORD: ${{ secrets.STAFF_PASSWORD }}
-          TEACHER_EMAIL: ${{ secrets.TEACHER_EMAIL }}
-          TEACHER_PASSWORD: ${{ secrets.TEACHER_PASSWORD }}
-          PARENT_EMAIL: ${{ secrets.PARENT_EMAIL }}
-          PARENT_PASSWORD: ${{ secrets.PARENT_PASSWORD }}
-          PLATFORM_ADMIN_EMAIL: ${{ secrets.PLATFORM_ADMIN_EMAIL }}
-          PLATFORM_ADMIN_PASSWORD: ${{ secrets.PLATFORM_ADMIN_PASSWORD }}
-          RATE_LIMIT_BYPASS_SECRET: ${{ secrets.RATE_LIMIT_BYPASS_SECRET }}
+        if: ${{ steps.resolve.outputs.test_type == 'all' || steps.resolve.outputs.test_type == 'performance' }}
+        run: npm run test:perf:ci
 
       # ── Reports ──
       - name: Upload test report

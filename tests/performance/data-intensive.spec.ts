@@ -1,5 +1,6 @@
 import { test, expect, APIRequestContext } from '@playwright/test';
 import { createAuthContext, measureResponseTime } from '../helpers/api-client';
+import { perfThresholds } from './perf-thresholds';
 
 let superAdminCtx: APIRequestContext;
 let staffCtx: APIRequestContext;
@@ -67,7 +68,7 @@ test.describe('Data-Intensive Operations', () => {
     console.log(`  Batch ${scores.length} scores: ${duration}ms (status: ${response.status()})`);
     // Teacher may get SEMESTER_CLOSED if outside semester date window — that's expected
     expect([200, 201, 403]).toContain(response.status());
-    expect(duration).toBeLessThan(2000);
+    expect(duration).toBeLessThan(perfThresholds.batchUpsertMs);
   });
 
   test('dashboard report generation < 2000ms', async () => {
@@ -77,7 +78,7 @@ test.describe('Data-Intensive Operations', () => {
 
     console.log(`  Dashboard report: ${duration}ms`);
     expect(response.status()).toBe(200);
-    expect(duration).toBeLessThan(2000);
+    expect(duration).toBeLessThan(perfThresholds.dashboardGenerationMs);
   });
 
   test('student list with pagination handles large page size', async () => {
@@ -87,7 +88,7 @@ test.describe('Data-Intensive Operations', () => {
 
     console.log(`  Students list (limit=100): ${duration}ms`);
     expect(response.status()).toBe(200);
-    expect(duration).toBeLessThan(2000);
+    expect(duration).toBeLessThan(perfThresholds.studentsListLargePageMs);
   });
 
   test('semester summary report < 3000ms', async () => {
@@ -110,6 +111,6 @@ test.describe('Data-Intensive Operations', () => {
 
     console.log(`  Semester summary report: ${duration}ms`);
     expect(response.status()).toBe(200);
-    expect(duration).toBeLessThan(3000);
+    expect(duration).toBeLessThan(perfThresholds.semesterSummaryMs);
   });
 });

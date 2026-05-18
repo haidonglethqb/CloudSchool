@@ -21,6 +21,25 @@ const errorHandler = (err, req, res, next) => {
     })
   }
 
+  if (err.code === 'P2003') {
+    return res.status(409).json({
+      error: {
+        code: 'FOREIGN_KEY_CONFLICT',
+        message: 'Operation conflicts with existing related data',
+        details: err.meta?.field_name ? [err.meta.field_name] : []
+      }
+    })
+  }
+
+  if (err.code === 'P2034') {
+    return res.status(409).json({
+      error: {
+        code: 'TRANSACTION_CONFLICT',
+        message: 'Transaction conflict, please retry'
+      }
+    })
+  }
+
   // Validation errors
   if (err.name === 'ValidationError') {
     return res.status(400).json({

@@ -4,6 +4,10 @@
 
 ```ts
 // frontend/src/lib/api.ts
+if (process.env.NODE_ENV === 'production' && !process.env.NEXT_PUBLIC_API_URL) {
+  throw new Error('NEXT_PUBLIC_API_URL is required in production')
+}
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'
 
 export const api = axios.create({
@@ -28,6 +32,15 @@ api.interceptors.request.use((config) => {
 ### Response — 401 handling + blob error parsing
 
 ```ts
+let isUnauthorizedHandling = false
+
+const handleUnauthorized = () => {
+  if (isUnauthorizedHandling) return
+  isUnauthorizedHandling = true
+  useAuthStore.getState().logout()
+  if (typeof window !== 'undefined') window.location.href = '/login'
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
@@ -38,10 +51,10 @@ api.interceptors.response.use(
         error.response.data = JSON.parse(text)
       } catch {}
     }
-    // Auto-logout on 401
-    if (error.response?.status === 401) {
-      useAuthStore.getState().logout()
-      if (typeof window !== 'undefined') window.location.href = '/login'
+    // Auto-logout on 401 (except failed login), de-duplicated to avoid redirect races
+    const isLoginRequest = error.config?.url?.includes('/auth/login')
+    if (error.response?.status === 401 && !isLoginRequest) {
+      handleUnauthorized()
     }
     return Promise.reject(error)
   }
@@ -57,7 +70,7 @@ flowchart LR
     B -->|json| D[Pass through]
     C --> E{Status}
     D --> E
-    E -->|401| F[logout + /login]
+    E -->|401 non-login| F[logout + /login once]
     E -->|other| G[Reject]
 ```
 

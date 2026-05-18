@@ -5,6 +5,7 @@ const morgan = require('morgan')
 const cookieParser = require('cookie-parser')
 const rateLimit = require('express-rate-limit')
 require('dotenv').config()
+const prisma = require('./lib/prisma')
 
 const authRoutes = require('./routes/auth.routes')
 const adminRoutes = require('./routes/admin.routes')
@@ -27,6 +28,27 @@ const academicYearRoutes = require('./routes/academic-year.routes')
 const { errorHandler } = require('./middleware/errorHandler')
 
 const app = express()
+
+const REQUIRED_ENV_VARS = ['DATABASE_URL', 'JWT_SECRET']
+
+const validateStartupConfig = () => {
+  const missing = REQUIRED_ENV_VARS.filter((name) => !process.env[name])
+
+  if (missing.length) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`)
+  }
+
+  const jwtSecret = process.env.JWT_SECRET || ''
+  const hasUnsafeJwtSecret = /change-me|your-super-secret|default/i.test(jwtSecret)
+
+  if (process.env.NODE_ENV === 'production' && hasUnsafeJwtSecret) {
+    throw new Error('JWT_SECRET is using an unsafe default value in production')
+  }
+}
+
+const checkDatabaseConnection = async () => {
+  await prisma.$queryRawUnsafe('SELECT 1')
+}
 
 // Rate limit bypass for automated testing (Playwright)
 const skipIfBypassToken = (req) => {
@@ -69,8 +91,13 @@ app.use(express.urlencoded({ extended: true }))
 app.use(cookieParser())
 
 // Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() })
+app.get('/health', async (req, res) => {
+  try {
+    await checkDatabaseConnection()
+    res.json({ status: 'ok', db: 'ok', timestamp: new Date().toISOString() })
+  } catch (error) {
+    res.status(503).json({ status: 'degraded', db: 'error', timestamp: new Date().toISOString() })
+  }
 })
 
 // Route-specific rate limiters
@@ -116,8 +143,20 @@ app.use((req, res) => {
 
 const PORT = process.env.PORT || 5001
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`)
-})
+const startServer = async () => {
+  try {
+    validateStartupConfig()
+    await checkDatabaseConnection()
+
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`)
+    })
+  } catch (error) {
+    console.error('Server startup failed:', error.message)
+    process.exit(1)
+  }
+}
+
+startServer()
 
 module.exports = app

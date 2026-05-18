@@ -1,11 +1,10 @@
 import { test, expect, APIRequestContext } from '@playwright/test';
 import { createAuthContext, measureResponseTime } from '../helpers/api-client';
+import { perfThresholds } from './perf-thresholds';
 
 let superAdminCtx: APIRequestContext;
 let staffCtx: APIRequestContext;
 let teacherCtx: APIRequestContext;
-
-const RESPONSE_TIME_THRESHOLD = 800; // ms (includes CI network latency)
 
 test.beforeAll(async () => {
   superAdminCtx = await createAuthContext('SUPER_ADMIN');
@@ -29,7 +28,7 @@ test.describe('Response Time Benchmarks', () => {
     const p95 = times.sort((a, b) => a - b)[Math.floor(times.length * 0.95)];
 
     console.log(`  /api/auth/plans p95: ${p95}ms (avg: ${Math.round(times.reduce((a, b) => a + b, 0) / times.length)}ms)`);
-    expect(p95).toBeLessThan(800);
+    expect(p95).toBeLessThan(perfThresholds.authPlansP95Ms);
   });
 
   test('POST /api/auth/login < 500ms', async ({ request }) => {
@@ -49,7 +48,7 @@ test.describe('Response Time Benchmarks', () => {
     const p95 = times.sort((a, b) => a - b)[Math.floor(times.length * 0.95)];
 
     console.log(`  /api/auth/login p95: ${p95}ms`);
-    expect(p95).toBeLessThan(RESPONSE_TIME_THRESHOLD);
+    expect(p95).toBeLessThan(perfThresholds.authLoginP95Ms);
   });
 
   test('GET /api/students < 500ms', async () => {
@@ -63,7 +62,7 @@ test.describe('Response Time Benchmarks', () => {
     const p95 = times.sort((a, b) => a - b)[Math.floor(times.length * 0.95)];
 
     console.log(`  /api/students p95: ${p95}ms`);
-    expect(p95).toBeLessThan(RESPONSE_TIME_THRESHOLD);
+    expect(p95).toBeLessThan(perfThresholds.commonEndpointP95Ms);
   });
 
   test('GET /api/classes < 500ms', async () => {
@@ -77,7 +76,7 @@ test.describe('Response Time Benchmarks', () => {
     const p95 = times.sort((a, b) => a - b)[Math.floor(times.length * 0.95)];
 
     console.log(`  /api/classes p95: ${p95}ms`);
-    expect(p95).toBeLessThan(RESPONSE_TIME_THRESHOLD);
+    expect(p95).toBeLessThan(perfThresholds.commonEndpointP95Ms);
   });
 
   test('GET /api/subjects < 500ms', async () => {
@@ -91,7 +90,7 @@ test.describe('Response Time Benchmarks', () => {
     const p95 = times.sort((a, b) => a - b)[Math.floor(times.length * 0.95)];
 
     console.log(`  /api/subjects p95: ${p95}ms`);
-    expect(p95).toBeLessThan(RESPONSE_TIME_THRESHOLD);
+    expect(p95).toBeLessThan(perfThresholds.commonEndpointP95Ms);
   });
 
   test('GET /api/reports/dashboard < 1000ms', async () => {
@@ -105,7 +104,7 @@ test.describe('Response Time Benchmarks', () => {
     const p95 = times.sort((a, b) => a - b)[Math.floor(times.length * 0.95)];
 
     console.log(`  /api/reports/dashboard p95: ${p95}ms`);
-    expect(p95).toBeLessThan(1000);
+    expect(p95).toBeLessThan(perfThresholds.reportsDashboardP95Ms);
   });
 
   test('GET /api/settings < 300ms', async () => {
@@ -119,6 +118,6 @@ test.describe('Response Time Benchmarks', () => {
     const p95 = times.sort((a, b) => a - b)[Math.floor(times.length * 0.95)];
 
     console.log(`  /api/settings p95: ${p95}ms`);
-    expect(p95).toBeLessThan(500);
+    expect(p95).toBeLessThan(perfThresholds.settingsP95Ms);
   });
 });

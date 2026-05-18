@@ -108,9 +108,8 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname()
   const router = useRouter()
-  const { user, logout, isAuthenticated } = useAuthStore()
+  const { user, logout, isAuthenticated, hasHydrated } = useAuthStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [mounted, setMounted] = useState(false)
   const [rolePermissions, setRolePermissions] = useState<Record<string, string[]> | null>(null)
 
   // Fetch role permissions for STAFF/TEACHER
@@ -147,27 +146,23 @@ export default function DashboardLayout({
   }, [user?.role, rolePermissions])
 
   useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  useEffect(() => {
-    if (mounted && isAuthenticated) {
+    if (hasHydrated && isAuthenticated) {
       fetchPermissions()
     }
-  }, [mounted, isAuthenticated, fetchPermissions])
+  }, [hasHydrated, isAuthenticated, fetchPermissions])
 
   useEffect(() => {
-    if (mounted && !isAuthenticated) {
+    if (hasHydrated && !isAuthenticated) {
       router.push('/login')
     }
-  }, [mounted, isAuthenticated, router])
+  }, [hasHydrated, isAuthenticated, router])
 
   const handleLogout = () => {
     logout()
     router.push('/login')
   }
 
-  if (!mounted || !isAuthenticated) {
+  if (!hasHydrated || !isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>

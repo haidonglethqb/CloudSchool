@@ -2,6 +2,12 @@
 
 > Base URL: `/api` (configured in backend router mount)
 
+## System
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/health` | Health endpoint outside `/api`; returns `status: ok` when DB is reachable, `503` + `status: degraded` when DB check fails |
+
 ## Auth
 
 | Method | Path | Description |
@@ -213,3 +219,4 @@
 - [Middleware](./middleware.md)
 - [Error Handling](./error-handling.md)
 - [Route Logic](./route-logic.md)
+- Smoke verification test: `tests/api/smoke-critical.spec.ts`

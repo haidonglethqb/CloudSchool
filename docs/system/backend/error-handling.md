@@ -21,7 +21,9 @@ All errors return a consistent JSON structure:
 | Error | Code | HTTP | Description |
 |---|---|---|---|
 | Prisma `P2002` | `DUPLICATE_ENTRY` | 409 | Unique constraint violated |
+| Prisma `P2003` | `FOREIGN_KEY_CONFLICT` | 409 | FK constraint violation with related records |
 | Prisma `P2025` | `NOT_FOUND` | 404 | Record not found (e.g. update/delete missing row) |
+| Prisma `P2034` | `TRANSACTION_CONFLICT` | 409 | Transaction conflict/deadlock, safe to retry |
 | `ValidationError` | `VALIDATION_ERROR` | 400 | express-validator failure, includes `details` array |
 | `JsonWebTokenError` | `INVALID_TOKEN` | 401 | Malformed or unverifiable JWT |
 | `TokenExpiredError` | `TOKEN_EXPIRED` | 401 | JWT past its `expiresIn` |
@@ -46,6 +48,27 @@ if (err.code === 'P2002') {
 if (err.code === 'P2025') {
   return res.status(404).json({
     error: { code: 'NOT_FOUND', message: 'Record not found' }
+  })
+}
+
+// P2003 — Foreign key conflict (delete/update blocked by relation)
+if (err.code === 'P2003') {
+  return res.status(409).json({
+    error: {
+      code: 'FOREIGN_KEY_CONFLICT',
+      message: 'Operation conflicts with existing related data',
+      details: err.meta?.field_name ? [err.meta.field_name] : []
+    }
+  })
+}
+
+// P2034 — Transaction conflict/deadlock
+if (err.code === 'P2034') {
+  return res.status(409).json({
+    error: {
+      code: 'TRANSACTION_CONFLICT',
+      message: 'Transaction conflict, please retry'
+    }
   })
 }
 ```

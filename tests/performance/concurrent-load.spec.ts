@@ -1,5 +1,6 @@
 import { test, expect, APIRequestContext } from '@playwright/test';
 import { createAuthContext } from '../helpers/api-client';
+import { perfThresholds } from './perf-thresholds';
 
 let superAdminCtx: APIRequestContext;
 
@@ -26,7 +27,7 @@ test.describe('Concurrent Load Tests', () => {
     }
 
     console.log(`  10 concurrent /api/students: ${totalDuration}ms total`);
-    expect(totalDuration).toBeLessThan(5000);
+    expect(totalDuration).toBeLessThan(perfThresholds.concurrent10TotalMs);
   });
 
   test('handle 10 concurrent GET /api/classes', async () => {
@@ -43,7 +44,7 @@ test.describe('Concurrent Load Tests', () => {
     }
 
     console.log(`  10 concurrent /api/classes: ${totalDuration}ms total`);
-    expect(totalDuration).toBeLessThan(5000);
+    expect(totalDuration).toBeLessThan(perfThresholds.concurrent10TotalMs);
   });
 
   test('handle 20 concurrent mixed GET requests', async () => {
@@ -68,7 +69,7 @@ test.describe('Concurrent Load Tests', () => {
     console.log(`  20 mixed concurrent: ${totalDuration}ms, ${successCount}/20 success`);
     // At least 90% should succeed (rate limiting may kick in)
     expect(successCount).toBeGreaterThanOrEqual(18);
-    expect(totalDuration).toBeLessThan(10000);
+    expect(totalDuration).toBeLessThan(perfThresholds.concurrent20TotalMs);
   });
 
   test('handle 5 concurrent POST /api/auth/login', async ({ request }) => {
@@ -110,6 +111,6 @@ test.describe('Concurrent Load Tests', () => {
 
     console.log(`  50 concurrent /api/auth/plans: ${totalDuration}ms, ${successCount}/50 success`);
     expect(successCount).toBeGreaterThanOrEqual(45);
-    expect(totalDuration).toBeLessThan(15000);
+    expect(totalDuration).toBeLessThan(perfThresholds.concurrent50PublicTotalMs);
   });
 });

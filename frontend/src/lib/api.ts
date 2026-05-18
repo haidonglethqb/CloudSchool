@@ -1,7 +1,28 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 import { useAuthStore } from '@/store/auth'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'
+const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL
+
+if (process.env.NODE_ENV === 'production' && !configuredApiUrl) {
+  throw new Error('NEXT_PUBLIC_API_URL is required in production')
+}
+
+const API_URL = configuredApiUrl || 'http://localhost:5001/api'
+let isUnauthorizedHandling = false
+
+const handleUnauthorized = () => {
+  if (isUnauthorizedHandling) return
+
+  isUnauthorizedHandling = true
+  useAuthStore.getState().logout()
+
+  if (typeof window !== 'undefined') {
+    window.location.href = '/login'
+    return
+  }
+
+  isUnauthorizedHandling = false
+}
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -28,9 +49,10 @@ api.interceptors.response.use(
         error.response.data = JSON.parse(text)
       } catch {}
     }
-    if (error.response?.status === 401) {
-      useAuthStore.getState().logout()
-      if (typeof window !== 'undefined') window.location.href = '/login'
+    const isLoginRequest = error.config?.url?.includes('/auth/login')
+
+    if (error.response?.status === 401 && !isLoginRequest) {
+      handleUnauthorized()
     }
     return Promise.reject(error)
   }

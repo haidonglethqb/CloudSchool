@@ -37,6 +37,8 @@ services:
 ## Security Notes
 
 - `JWT_SECRET` must be cryptographically random (min 256 bits)
+- Backend startup fails in production if `JWT_SECRET` matches unsafe defaults (`change-me`, `your-super-secret`, `default`)
+- Frontend production build/start fails if `NEXT_PUBLIC_API_URL` is missing
 - Never commit `.env` or `.env.local` to version control
 - Use `COOKIE_SECURE=true` in production with HTTPS
 
