@@ -270,17 +270,17 @@ export const parentApi = {
 
 // ==================== Export ====================
 export const exportApi = {
-  students: (params?: { format?: string; classId?: string; gradeId?: string; search?: string; address?: string; gender?: string; birthYear?: number; status?: string }) =>
+  students: (params?: { format?: string; classId?: string; gradeId?: string; search?: string; address?: string; gender?: string; birthYear?: number; status?: string; sections?: string; columns?: string }) =>
     api.get('/export/students', { params, responseType: 'blob' }),
-  classes: (params?: { format?: string }) =>
+  classes: (params?: { format?: string; sections?: string; columns?: string }) =>
     api.get('/export/classes', { params, responseType: 'blob' }),
-  scores: (params: { classId: string; subjectId: string; semesterId: string; format?: string }) =>
+  scores: (params: { classId: string; subjectId: string; semesterId: string; format?: string; sections?: string; columns?: string }) =>
     api.get('/export/scores', { params, responseType: 'blob' }),
-  schools: (params?: { format?: string }) =>
+  schools: (params?: { format?: string; sections?: string; columns?: string }) =>
     api.get('/export/schools', { params, responseType: 'blob' }),
   report: (
     type: 'subject-summary' | 'class-promotion-summary' | 'semester-promotion-summary' | 'year-promotion-summary',
-    params?: { format?: string; sections?: string; subjectId?: string; semesterId?: string; classId?: string; academicYearId?: string }
+    params?: { format?: string; sections?: string; columns?: string; subjectId?: string; semesterId?: string; classId?: string; academicYearId?: string }
   ) => api.get(`/export/reports/${type}`, { params, responseType: 'blob' }),
 }
 

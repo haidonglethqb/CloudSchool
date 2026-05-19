@@ -7,10 +7,45 @@ const { authenticate, authorize } = require('../middleware/auth')
 const { requireFeature, requireAllFeatures } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 
+const PDF_SECTION_KEYS = ['cover', 'filters', 'summary', 'table', 'students', 'signature']
+const DEFAULT_COMMON_SECTIONS = ['cover', 'filters', 'summary', 'table', 'signature']
+
+const PDF_FONT_REGULAR = '@fontsource/noto-sans/files/noto-sans-latin-ext-400-normal.woff'
+const PDF_FONT_BOLD = '@fontsource/noto-sans/files/noto-sans-latin-ext-700-normal.woff'
+
 const normalizeFormat = (format) => {
   if (!format) return 'csv'
   if (format === 'excel') return 'xlsx'
-  return format
+  return String(format).toLowerCase()
+}
+
+const parseCsvParam = (value) => {
+  if (!value) return []
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => String(item).split(','))
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+  return String(value).split(',').map((item) => item.trim()).filter(Boolean)
+}
+
+const normalizeSections = (rawSections, allowed, defaults) => {
+  const requested = parseCsvParam(rawSections)
+  const requestedSet = new Set(requested)
+  const selected = (requested.length > 0 ? requested : defaults).filter((key) => allowed.includes(key))
+  if (selected.length === 0) throw new AppError('No section selected for export', 400, 'NO_EXPORT_SECTION')
+  return { selected, selectedSet: requested.length > 0 ? requestedSet : new Set(selected) }
+}
+
+const normalizeColumns = (rawColumns, allColumns) => {
+  const keys = parseCsvParam(rawColumns)
+  const defaultColumns = allColumns.filter((column) => column.default !== false)
+  if (keys.length === 0) return defaultColumns
+  const allowedMap = new Map(allColumns.map((column) => [column.key, column]))
+  const selected = keys.map((key) => allowedMap.get(key)).filter(Boolean)
+  if (selected.length === 0) throw new AppError('No column selected for export', 400, 'NO_EXPORT_COLUMNS')
+  return selected
 }
 
 function sendCSV(res, filename, headers, rows) {
@@ -46,16 +81,21 @@ async function sendExcel(res, filename, sheets) {
     sheet.columns = sheetData.headers.map((header, index) => ({
       header,
       key: `col${index}`,
-      width: Math.max(header.length + 6, 16)
+      width: Math.max(header.length + 4, 14)
     }))
     sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } }
-    sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2B6CB0' } }
+    sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } }
+    sheet.views = [{ state: 'frozen', ySplit: 1 }]
+
     for (const row of sheetData.rows) {
       const record = {}
       sheetData.headers.forEach((_, index) => {
         record[`col${index}`] = row[index]
       })
-      sheet.addRow(record)
+      const added = sheet.addRow(record)
+      if (added.number % 2 === 0) {
+        added.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }
+      }
     }
   }
 
@@ -65,34 +105,144 @@ async function sendExcel(res, filename, sheets) {
   res.end()
 }
 
-function sendPDF(res, filename, sheets) {
-  res.setHeader('Content-Type', 'application/pdf')
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
-  const doc = new PDFDocument({ size: 'A4', margin: 32 })
-  doc.pipe(res)
+const tryResolveFont = (fontSpec) => {
+  try {
+    return require.resolve(fontSpec)
+  } catch {
+    return null
+  }
+}
 
-  const drawSheet = (sheet, index) => {
-    if (index > 0) doc.addPage()
-    doc.fontSize(14).text(sheet.name)
-    doc.moveDown(0.5)
-    doc.fontSize(9).text(sheet.headers.join(' | '))
-    doc.moveDown(0.2)
-    doc.moveTo(doc.x, doc.y).lineTo(doc.page.width - 32, doc.y).stroke()
-    doc.moveDown(0.4)
-    for (const row of sheet.rows) {
-      const line = row.map((cell) => String(cell ?? '')).join(' | ')
-      if (doc.y > doc.page.height - 40) {
-        doc.addPage()
-        doc.fontSize(9).text(sheet.headers.join(' | '))
-        doc.moveDown(0.2)
-        doc.moveTo(doc.x, doc.y).lineTo(doc.page.width - 32, doc.y).stroke()
-        doc.moveDown(0.4)
-      }
-      doc.fontSize(8).text(line, { width: doc.page.width - 64 })
-    }
+const writeKVRows = (doc, rows, labelWidth) => {
+  for (const row of rows) {
+    doc.font('VN-Bold').fontSize(10).text(`${row.label}:`, { continued: true, width: labelWidth })
+    doc.font('VN-Regular').fontSize(10).text(` ${row.value ?? '-'}`)
+  }
+}
+
+const drawTable = (doc, title, headers, rows) => {
+  const pageInnerWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right
+  const left = doc.page.margins.left
+
+  doc.moveDown(0.8)
+  doc.font('VN-Bold').fontSize(12).text(title)
+  doc.moveDown(0.4)
+
+  const columnCount = Math.max(headers.length, 1)
+  const columnWidth = pageInnerWidth / columnCount
+  const rowPadding = 5
+
+  const drawHeader = () => {
+    const startY = doc.y
+    doc.rect(left, startY, pageInnerWidth, 22).fill('#E2E8F0')
+    headers.forEach((header, index) => {
+      doc
+        .fillColor('#0F172A')
+        .font('VN-Bold')
+        .fontSize(9)
+        .text(String(header), left + index * columnWidth + rowPadding, startY + 6, {
+          width: columnWidth - rowPadding * 2,
+          align: 'left'
+        })
+    })
+    doc.fillColor('#111827')
+    doc.y = startY + 22
   }
 
-  sheets.forEach(drawSheet)
+  const ensureSpace = (requiredHeight) => {
+    const bottomLimit = doc.page.height - doc.page.margins.bottom - 40
+    if (doc.y + requiredHeight <= bottomLimit) return
+    doc.addPage()
+    drawHeader()
+  }
+
+  drawHeader()
+  rows.forEach((row, rowIndex) => {
+    const cellHeights = row.map((value) => doc.heightOfString(String(value ?? ''), {
+      width: columnWidth - rowPadding * 2,
+      align: 'left'
+    }))
+    const rowHeight = Math.max(18, ...cellHeights) + rowPadding * 2
+    ensureSpace(rowHeight)
+    const y = doc.y
+
+    if (rowIndex % 2 === 1) {
+      doc.rect(left, y, pageInnerWidth, rowHeight).fill('#F8FAFC')
+    }
+    doc.strokeColor('#E2E8F0').lineWidth(0.5).rect(left, y, pageInnerWidth, rowHeight).stroke()
+    row.forEach((value, index) => {
+      const x = left + index * columnWidth
+      doc.strokeColor('#E2E8F0').lineWidth(0.5).moveTo(x, y).lineTo(x, y + rowHeight).stroke()
+      doc
+        .fillColor('#111827')
+        .font('VN-Regular')
+        .fontSize(9)
+        .text(String(value ?? ''), x + rowPadding, y + rowPadding, {
+          width: columnWidth - rowPadding * 2
+        })
+    })
+    doc.strokeColor('#E2E8F0').lineWidth(0.5).moveTo(left + pageInnerWidth, y).lineTo(left + pageInnerWidth, y + rowHeight).stroke()
+    doc.y = y + rowHeight
+  })
+}
+
+function sendPDF(res, filename, payload) {
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+  const doc = new PDFDocument({ size: 'A4', margin: 36 })
+  doc.pipe(res)
+
+  const regularPath = tryResolveFont(PDF_FONT_REGULAR)
+  const boldPath = tryResolveFont(PDF_FONT_BOLD)
+  if (regularPath && boldPath) {
+    doc.registerFont('VN-Regular', regularPath)
+    doc.registerFont('VN-Bold', boldPath)
+  } else {
+    doc.registerFont('VN-Regular', 'Helvetica')
+    doc.registerFont('VN-Bold', 'Helvetica-Bold')
+  }
+
+  if (payload.sections.has('cover')) {
+    doc.font('VN-Bold').fontSize(18).text(payload.schoolName || 'CloudSchool', { align: 'center' })
+    doc.moveDown(0.25)
+    doc.font('VN-Bold').fontSize(15).text(payload.title, { align: 'center' })
+    doc.moveDown(0.25)
+    doc.font('VN-Regular').fontSize(10).text(`Ngày xuất: ${new Date().toLocaleString('vi-VN')}`, { align: 'center' })
+  }
+
+  if (payload.sections.has('filters') && payload.filters.length > 0) {
+    doc.moveDown(1)
+    doc.font('VN-Bold').fontSize(11).text('Bộ lọc áp dụng')
+    doc.moveDown(0.3)
+    writeKVRows(doc, payload.filters, 160)
+  }
+
+  if (payload.sections.has('summary') && payload.summary.length > 0) {
+    doc.moveDown(0.8)
+    doc.font('VN-Bold').fontSize(11).text('Tổng hợp')
+    doc.moveDown(0.3)
+    writeKVRows(doc, payload.summary, 160)
+  }
+
+  if (payload.sections.has('table') && payload.table) {
+    drawTable(doc, payload.table.title, payload.table.headers, payload.table.rows)
+  }
+
+  if (payload.sections.has('students') && payload.studentsTable) {
+    drawTable(doc, payload.studentsTable.title, payload.studentsTable.headers, payload.studentsTable.rows)
+  }
+
+  if (payload.sections.has('signature')) {
+    const y = Math.max(doc.y + 24, doc.page.height - 120)
+    if (y > doc.page.height - 90) doc.addPage()
+    doc.y = Math.min(y, doc.page.height - 110)
+    doc.font('VN-Regular').fontSize(10).text(`Ngày ${new Date().getDate()} tháng ${new Date().getMonth() + 1} năm ${new Date().getFullYear()}`, { align: 'right' })
+    doc.moveDown(0.2)
+    doc.font('VN-Bold').fontSize(10).text('Người lập báo cáo', { align: 'right' })
+    doc.moveDown(2.5)
+    doc.font('VN-Regular').fontSize(10).text('(Ký và ghi rõ họ tên)', { align: 'right' })
+  }
+
   doc.end()
 }
 
@@ -102,19 +252,26 @@ const mapGenderLabel = (gender) => {
   return 'Khác'
 }
 
-const parseDynamicSections = (rawSections) => {
-  if (!rawSections) return []
-  if (Array.isArray(rawSections)) return rawSections.flatMap((value) => String(value).split(',')).map((value) => value.trim()).filter(Boolean)
-  return String(rawSections).split(',').map((value) => value.trim()).filter(Boolean)
+const getTenantDisplayName = async (req) => {
+  if (req.user.role === 'PLATFORM_ADMIN') return 'CloudSchool Platform'
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: req.tenantId },
+    select: { name: true }
+  })
+  return tenant?.name || 'CloudSchool'
+}
+
+const buildRowsFromColumns = (items, columns) => {
+  const headers = columns.map((column) => column.label)
+  const rows = items.map((item) => columns.map((column) => column.getValue(item)))
+  return { headers, rows }
 }
 
 router.use(authenticate, requireFeature('export'))
 
-// GET /export/students
 router.get('/students', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), requireFeature('student-lookup'), async (req, res, next) => {
   try {
     const format = normalizeFormat(req.query.format)
-
     const { classId, gradeId, search, address, gender, birthYear, status } = req.query
     const where = {}
     if (req.user.role !== 'PLATFORM_ADMIN') where.tenantId = req.tenantId
@@ -146,48 +303,61 @@ router.get('/students', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), req
       orderBy: { fullName: 'asc' }
     })
 
-    const headers = ['Mã HS', 'Họ tên', 'Giới tính', 'Ngày sinh', 'Lớp', 'Khối', 'Địa chỉ', 'SĐT', 'Tên phụ huynh', 'SĐT PH', 'Trạng thái']
-    if (req.user.role === 'PLATFORM_ADMIN') headers.push('Trường')
+    const columns = [
+      { key: 'studentCode', label: 'Mã HS', default: true, getValue: (student) => student.studentCode },
+      { key: 'fullName', label: 'Họ tên', default: true, getValue: (student) => student.fullName },
+      { key: 'gender', label: 'Giới tính', default: true, getValue: (student) => mapGenderLabel(student.gender) },
+      { key: 'dateOfBirth', label: 'Ngày sinh', default: true, getValue: (student) => new Date(student.dateOfBirth).toLocaleDateString('vi-VN') },
+      { key: 'className', label: 'Lớp', default: true, getValue: (student) => student.class?.name || '' },
+      { key: 'gradeName', label: 'Khối', default: true, getValue: (student) => student.class?.grade?.name || '' },
+      { key: 'address', label: 'Địa chỉ', default: true, getValue: (student) => student.address || '' },
+      { key: 'phone', label: 'SĐT', default: true, getValue: (student) => student.phone || '' },
+      { key: 'parentName', label: 'Tên phụ huynh', default: true, getValue: (student) => student.parentName || '' },
+      { key: 'parentPhone', label: 'SĐT PH', default: true, getValue: (student) => student.parentPhone || '' },
+      { key: 'status', label: 'Trạng thái', default: true, getValue: (student) => (student.isActive ? 'Đang học' : 'Nghỉ học') }
+    ]
+    if (req.user.role === 'PLATFORM_ADMIN') {
+      columns.push({ key: 'tenantName', label: 'Trường', default: true, getValue: (student) => student.tenant?.name || '' })
+    }
 
-    const rows = students.map((student) => {
-      const row = [
-        student.studentCode,
-        student.fullName,
-        mapGenderLabel(student.gender),
-        new Date(student.dateOfBirth).toLocaleDateString('vi-VN'),
-        student.class?.name || '',
-        student.class?.grade?.name || '',
-        student.address || '',
-        student.phone || '',
-        student.parentName || '',
-        student.parentPhone || '',
-        student.isActive ? 'Đang học' : 'Nghỉ học'
-      ]
-      if (req.user.role === 'PLATFORM_ADMIN') row.push(student.tenant?.name || '')
-      return row
-    })
-
+    const selectedColumns = normalizeColumns(req.query.columns, columns)
+    const { headers, rows } = buildRowsFromColumns(students, selectedColumns)
     const filename = `students_${new Date().toISOString().split('T')[0]}`
+
     if (format === 'xlsx') {
-      await sendExcel(res, `${filename}.xlsx`, [{ name: 'Danh sach hoc sinh', headers, rows }])
+      await sendExcel(res, `${filename}.xlsx`, [{ name: 'Danh sách học sinh', headers, rows }])
       return
     }
+
     if (format === 'pdf') {
-      sendPDF(res, `${filename}.pdf`, [{ name: 'Danh sach hoc sinh', headers, rows }])
+      const sections = normalizeSections(req.query.sections, PDF_SECTION_KEYS, DEFAULT_COMMON_SECTIONS).selectedSet
+      const schoolName = await getTenantDisplayName(req)
+      sendPDF(res, `${filename}.pdf`, {
+        title: 'Danh sách học sinh',
+        schoolName,
+        sections,
+        filters: [
+          { label: 'Khối', value: gradeId || 'Tất cả' },
+          { label: 'Lớp', value: classId || 'Tất cả' },
+          { label: 'Giới tính', value: gender || 'Tất cả' },
+          { label: 'Năm sinh', value: birthYear || 'Tất cả' },
+          { label: 'Trạng thái', value: status || 'Tất cả' }
+        ],
+        summary: [{ label: 'Tổng số học sinh', value: students.length }],
+        table: { title: 'Danh sách học sinh', headers, rows }
+      })
       return
     }
+
     sendCSV(res, `${filename}.csv`, headers, rows)
   } catch (error) {
     next(error)
   }
 })
 
-// GET /export/classes
 router.get('/classes', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), requireFeature('classes'), async (req, res, next) => {
   try {
     const format = normalizeFormat(req.query.format)
-    if (format === 'pdf') throw new AppError('PDF export is not configured in this environment', 400, 'UNSUPPORTED_FORMAT')
-
     const where = {}
     if (req.user.role !== 'PLATFORM_ADMIN') where.tenantId = req.tenantId
 
@@ -201,39 +371,53 @@ router.get('/classes', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), requ
       orderBy: [{ grade: { level: 'asc' } }, { name: 'asc' }]
     })
 
-    const headers = ['Tên lớp', 'Khối', 'Năm học', 'Sĩ số', 'Sức chứa', 'Trạng thái']
-    if (req.user.role === 'PLATFORM_ADMIN') headers.push('Trường')
+    const columns = [
+      { key: 'name', label: 'Tên lớp', default: true, getValue: (cls) => cls.name },
+      { key: 'grade', label: 'Khối', default: true, getValue: (cls) => cls.grade?.name || '' },
+      { key: 'academicYear', label: 'Năm học', default: true, getValue: (cls) => cls.academicYear },
+      { key: 'size', label: 'Sĩ số', default: true, getValue: (cls) => cls._count.students },
+      { key: 'capacity', label: 'Sức chứa', default: true, getValue: (cls) => cls.capacity },
+      { key: 'status', label: 'Trạng thái', default: true, getValue: (cls) => (cls.isActive ? 'Hoạt động' : 'Không hoạt động') }
+    ]
+    if (req.user.role === 'PLATFORM_ADMIN') {
+      columns.push({ key: 'tenantName', label: 'Trường', default: true, getValue: (cls) => cls.tenant?.name || '' })
+    }
 
-    const rows = classes.map((cls) => {
-      const row = [
-        cls.name,
-        cls.grade?.name || '',
-        cls.academicYear,
-        cls._count.students,
-        cls.capacity,
-        cls.isActive ? 'Hoạt động' : 'Không hoạt động'
-      ]
-      if (req.user.role === 'PLATFORM_ADMIN') row.push(cls.tenant?.name || '')
-      return row
-    })
-
+    const selectedColumns = normalizeColumns(req.query.columns, columns)
+    const { headers, rows } = buildRowsFromColumns(classes, selectedColumns)
     const filename = `classes_${new Date().toISOString().split('T')[0]}`
+
     if (format === 'xlsx') {
-      await sendExcel(res, `${filename}.xlsx`, [{ name: 'Danh sach lop', headers, rows }])
+      await sendExcel(res, `${filename}.xlsx`, [{ name: 'Danh sách lớp', headers, rows }])
       return
     }
+
+    if (format === 'pdf') {
+      const sections = normalizeSections(req.query.sections, PDF_SECTION_KEYS, DEFAULT_COMMON_SECTIONS).selectedSet
+      const schoolName = await getTenantDisplayName(req)
+      sendPDF(res, `${filename}.pdf`, {
+        title: 'Danh sách lớp',
+        schoolName,
+        sections,
+        filters: [{ label: 'Phạm vi', value: req.user.role === 'PLATFORM_ADMIN' ? 'Toàn hệ thống' : 'Trường hiện tại' }],
+        summary: [
+          { label: 'Tổng số lớp', value: classes.length },
+          { label: 'Tổng sĩ số', value: classes.reduce((total, cls) => total + cls._count.students, 0) }
+        ],
+        table: { title: 'Danh sách lớp', headers, rows }
+      })
+      return
+    }
+
     sendCSV(res, `${filename}.csv`, headers, rows)
   } catch (error) {
     next(error)
   }
 })
 
-// GET /export/scores
 router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADMIN'), requireFeature('scores'), async (req, res, next) => {
   try {
     const format = normalizeFormat(req.query.format)
-    if (format === 'pdf') throw new AppError('PDF export is not configured in this environment', 400, 'UNSUPPORTED_FORMAT')
-
     const { classId, subjectId, semesterId } = req.query
     if (!classId || !subjectId || !semesterId) {
       throw new AppError('classId, subjectId, and semesterId are required', 400, 'MISSING_PARAMS')
@@ -246,22 +430,26 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADM
       if (!assignment) throw new AppError('Not assigned to this class/subject', 403, 'FORBIDDEN')
     }
 
-    const students = await prisma.student.findMany({
-      where: { classId, tenantId: req.tenantId, isActive: true },
-      orderBy: { fullName: 'asc' }
-    })
-    const scoreComponents = await prisma.scoreComponent.findMany({
-      where: { subjectId, tenantId: req.tenantId },
-      orderBy: { weight: 'desc' }
-    })
-    const allScores = await prisma.score.findMany({
-      where: {
-        studentId: { in: students.map((student) => student.id) },
-        subjectId,
-        semesterId,
-        tenantId: req.tenantId
-      }
-    })
+    const [students, scoreComponents] = await Promise.all([
+      prisma.student.findMany({
+        where: { classId, tenantId: req.tenantId, isActive: true },
+        orderBy: { fullName: 'asc' }
+      }),
+      prisma.scoreComponent.findMany({
+        where: { subjectId, tenantId: req.tenantId },
+        orderBy: { weight: 'desc' }
+      })
+    ])
+    const allScores = students.length
+      ? await prisma.score.findMany({
+          where: {
+            studentId: { in: students.map((student) => student.id) },
+            subjectId,
+            semesterId,
+            tenantId: req.tenantId
+          }
+        })
+      : []
 
     const scoresByStudent = {}
     for (const score of allScores) {
@@ -269,48 +457,98 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADM
       scoresByStudent[score.studentId].push(score)
     }
 
-    const headers = ['STT', 'Mã HS', 'Họ tên', ...scoreComponents.map((component) => `${component.name} (${component.weight}%)`), 'ĐTB']
-    const rows = students.map((student, index) => {
+    const rowModels = students.map((student, index) => {
       const scores = scoresByStudent[student.id] || []
       let weightedSum = 0
       let totalWeight = 0
-      const scoreValues = scoreComponents.map((component) => {
+      const componentValues = {}
+      for (const component of scoreComponents) {
         const score = scores.find((item) => item.scoreComponentId === component.id)
-        if (!score) return ''
+        if (!score) {
+          componentValues[component.id] = ''
+          continue
+        }
         weightedSum += score.value * component.weight
         totalWeight += component.weight
-        return score.value
-      })
-      const average = totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) / 100 : ''
-      return [index + 1, student.studentCode, student.fullName, ...scoreValues, average]
+        componentValues[component.id] = score.value
+      }
+      return {
+        index: index + 1,
+        studentCode: student.studentCode,
+        fullName: student.fullName,
+        componentValues,
+        average: totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) / 100 : ''
+      }
     })
 
+    const columns = [
+      { key: 'index', label: 'STT', default: true, getValue: (item) => item.index },
+      { key: 'studentCode', label: 'Mã HS', default: true, getValue: (item) => item.studentCode },
+      { key: 'fullName', label: 'Họ tên', default: true, getValue: (item) => item.fullName },
+      ...scoreComponents.map((component) => ({
+        key: `component_${component.id}`,
+        label: `${component.name} (${component.weight}%)`,
+        default: true,
+        getValue: (item) => item.componentValues[component.id]
+      })),
+      { key: 'average', label: 'ĐTB', default: true, getValue: (item) => item.average }
+    ]
+
+    const selectedColumns = normalizeColumns(req.query.columns, columns)
+    const { headers, rows } = buildRowsFromColumns(rowModels, selectedColumns)
     const filename = `scores_${new Date().toISOString().split('T')[0]}`
+
     if (format === 'xlsx') {
-      await sendExcel(res, `${filename}.xlsx`, [{ name: 'Bang diem', headers, rows }])
+      await sendExcel(res, `${filename}.xlsx`, [{ name: 'Bảng điểm', headers, rows }])
       return
     }
+
+    if (format === 'pdf') {
+      const sections = normalizeSections(req.query.sections, PDF_SECTION_KEYS, DEFAULT_COMMON_SECTIONS).selectedSet
+      const schoolName = await getTenantDisplayName(req)
+      sendPDF(res, `${filename}.pdf`, {
+        title: 'Bảng điểm môn học',
+        schoolName,
+        sections,
+        filters: [
+          { label: 'Lớp', value: classId },
+          { label: 'Môn', value: subjectId },
+          { label: 'Học kỳ', value: semesterId }
+        ],
+        summary: [{ label: 'Số học sinh', value: students.length }],
+        table: { title: 'Bảng điểm chi tiết', headers, rows }
+      })
+      return
+    }
+
     sendCSV(res, `${filename}.csv`, headers, rows)
   } catch (error) {
     next(error)
   }
 })
 
-// GET /export/reports/:type?format=csv|xlsx&sections=summary,details
 router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireAllFeatures(['reports']), async (req, res, next) => {
   try {
     const type = req.params.type
     const format = normalizeFormat(req.query.format)
+    const sectionDefaults = type === 'class-promotion-summary'
+      ? ['cover', 'filters', 'summary', 'table', 'students', 'signature']
+      : DEFAULT_COMMON_SECTIONS
+    const sections = normalizeSections(req.query.sections, PDF_SECTION_KEYS, sectionDefaults).selectedSet
 
-    const sections = parseDynamicSections(req.query.sections)
-    const requested = sections.length > 0 ? new Set(sections) : null
-    const sheets = []
-    const wantsSummary = !requested || requested.has('summary')
-    const wantsStudents = !requested || requested.has('students')
+    let reportTitle = ''
+    let summaryRows = []
+    let tableTitle = 'Bảng dữ liệu'
+    let tableRows = []
+    let tableColumns = []
+    let studentsTable = null
+    const filters = []
 
     if (type === 'class-promotion-summary') {
+      reportTitle = 'BM2 - Tỷ lệ lên lớp theo lớp'
       const { classId, semesterId } = req.query
       if (!classId || !semesterId) throw new AppError('classId and semesterId are required', 400, 'MISSING_PARAMS')
+      filters.push({ label: 'Lớp', value: classId }, { label: 'Học kỳ', value: semesterId })
 
       const classInfo = await prisma.class.findFirst({ where: { id: classId, tenantId: req.tenantId }, include: { grade: true } })
       const promotions = await prisma.promotion.findMany({
@@ -319,30 +557,38 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
         orderBy: { student: { fullName: 'asc' } }
       })
       const passCount = promotions.filter((item) => item.result === 'PASS').length
-
-      if (wantsSummary) {
-        sheets.push({
-          name: 'Tong hop',
-          headers: ['Lớp', 'Khối', 'Sĩ số xét', 'Số lên lớp', 'Tỷ lệ lên lớp'],
-          rows: [[
-            classInfo?.name || '',
-            classInfo?.grade?.name || '',
-            promotions.length,
-            passCount,
-            promotions.length > 0 ? `${Math.round((passCount / promotions.length) * 10000) / 100}%` : '0%'
-          ]]
-        })
-      }
-      if (wantsStudents) {
-        sheets.push({
-          name: 'Danh sach hoc sinh',
-          headers: ['Mã HS', 'Họ tên', 'Điểm TB', 'Kết quả'],
-          rows: promotions.map((item) => [item.student.studentCode, item.student.fullName, item.average, item.result === 'PASS' ? 'Lên lớp' : 'Không lên lớp'])
-        })
+      summaryRows = [
+        { label: 'Lớp', value: classInfo?.name || '' },
+        { label: 'Khối', value: classInfo?.grade?.name || '' },
+        { label: 'Sĩ số xét', value: promotions.length },
+        { label: 'Số lên lớp', value: passCount },
+        { label: 'Tỷ lệ lên lớp', value: promotions.length > 0 ? `${Math.round((passCount / promotions.length) * 10000) / 100}%` : '0%' }
+      ]
+      tableTitle = 'Tổng hợp kết quả'
+      tableRows = [{
+        className: classInfo?.name || '',
+        gradeName: classInfo?.grade?.name || '',
+        total: promotions.length,
+        pass: passCount,
+        rate: promotions.length > 0 ? `${Math.round((passCount / promotions.length) * 10000) / 100}%` : '0%'
+      }]
+      tableColumns = [
+        { key: 'className', label: 'Lớp', default: true, getValue: (row) => row.className },
+        { key: 'gradeName', label: 'Khối', default: true, getValue: (row) => row.gradeName },
+        { key: 'total', label: 'Sĩ số xét', default: true, getValue: (row) => row.total },
+        { key: 'pass', label: 'Số lên lớp', default: true, getValue: (row) => row.pass },
+        { key: 'rate', label: 'Tỷ lệ lên lớp', default: true, getValue: (row) => row.rate }
+      ]
+      studentsTable = {
+        title: 'Danh sách học sinh',
+        headers: ['Mã HS', 'Họ tên', 'Điểm TB', 'Kết quả'],
+        rows: promotions.map((item) => [item.student.studentCode, item.student.fullName, item.average, item.result === 'PASS' ? 'Lên lớp' : 'Không lên lớp'])
       }
     } else if (type === 'semester-promotion-summary') {
+      reportTitle = 'BM3 - Tỷ lệ lên lớp theo học kỳ'
       const { semesterId } = req.query
       if (!semesterId) throw new AppError('semesterId is required', 400, 'MISSING_PARAMS')
+      filters.push({ label: 'Học kỳ', value: semesterId })
 
       const promotions = await prisma.promotion.findMany({
         where: { tenantId: req.tenantId, semesterId },
@@ -350,26 +596,35 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
       })
       const grouped = new Map()
       for (const item of promotions) {
-        if (!grouped.has(item.classId)) {
-          grouped.set(item.classId, { className: item.class.name, gradeName: item.class.grade.name, total: 0, pass: 0 })
-        }
+        if (!grouped.has(item.classId)) grouped.set(item.classId, { className: item.class.name, gradeName: item.class.grade.name, total: 0, pass: 0 })
         const bucket = grouped.get(item.classId)
         bucket.total += 1
         if (item.result === 'PASS') bucket.pass += 1
       }
-      const rows = [...grouped.values()].map((item) => [
-        item.className,
-        item.gradeName,
-        item.total,
-        item.pass,
-        item.total > 0 ? `${Math.round((item.pass / item.total) * 10000) / 100}%` : '0%'
-      ])
-      if (wantsSummary) {
-        sheets.push({ name: 'Theo lop', headers: ['Lớp', 'Khối', 'Sĩ số xét', 'Số lên lớp', 'Tỷ lệ lên lớp'], rows })
-      }
+      tableRows = [...grouped.values()].map((item) => ({
+        className: item.className,
+        gradeName: item.gradeName,
+        total: item.total,
+        pass: item.pass,
+        rate: item.total > 0 ? `${Math.round((item.pass / item.total) * 10000) / 100}%` : '0%'
+      }))
+      summaryRows = [
+        { label: 'Số lớp', value: tableRows.length },
+        { label: 'Tổng lượt xét', value: tableRows.reduce((total, item) => total + item.total, 0) }
+      ]
+      tableTitle = 'Kết quả theo lớp'
+      tableColumns = [
+        { key: 'className', label: 'Lớp', default: true, getValue: (row) => row.className },
+        { key: 'gradeName', label: 'Khối', default: true, getValue: (row) => row.gradeName },
+        { key: 'total', label: 'Sĩ số xét', default: true, getValue: (row) => row.total },
+        { key: 'pass', label: 'Số lên lớp', default: true, getValue: (row) => row.pass },
+        { key: 'rate', label: 'Tỷ lệ lên lớp', default: true, getValue: (row) => row.rate }
+      ]
     } else if (type === 'year-promotion-summary') {
+      reportTitle = 'BM4 - Tỷ lệ lên lớp theo năm học'
       const { academicYearId } = req.query
       if (!academicYearId) throw new AppError('academicYearId is required', 400, 'MISSING_PARAMS')
+      filters.push({ label: 'Năm học', value: academicYearId })
 
       const year = await prisma.academicYear.findFirst({
         where: { id: academicYearId, tenantId: req.tenantId },
@@ -384,27 +639,33 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
       })
       const grouped = new Map()
       for (const item of promotions) {
-        if (!grouped.has(item.class.gradeId)) {
-          grouped.set(item.class.gradeId, { gradeName: item.class.grade.name, gradeLevel: item.class.grade.level, total: 0, pass: 0 })
-        }
+        if (!grouped.has(item.class.gradeId)) grouped.set(item.class.gradeId, { gradeName: item.class.grade.name, gradeLevel: item.class.grade.level, total: 0, pass: 0 })
         const bucket = grouped.get(item.class.gradeId)
         bucket.total += 1
         if (item.result === 'PASS') bucket.pass += 1
       }
-      const rows = [...grouped.values()]
-        .sort((a, b) => a.gradeLevel - b.gradeLevel)
-        .map((item) => [
-          item.gradeName,
-          item.total,
-          item.pass,
-          item.total > 0 ? `${Math.round((item.pass / item.total) * 10000) / 100}%` : '0%'
-        ])
-      if (wantsSummary) {
-        sheets.push({ name: 'Theo khoi', headers: ['Khối', 'Sĩ số xét', 'Số lên lớp', 'Tỷ lệ lên lớp'], rows })
-      }
+      tableRows = [...grouped.values()].sort((a, b) => a.gradeLevel - b.gradeLevel).map((item) => ({
+        gradeName: item.gradeName,
+        total: item.total,
+        pass: item.pass,
+        rate: item.total > 0 ? `${Math.round((item.pass / item.total) * 10000) / 100}%` : '0%'
+      }))
+      summaryRows = [
+        { label: 'Số khối', value: tableRows.length },
+        { label: 'Tổng lượt xét', value: tableRows.reduce((total, item) => total + item.total, 0) }
+      ]
+      tableTitle = 'Kết quả theo khối'
+      tableColumns = [
+        { key: 'gradeName', label: 'Khối', default: true, getValue: (row) => row.gradeName },
+        { key: 'total', label: 'Sĩ số xét', default: true, getValue: (row) => row.total },
+        { key: 'pass', label: 'Số lên lớp', default: true, getValue: (row) => row.pass },
+        { key: 'rate', label: 'Tỷ lệ lên lớp', default: true, getValue: (row) => row.rate }
+      ]
     } else if (type === 'subject-summary') {
+      reportTitle = 'BM1 - Tổng kết môn học'
       const { subjectId, semesterId } = req.query
       if (!subjectId || !semesterId) throw new AppError('subjectId and semesterId are required', 400, 'MISSING_PARAMS')
+      filters.push({ label: 'Môn học', value: subjectId }, { label: 'Học kỳ', value: semesterId })
 
       const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
       const classes = await prisma.class.findMany({
@@ -424,9 +685,8 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
         scoreMap.get(score.studentId).push(score)
       }
 
-      const rows = classes.map((cls) => {
+      tableRows = classes.map((cls) => {
         let pass = 0
-        let withScores = 0
         for (const student of cls.students) {
           const values = scoreMap.get(student.id) || []
           let weightedSum = 0
@@ -436,51 +696,67 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
             totalWeight += value.scoreComponent.weight
           }
           if (totalWeight <= 0) continue
-          withScores += 1
           const average = weightedSum / totalWeight
           if (average >= settings.passScore) pass += 1
         }
-        return [
-          cls.name,
-          cls.grade?.name || '',
-          cls.students.length,
+        return {
+          className: cls.name,
+          gradeName: cls.grade?.name || '',
+          total: cls.students.length,
           pass,
-          cls.students.length > 0 ? `${Math.round((pass / cls.students.length) * 10000) / 100}%` : '0%'
-        ]
+          rate: cls.students.length > 0 ? `${Math.round((pass / cls.students.length) * 10000) / 100}%` : '0%'
+        }
       })
-      if (wantsSummary) {
-        sheets.push({ name: 'Theo lop', headers: ['Lớp', 'Khối', 'Sĩ số', 'Số đạt', 'Tỷ lệ đạt'], rows })
-      }
+      summaryRows = [
+        { label: 'Số lớp', value: tableRows.length },
+        { label: 'Tổng sĩ số', value: tableRows.reduce((total, item) => total + item.total, 0) }
+      ]
+      tableTitle = 'Kết quả theo lớp'
+      tableColumns = [
+        { key: 'className', label: 'Lớp', default: true, getValue: (row) => row.className },
+        { key: 'gradeName', label: 'Khối', default: true, getValue: (row) => row.gradeName },
+        { key: 'total', label: 'Sĩ số', default: true, getValue: (row) => row.total },
+        { key: 'pass', label: 'Số đạt', default: true, getValue: (row) => row.pass },
+        { key: 'rate', label: 'Tỷ lệ đạt', default: true, getValue: (row) => row.rate }
+      ]
     } else {
       throw new AppError('Unsupported report type', 400, 'UNSUPPORTED_REPORT_TYPE')
     }
 
-    if (sheets.length === 0) throw new AppError('No section selected for export', 400, 'NO_EXPORT_SECTION')
+    const selectedColumns = normalizeColumns(req.query.columns, tableColumns)
+    const tableData = buildRowsFromColumns(tableRows, selectedColumns)
     const filename = `report_${type}_${new Date().toISOString().split('T')[0]}`
 
     if (format === 'xlsx') {
+      const sheets = [{ name: tableTitle, headers: tableData.headers, rows: tableData.rows }]
+      if (sections.has('students') && studentsTable) sheets.push({ name: studentsTable.title, headers: studentsTable.headers, rows: studentsTable.rows })
       await sendExcel(res, `${filename}.xlsx`, sheets)
       return
     }
+
     if (format === 'pdf') {
-      sendPDF(res, `${filename}.pdf`, sheets)
+      const schoolName = await getTenantDisplayName(req)
+      sendPDF(res, `${filename}.pdf`, {
+        title: reportTitle,
+        schoolName,
+        sections,
+        filters,
+        summary: summaryRows,
+        table: { title: tableTitle, headers: tableData.headers, rows: tableData.rows },
+        studentsTable: sections.has('students') ? studentsTable : null
+      })
       return
     }
 
-    const csvHeaders = sheets[0].headers
-    const csvRows = sheets[0].rows
-    sendCSV(res, `${filename}.csv`, csvHeaders, csvRows)
+    sendCSV(res, `${filename}.csv`, tableData.headers, tableData.rows)
   } catch (error) {
     next(error)
   }
 })
 
-// GET /export/schools
 router.get('/schools', authorize('PLATFORM_ADMIN'), async (req, res, next) => {
   try {
     const format = normalizeFormat(req.query.format)
-    if (format === 'pdf') throw new AppError('PDF export is not configured in this environment', 400, 'UNSUPPORTED_FORMAT')
-
     const schools = await prisma.tenant.findMany({
       include: {
         plan: true,
@@ -489,24 +765,38 @@ router.get('/schools', authorize('PLATFORM_ADMIN'), async (req, res, next) => {
       orderBy: { createdAt: 'desc' }
     })
 
-    const headers = ['Tên trường', 'Mã trường', 'Email', 'SĐT', 'Địa chỉ', 'Trạng thái', 'Gói DV', 'Số users', 'Số HS', 'Số lớp', 'Ngày tạo']
-    const rows = schools.map((school) => [
-      school.name,
-      school.code,
-      school.email || '',
-      school.phone || '',
-      school.address || '',
-      school.status === 'ACTIVE' ? 'Hoạt động' : school.status === 'SUSPENDED' ? 'Tạm ngưng' : 'Không hoạt động',
-      school.plan?.name || 'Chưa có',
-      school._count.users,
-      school._count.students,
-      school._count.classes,
-      new Date(school.createdAt).toLocaleDateString('vi-VN')
-    ])
+    const columns = [
+      { key: 'name', label: 'Tên trường', default: true, getValue: (school) => school.name },
+      { key: 'code', label: 'Mã trường', default: true, getValue: (school) => school.code },
+      { key: 'email', label: 'Email', default: true, getValue: (school) => school.email || '' },
+      { key: 'phone', label: 'SĐT', default: true, getValue: (school) => school.phone || '' },
+      { key: 'address', label: 'Địa chỉ', default: true, getValue: (school) => school.address || '' },
+      { key: 'status', label: 'Trạng thái', default: true, getValue: (school) => (school.status === 'ACTIVE' ? 'Hoạt động' : school.status === 'SUSPENDED' ? 'Tạm ngưng' : 'Không hoạt động') },
+      { key: 'plan', label: 'Gói DV', default: true, getValue: (school) => school.plan?.name || 'Chưa có' },
+      { key: 'users', label: 'Số users', default: true, getValue: (school) => school._count.users },
+      { key: 'students', label: 'Số HS', default: true, getValue: (school) => school._count.students },
+      { key: 'classes', label: 'Số lớp', default: true, getValue: (school) => school._count.classes },
+      { key: 'createdAt', label: 'Ngày tạo', default: true, getValue: (school) => new Date(school.createdAt).toLocaleDateString('vi-VN') }
+    ]
 
+    const selectedColumns = normalizeColumns(req.query.columns, columns)
+    const { headers, rows } = buildRowsFromColumns(schools, selectedColumns)
     const filename = `schools_${new Date().toISOString().split('T')[0]}`
+
     if (format === 'xlsx') {
-      await sendExcel(res, `${filename}.xlsx`, [{ name: 'Danh sach truong', headers, rows }])
+      await sendExcel(res, `${filename}.xlsx`, [{ name: 'Danh sách trường', headers, rows }])
+      return
+    }
+    if (format === 'pdf') {
+      const sections = normalizeSections(req.query.sections, PDF_SECTION_KEYS, DEFAULT_COMMON_SECTIONS).selectedSet
+      sendPDF(res, `${filename}.pdf`, {
+        title: 'Danh sách trường',
+        schoolName: 'CloudSchool Platform',
+        sections,
+        filters: [{ label: 'Phạm vi', value: 'Toàn hệ thống' }],
+        summary: [{ label: 'Tổng số trường', value: schools.length }],
+        table: { title: 'Danh sách trường', headers, rows }
+      })
       return
     }
     sendCSV(res, `${filename}.csv`, headers, rows)
