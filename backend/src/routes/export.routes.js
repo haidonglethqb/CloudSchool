@@ -11,6 +11,13 @@ const { AppError } = require('../middleware/errorHandler')
 
 const PDF_SECTION_KEYS = ['cover', 'filters', 'summary', 'table', 'students', 'signature']
 const DEFAULT_COMMON_SECTIONS = ['cover', 'filters', 'summary', 'table', 'signature']
+const PDF_COLORS = {
+  text: '#111827',
+  muted: '#64748B',
+  headerBg: '#E2E8F0',
+  stripeBg: '#F8FAFC',
+  border: '#CBD5E1'
+}
 
 const PDF_FONT_REGULAR = path.join(__dirname, '../assets/fonts/NotoSans-Regular.ttf')
 const PDF_FONT_BOLD = path.join(__dirname, '../assets/fonts/NotoSans-Bold.ttf')
@@ -48,6 +55,16 @@ const normalizeColumns = (rawColumns, allColumns) => {
   const selected = keys.map((key) => allowedMap.get(key)).filter(Boolean)
   if (selected.length === 0) throw new AppError('No column selected for export', 400, 'NO_EXPORT_COLUMNS')
   return selected
+}
+
+const normalizePdfText = (value) => {
+  if (value === null || value === undefined) return ''
+  const text = String(value)
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+    .trim()
+  return text.length > 0 ? text : '-'
 }
 
 function sendCSV(res, filename, headers, rows) {
@@ -109,73 +126,131 @@ async function sendExcel(res, filename, sheets) {
 
 const writeKVRows = (doc, rows, labelWidth) => {
   for (const row of rows) {
-    doc.font('VN-Bold').fontSize(10).text(`${row.label}:`, { continued: true, width: labelWidth })
-    doc.font('VN-Regular').fontSize(10).text(` ${row.value ?? '-'}`)
+    doc.font('VN-Bold').fontSize(10).fillColor(PDF_COLORS.text).text(`${normalizePdfText(row.label)}:`, { continued: true, width: labelWidth })
+    doc.font('VN-Regular').fontSize(10).fillColor(PDF_COLORS.text).text(` ${normalizePdfText(row.value)}`)
   }
 }
 
 const drawTable = (doc, title, headers, rows) => {
+  const safeHeadersRaw = (headers || []).map((header) => normalizePdfText(header))
+  const safeHeaders = safeHeadersRaw.length > 0 ? safeHeadersRaw : ['Dữ liệu']
+  const safeRows = (rows || []).map((row) => (Array.isArray(row) ? row : []).map((cell) => normalizePdfText(cell)))
   const pageInnerWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right
   const left = doc.page.margins.left
-
   doc.moveDown(0.8)
-  doc.font('VN-Bold').fontSize(12).text(title)
+  doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(12).text(normalizePdfText(title))
   doc.moveDown(0.4)
 
-  const columnCount = Math.max(headers.length, 1)
-  const columnWidth = pageInnerWidth / columnCount
-  const rowPadding = 5
+  const columnCount = Math.max(safeHeaders.length, 1)
+  const bodyFontSize = columnCount > 10 ? 7 : columnCount > 7 ? 8 : 9
+  const headerFontSize = bodyFontSize
+  const rowPadding = 4
+  const minColWidth = Math.max(24, Math.floor(pageInnerWidth / Math.max(columnCount, 14)))
+  const maxColWidth = 220
+
+  const maxWidths = safeHeaders.map((header, index) => {
+    doc.font('VN-Bold').fontSize(headerFontSize)
+    let width = doc.widthOfString(header) + rowPadding * 2 + 6
+    const rowSample = safeRows.slice(0, 30)
+    for (const row of rowSample) {
+      const cell = row[index] || ''
+      doc.font('VN-Regular').fontSize(bodyFontSize)
+      width = Math.max(width, doc.widthOfString(cell.slice(0, 40)) + rowPadding * 2 + 6)
+    }
+    return Math.min(maxColWidth, Math.max(minColWidth, width))
+  })
+  const totalRawWidth = maxWidths.reduce((sum, width) => sum + width, 0)
+  const scale = totalRawWidth > 0 ? Math.min(1, pageInnerWidth / totalRawWidth) : 1
+  const columnWidths = maxWidths.map((width) => Math.max(minColWidth, width * scale))
+  const normalizedScale = columnWidths.reduce((sum, width) => sum + width, 0) / pageInnerWidth
+  if (normalizedScale > 1.001) {
+    const ratio = pageInnerWidth / columnWidths.reduce((sum, width) => sum + width, 0)
+    for (let i = 0; i < columnWidths.length; i += 1) {
+      columnWidths[i] = Math.max(minColWidth, columnWidths[i] * ratio)
+    }
+  }
+  const normalizedTotal = columnWidths.reduce((sum, width) => sum + width, 0)
+  if (normalizedTotal < pageInnerWidth && columnWidths.length > 0) {
+    columnWidths[columnWidths.length - 1] += pageInnerWidth - normalizedTotal
+  }
+  const xOffsets = []
+  let cursor = left
+  for (const width of columnWidths) {
+    xOffsets.push(cursor)
+    cursor += width
+  }
+
+  const lineGap = 1
 
   const drawHeader = () => {
     const startY = doc.y
-    doc.rect(left, startY, pageInnerWidth, 22).fill('#E2E8F0')
-    headers.forEach((header, index) => {
-      doc
-        .fillColor('#0F172A')
+    const headerHeight = Math.max(
+      20,
+      ...safeHeaders.map((header, index) => doc
         .font('VN-Bold')
-        .fontSize(9)
-        .text(String(header), left + index * columnWidth + rowPadding, startY + 6, {
-          width: columnWidth - rowPadding * 2,
+        .fontSize(headerFontSize)
+        .heightOfString(header, { width: columnWidths[index] - rowPadding * 2, lineGap })
+      )
+    ) + rowPadding * 2
+
+    doc.rect(left, startY, pageInnerWidth, headerHeight).fill(PDF_COLORS.headerBg)
+    safeHeaders.forEach((header, index) => {
+      doc
+        .fillColor(PDF_COLORS.text)
+        .font('VN-Bold')
+        .fontSize(headerFontSize)
+        .text(header, xOffsets[index] + rowPadding, startY + rowPadding, {
+          width: columnWidths[index] - rowPadding * 2,
           align: 'left'
         })
     })
-    doc.fillColor('#111827')
-    doc.y = startY + 22
+    doc.fillColor(PDF_COLORS.text)
+    doc.y = startY + headerHeight
   }
 
   const ensureSpace = (requiredHeight) => {
-    const bottomLimit = doc.page.height - doc.page.margins.bottom - 40
+    const bottomLimit = doc.page.height - doc.page.margins.bottom - 28
     if (doc.y + requiredHeight <= bottomLimit) return
     doc.addPage()
     drawHeader()
   }
 
   drawHeader()
-  rows.forEach((row, rowIndex) => {
-    const cellHeights = row.map((value) => doc.heightOfString(String(value ?? ''), {
-      width: columnWidth - rowPadding * 2,
-      align: 'left'
-    }))
-    const rowHeight = Math.max(18, ...cellHeights) + rowPadding * 2
+  const tableRows = safeRows.length > 0 ? safeRows : [['Không có dữ liệu']]
+  tableRows.forEach((row, rowIndex) => {
+    const paddedRow = [...row]
+    while (paddedRow.length < columnCount) paddedRow.push('')
+    const trimmedRow = paddedRow.slice(0, columnCount)
+    const cellHeights = trimmedRow.map((value, index) => doc
+      .font('VN-Regular')
+      .fontSize(bodyFontSize)
+      .heightOfString(value, {
+        width: columnWidths[index] - rowPadding * 2,
+        align: 'left',
+        lineGap
+      }))
+    const rowHeight = Math.max(16, ...cellHeights) + rowPadding * 2
     ensureSpace(rowHeight)
     const y = doc.y
 
     if (rowIndex % 2 === 1) {
-      doc.rect(left, y, pageInnerWidth, rowHeight).fill('#F8FAFC')
+      doc.rect(left, y, pageInnerWidth, rowHeight).fill(PDF_COLORS.stripeBg)
     }
-    doc.strokeColor('#E2E8F0').lineWidth(0.5).rect(left, y, pageInnerWidth, rowHeight).stroke()
-    row.forEach((value, index) => {
-      const x = left + index * columnWidth
-      doc.strokeColor('#E2E8F0').lineWidth(0.5).moveTo(x, y).lineTo(x, y + rowHeight).stroke()
+    doc.strokeColor(PDF_COLORS.border).lineWidth(0.5).rect(left, y, pageInnerWidth, rowHeight).stroke()
+    trimmedRow.forEach((value, index) => {
+      const x = xOffsets[index]
+      doc.strokeColor(PDF_COLORS.border).lineWidth(0.5).moveTo(x, y).lineTo(x, y + rowHeight).stroke()
       doc
-        .fillColor('#111827')
+        .fillColor(PDF_COLORS.text)
         .font('VN-Regular')
-        .fontSize(9)
-        .text(String(value ?? ''), x + rowPadding, y + rowPadding, {
-          width: columnWidth - rowPadding * 2
+        .fontSize(bodyFontSize)
+        .text(value, x + rowPadding, y + rowPadding, {
+          width: columnWidths[index] - rowPadding * 2,
+          lineGap,
+          ellipsis: true
         })
     })
-    doc.strokeColor('#E2E8F0').lineWidth(0.5).moveTo(left + pageInnerWidth, y).lineTo(left + pageInnerWidth, y + rowHeight).stroke()
+    doc.strokeColor(PDF_COLORS.border).lineWidth(0.5).moveTo(left + pageInnerWidth, y).lineTo(left + pageInnerWidth, y + rowHeight).stroke()
     doc.y = y + rowHeight
   })
 }
@@ -183,7 +258,14 @@ const drawTable = (doc, title, headers, rows) => {
 function sendPDF(res, filename, payload) {
   res.setHeader('Content-Type', 'application/pdf')
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
-  const doc = new PDFDocument({ size: 'A4', margin: 36 })
+  const tableColumnCount = payload.table?.headers?.length || 0
+  const studentsColumnCount = payload.studentsTable?.headers?.length || 0
+  const maxColumnCount = Math.max(tableColumnCount, studentsColumnCount)
+  const doc = new PDFDocument({
+    size: 'A4',
+    layout: maxColumnCount >= 8 ? 'landscape' : 'portrait',
+    margins: { top: 42, right: 36, bottom: 42, left: 36 }
+  })
   doc.pipe(res)
 
   if (fs.existsSync(PDF_FONT_REGULAR) && fs.existsSync(PDF_FONT_BOLD)) {
@@ -194,24 +276,44 @@ function sendPDF(res, filename, payload) {
     doc.registerFont('VN-Bold', 'Helvetica-Bold')
   }
 
+  let pageNumber = 1
+  const writeFooter = () => {
+    const currentX = doc.x
+    const currentY = doc.y
+    const width = doc.page.width - doc.page.margins.left - doc.page.margins.right
+    const y = doc.page.height - doc.page.margins.bottom + 12
+    doc.font('VN-Regular').fontSize(8).fillColor(PDF_COLORS.muted).text(`Trang ${pageNumber}`, doc.page.margins.left, y, {
+      width,
+      align: 'right'
+    })
+    doc.x = currentX
+    doc.y = currentY
+    doc.fillColor(PDF_COLORS.text)
+  }
+  doc.on('pageAdded', () => {
+    pageNumber += 1
+    writeFooter()
+  })
+  writeFooter()
+
   if (payload.sections.has('cover')) {
-    doc.font('VN-Bold').fontSize(18).text(payload.schoolName || 'CloudSchool', { align: 'center' })
+    doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(18).text(normalizePdfText(payload.schoolName || 'CloudSchool'), { align: 'center' })
     doc.moveDown(0.25)
-    doc.font('VN-Bold').fontSize(15).text(payload.title, { align: 'center' })
+    doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(15).text(normalizePdfText(payload.title), { align: 'center' })
     doc.moveDown(0.25)
-    doc.font('VN-Regular').fontSize(10).text(`Ngày xuất: ${new Date().toLocaleString('vi-VN')}`, { align: 'center' })
+    doc.font('VN-Regular').fillColor(PDF_COLORS.muted).fontSize(10).text(`Ngày xuất: ${new Date().toLocaleString('vi-VN')}`, { align: 'center' })
   }
 
   if (payload.sections.has('filters') && payload.filters.length > 0) {
     doc.moveDown(1)
-    doc.font('VN-Bold').fontSize(11).text('Bộ lọc áp dụng')
+    doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(11).text('Bộ lọc áp dụng')
     doc.moveDown(0.3)
     writeKVRows(doc, payload.filters, 160)
   }
 
   if (payload.sections.has('summary') && payload.summary.length > 0) {
     doc.moveDown(0.8)
-    doc.font('VN-Bold').fontSize(11).text('Tổng hợp')
+    doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(11).text('Tổng hợp')
     doc.moveDown(0.3)
     writeKVRows(doc, payload.summary, 160)
   }
@@ -225,14 +327,15 @@ function sendPDF(res, filename, payload) {
   }
 
   if (payload.sections.has('signature')) {
-    const y = Math.max(doc.y + 24, doc.page.height - 120)
-    if (y > doc.page.height - 90) doc.addPage()
-    doc.y = Math.min(y, doc.page.height - 110)
-    doc.font('VN-Regular').fontSize(10).text(`Ngày ${new Date().getDate()} tháng ${new Date().getMonth() + 1} năm ${new Date().getFullYear()}`, { align: 'right' })
+    const signatureBlockHeight = 84
+    const limit = doc.page.height - doc.page.margins.bottom - signatureBlockHeight
+    if (doc.y > limit) doc.addPage()
+    doc.y = Math.max(doc.y + 16, doc.page.height - 130)
+    doc.font('VN-Regular').fillColor(PDF_COLORS.text).fontSize(10).text(`Ngày ${new Date().getDate()} tháng ${new Date().getMonth() + 1} năm ${new Date().getFullYear()}`, { align: 'right' })
     doc.moveDown(0.2)
-    doc.font('VN-Bold').fontSize(10).text('Người lập báo cáo', { align: 'right' })
+    doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(10).text('Người lập báo cáo', { align: 'right' })
     doc.moveDown(2.5)
-    doc.font('VN-Regular').fontSize(10).text('(Ký và ghi rõ họ tên)', { align: 'right' })
+    doc.font('VN-Regular').fillColor(PDF_COLORS.muted).fontSize(10).text('(Ký và ghi rõ họ tên)', { align: 'right' })
   }
 
   doc.end()
