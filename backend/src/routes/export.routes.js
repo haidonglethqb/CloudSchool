@@ -285,10 +285,11 @@ async function sendPDF(res, filename, payload) {
         const currentX = doc.x
         const currentY = doc.y
         const width = doc.page.width - doc.page.margins.left - doc.page.margins.right
-        const y = doc.page.height - doc.page.margins.bottom + 12
+        const y = doc.page.height - doc.page.margins.bottom - 10
         doc.font('VN-Regular').fontSize(8).fillColor(PDF_COLORS.muted).text(`Trang ${pageNumber}`, doc.page.margins.left, y, {
           width,
-          align: 'right'
+          align: 'right',
+          lineBreak: false
         })
         doc.x = currentX
         doc.y = currentY
