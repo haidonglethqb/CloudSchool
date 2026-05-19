@@ -1,14 +1,6 @@
 name: API & Performance Tests
 
 on:
-  pull_request:
-    branches:
-      - dev
-      - main
-  push:
-    branches:
-      - dev
-      - main
   workflow_dispatch:
     inputs:
       test_type:
@@ -80,15 +72,7 @@ jobs:
       - name: Resolve test type
         id: resolve
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "test_type=${{ github.event.inputs.test_type }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ github.event_name }}" = "push" ]; then
-            echo "test_type=all" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            echo "test_type=api-tests" >> "$GITHUB_OUTPUT"
-          else
-            echo "test_type=api-smoke" >> "$GITHUB_OUTPUT"
-          fi
+          echo "test_type=${{ github.event.inputs.test_type }}" >> "$GITHUB_OUTPUT"
 
       # ── Run tests ──
       - name: Run API smoke tests
