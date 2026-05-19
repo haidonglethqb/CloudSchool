@@ -3,10 +3,13 @@ const router = express.Router()
 const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
+const { requireFeature } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 
+router.use(authenticate, requireFeature('fees'))
+
 // GET /fees - List all fees for the tenant
-router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.get('/', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const { category, isActive } = req.query
 
@@ -66,7 +69,7 @@ router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res
 })
 
 // GET /fees/parent/my-fees - Get fees for parent's children (must be before /:id)
-router.get('/parent/my-fees', authenticate, authorize('PARENT'), async (req, res, next) => {
+router.get('/parent/my-fees', authorize('PARENT'), async (req, res, next) => {
   try {
     const parentLinks = await prisma.parentStudent.findMany({
       where: { parentId: req.user.id },
@@ -101,7 +104,7 @@ router.get('/parent/my-fees', authenticate, authorize('PARENT'), async (req, res
 })
 
 // GET /fees/:id - Get fee details with student payments
-router.get('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.get('/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const fee = await prisma.fee.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },

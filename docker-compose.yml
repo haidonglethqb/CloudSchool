@@ -27,7 +27,7 @@ services:
 
   # Backend API
   backend:
-    image: ghcr.io/${GITHUB_REPOSITORY:-cloudschool}/backend:latest
+    image: ghcr.io/${GITHUB_REPOSITORY:-cloudschool}/backend:${IMAGE_TAG:-latest}
     container_name: cloudschool-backend
     restart: unless-stopped
     logging:
@@ -59,7 +59,7 @@ services:
 
   # Frontend
   frontend:
-    image: ghcr.io/${GITHUB_REPOSITORY:-cloudschool}/frontend:latest
+    image: ghcr.io/${GITHUB_REPOSITORY:-cloudschool}/frontend:${IMAGE_TAG:-latest}
     container_name: cloudschool-frontend
     restart: unless-stopped
     logging:

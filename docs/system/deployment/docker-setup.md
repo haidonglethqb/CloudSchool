@@ -5,99 +5,47 @@
 | Service | Image | Port | Health Check |
 |---------|-------|------|--------------|
 | `postgres` | `postgres:16-alpine` | 5432 | `pg_isready -U postgres -d cloudschool` |
-| `backend` | Custom (multi-stage) | 5000 | `wget -qO- http://localhost:5000/health` |
-| `frontend` | Custom (multi-stage) | 3000 | Serves after backend healthy |
+| `backend` | `ghcr.io/<owner>/<repo>/backend:<tag>` | 5000 | `wget -qO- http://localhost:5000/health` |
+| `frontend` | `ghcr.io/<owner>/<repo>/frontend:<tag>` | 3000 | Serves after backend healthy |
 
 ## Configuration
 
 ```yaml
 # docker-compose.yml
-version: "3.8"
 services:
   postgres:
     image: postgres:16-alpine
-    ports: ["5432:5432"]
-    volumes: ["postgres_data:/var/lib/postgresql/data"]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d cloudschool"]
-      interval: 10s
-      retries: 5
-
   backend:
-    build: ./backend
-    ports: ["5000:5000"]
-    depends_on:
-      postgres: { condition: service_healthy }
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5000/health"]
-      interval: 10s
-      retries: 5
-
+    image: ghcr.io/${GITHUB_REPOSITORY}/backend:${IMAGE_TAG:-latest}
   frontend:
-    build: ./frontend
-    ports: ["3000:3000"]
-    depends_on:
-      backend: { condition: service_healthy }
-
-volumes:
-  postgres_data:
-
-networks:
-  default:
-    name: cloudschool-network
-    driver: bridge
+    image: ghcr.io/${GITHUB_REPOSITORY}/frontend:${IMAGE_TAG:-latest}
 ```
 
-## Dockerfile Structure (Multi-Stage)
+## Deploy Pipeline (GitHub Actions)
 
-```dockerfile
-# backend/Dockerfile
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package*.json prisma/ ./
-RUN npm ci && npx prisma generate
-COPY . .
-RUN npm run build
+Workflow: `.github/workflows/deploy.yml`
 
-FROM node:20-alpine AS runner
-WORKDIR /app
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-EXPOSE 5000
-CMD ["node", "dist/index.js"]
-```
+1. Build + push backend image tag `${{ github.sha }}` (and `latest` on `main` only).
+2. Build + push frontend image tag `${{ github.sha }}` (and `latest` on `main` only).
+3. SSH to VPS, write `.env` with `GITHUB_REPOSITORY` + `IMAGE_TAG=${{ github.sha }}`.
+4. `docker compose pull` then `docker compose up`.
 
-## Logging
+## Migration Flow in Deploy
 
-```yaml
-logging:
-  driver: json-file
-  options:
-    max-size: "10m"
-    max-file: "3"
-```
+- Primary path: `docker compose run --rm backend npx prisma migrate deploy`
+- Legacy fallback (DB cũ chưa có Prisma migration history):
+  1. `npx prisma db push`
+  2. `npx prisma migrate resolve --applied <each migration folder>`
+  3. `npx prisma migrate deploy`
 
 ## Dev vs Production
 
 | Aspect | Dev (`docker-compose.dev.yml`) | Prod (`docker-compose.yml`) |
 |--------|-------------------------------|----------------------------|
 | Backend port | 5001 | 5000 |
-| Hot reload | Yes (volumes mount) | No |
-| Prisma Studio | Exposed (5555) | Not included |
+| App image | Local `npm run dev` | GHCR image |
+| Prisma Studio | Optional local CLI | Not included |
 | NODE_ENV | development | production |
-
-## CI Test Gates
-
-- Workflow: `.github/workflows/test.yml`
-- Auto triggers:
-  - `pull_request` to `dev`, `main` -> run `api-smoke`
-  - `push` to `dev` -> run `api-smoke`
-  - `push` to `main` -> run `all` (smoke + api-tests + performance)
-- Manual trigger (`workflow_dispatch`) supports: `api-smoke`, `api-tests`, `performance`, `all`
-- Critical smoke suite file: `tests/api/smoke-critical.spec.ts`
-- Smoke command: `cd tests && npm run test:smoke`
-- Performance gate command: `cd tests && npm run test:perf:ci`
-- Performance thresholds are controlled via workflow env vars: `PERF_*` (p95 and concurrent total duration limits)
 
 ## Related
 - [Environment Variables](./environment-variables.md)

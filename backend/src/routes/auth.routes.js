@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit')
 const prisma = require('../lib/prisma')
 const { AppError } = require('../middleware/errorHandler')
 const { authenticate } = require('../middleware/auth')
+const { DEFAULT_ENABLED_MODULES } = require('../constants/module-registry')
 
 // Rate limit bypass for automated testing (Playwright)
 const skipIfBypassToken = (req) => {
@@ -102,9 +103,14 @@ router.post('/login', loginLimiter, [
     const token = generateToken(user)
     setTokenCookie(res, token)
 
+    const tenantSettings = await prisma.tenantSettings.findUnique({
+      where: { tenantId: tenant.id },
+      select: { enabledModules: true }
+    })
+
     const responseData = {
       user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role },
-      tenant: { id: tenant.id, name: tenant.name, code: tenant.code },
+      tenant: { id: tenant.id, name: tenant.name, code: tenant.code, settings: tenantSettings || null },
       token
     }
 
@@ -194,7 +200,15 @@ router.post('/register-school', registerLimiter, [
         phone,
         address,
         planId,
-        settings: { create: { minAge: 15, maxAge: 20, maxClassSize: 40, passScore: 5.0 } },
+        settings: {
+          create: {
+            minAge: 15,
+            maxAge: 20,
+            maxClassSize: 40,
+            passScore: 5.0,
+            enabledModules: DEFAULT_ENABLED_MODULES,
+          }
+        },
         users: {
           create: { email, password: hashedPassword, fullName: adminName, role: 'SUPER_ADMIN' }
         },
@@ -215,7 +229,7 @@ router.post('/register-school', registerLimiter, [
 
     res.status(201).json({
       data: {
-        tenant: { id: tenant.id, name: tenant.name, code: tenant.code },
+        tenant: { id: tenant.id, name: tenant.name, code: tenant.code, settings: tenant.settings || null },
         user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role },
         token
       }

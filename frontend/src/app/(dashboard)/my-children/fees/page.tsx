@@ -57,11 +57,16 @@ export default function ParentFeesPage() {
   const [fees, setFees] = useState<ParentStudentFee[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedChild, setSelectedChild] = useState<string>('')
+  const [featureDisabled, setFeatureDisabled] = useState(false)
 
   useEffect(() => {
     feeApi.getParentFees()
       .then(res => setFees(res.data.data))
-      .catch(() => {})
+      .catch((error: any) => {
+        if (error.response?.data?.error?.code === 'FEATURE_DISABLED') {
+          setFeatureDisabled(true)
+        }
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -87,6 +92,15 @@ export default function ParentFeesPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      </div>
+    )
+  }
+
+  if (featureDisabled) {
+    return (
+      <div className="card p-8 text-center">
+        <AlertCircle className="w-10 h-10 mx-auto text-gray-400 mb-3" />
+        <p className="font-medium text-gray-900">Tính năng đã bị tắt</p>
       </div>
     )
   }

@@ -33,6 +33,8 @@
 | GET | `/admin/schools/:id/users` | Users in a school |
 | GET | `/admin/schools/:id/stats` | School statistics |
 | GET | `/admin/schools/:id/activity` | Activity logs for a school |
+| GET | `/admin/schools/:id/features` | Get tenant feature modules |
+| PUT | `/admin/schools/:id/features` | Update tenant feature modules |
 | GET | `/admin/subscriptions` | List subscription plans |
 | POST | `/admin/subscriptions` | Create plan |
 | PUT | `/admin/subscriptions/:id` | Update plan |
@@ -88,15 +90,6 @@
 | PUT | `/subjects/:id` | Update subject |
 | DELETE | `/subjects/:id` | Soft delete (sets isActive: false) |
 
-## Semesters (nested under /subjects)
-
-| Method | Path | Description |
-|---|---|---|
-| GET | `/subjects/semesters` | List all semesters |
-| POST | `/subjects/semesters` | Create semester (maxSemesters from settings QĐ8) |
-| PATCH | `/subjects/semesters/:id` | Update semester |
-| DELETE | `/subjects/semesters/:id` | Delete semester (dependency checks) |
-
 ## Score Components
 
 | Method | Path | Description |
@@ -125,19 +118,20 @@
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/promotion` | List promotions (semesterId, classId filter) |
-| POST | `/promotion/calculate` | Calculate promotions (weighted avg, passScore, auto-retention) |
-| PUT | `/promotion/:id` | Override promotion result manually |
+| POST | `/promotion/year-end/evaluate` | School-admin synchronous evaluation for final-year promotion |
+| GET | `/promotion/year-end/results` | Read PASS/FAIL groups after evaluation |
+| POST | `/promotion/year-end/execute` | Execute one-shot class assignment + archive grade-12 |
 
 ## Reports
 
 | Method | Path | Description |
 |---|---|---|
 | GET | `/reports/subject-summary` | Pass rates + averages per class for a subject |
-| GET | `/reports/semester-summary` | Pass rates + averages per class for a semester |
+| GET | `/reports/class-promotion-summary` | BM2 pass-rate by class (`PASS` only) |
+| GET | `/reports/semester-promotion-summary` | BM3 pass-rate by semester (`PASS` only) |
+| GET | `/reports/year-promotion-summary` | BM4 pass-rate by academic year (`PASS` only) |
 | GET | `/reports/dashboard` | School dashboard stats |
 | GET | `/reports/transfer-report` | Class transfer history report |
-| GET | `/reports/retention-report` | Retention/fail report with maxRetentions handling |
 
 ## Parents
 
@@ -173,6 +167,7 @@
 | GET | `/export/students` | Export students (CSV/Excel) |
 | GET | `/export/classes` | Export classes (CSV/Excel) |
 | GET | `/export/scores` | Export scores for class+subject+semester (CSV/Excel) |
+| GET | `/export/reports/:type` | Dynamic report export; `sections` controls exported parts |
 | GET | `/export/schools` | Export schools — PLATFORM_ADMIN only (CSV/Excel) |
 
 ## Monitoring (PLATFORM_ADMIN only)
@@ -201,10 +196,16 @@
 | Method | Path | Description |
 |---|---|---|
 | GET | `/academic-years` | List academic years + semesters |
+| GET | `/academic-years/semesters` | List all semesters for tenant (calendar scope) |
 | GET | `/academic-years/:id` | Academic year detail |
 | POST | `/academic-years` | Create academic year (overlap check, startYear < endYear) |
 | PUT | `/academic-years/:id` | Update academic year |
-| DELETE | `/academic-years/:id` | Delete (no semesters or enrollments) |
+| PATCH | `/academic-years/:id/activate` | Set active academic year (single active) |
+| GET | `/academic-years/:id/semesters` | List semesters in one academic year |
+| POST | `/academic-years/:id/semesters` | Create semester in academic year (date window + maxSemesters) |
+| PATCH | `/academic-years/:id/semesters/:semesterId` | Update semester in academic year |
+| DELETE | `/academic-years/:id/semesters/:semesterId` | Delete semester (dependency checks) |
+| DELETE | `/academic-years/:id` | Delete (no semesters/enrollments/archives) |
 
 ## Tenant
 

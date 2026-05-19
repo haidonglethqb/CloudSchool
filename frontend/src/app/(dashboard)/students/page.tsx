@@ -51,6 +51,9 @@ export default function StudentsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedGrade, setSelectedGrade] = useState('')
   const [selectedClass, setSelectedClass] = useState('')
+  const [selectedGender, setSelectedGender] = useState('')
+  const [addressQuery, setAddressQuery] = useState('')
+  const [birthYear, setBirthYear] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -61,6 +64,9 @@ export default function StudentsPage() {
         search: searchQuery || undefined,
         gradeId: selectedGrade || undefined,
         classId: selectedClass || undefined,
+        gender: selectedGender || undefined,
+        address: addressQuery || undefined,
+        birthYear: birthYear ? Number(birthYear) : undefined,
       })
       setStudents(response.data.data)
     } catch (error) {
@@ -68,7 +74,7 @@ export default function StudentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [searchQuery, selectedGrade, selectedClass])
+  }, [searchQuery, selectedGrade, selectedClass, selectedGender, addressQuery, birthYear])
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -116,6 +122,9 @@ export default function StudentsPage() {
     setSearchQuery('')
     setSelectedGrade('')
     setSelectedClass('')
+    setSelectedGender('')
+    setAddressQuery('')
+    setBirthYear('')
   }
 
   return (
@@ -132,7 +141,14 @@ export default function StudentsPage() {
           <button
             onClick={async () => {
               try {
-                const res = await exportApi.students({ format: 'excel', classId: selectedClass || undefined, gradeId: selectedGrade || undefined })
+                const res = await exportApi.students({
+                  format: 'xlsx',
+                  classId: selectedClass || undefined,
+                  gradeId: selectedGrade || undefined,
+                  gender: selectedGender || undefined,
+                  address: addressQuery || undefined,
+                  birthYear: birthYear ? Number(birthYear) : undefined
+                })
                 downloadBlob(res.data, 'danh-sach-hoc-sinh.xlsx')
                 toast.success('Xuất file thành công')
               } catch { toast.error('Xuất file thất bại') }
@@ -215,7 +231,27 @@ export default function StudentsPage() {
               </select>
             </div>
 
-            {(searchQuery || selectedGrade || selectedClass) && (
+            <div className="min-w-[200px]">
+              <label className="label">Giới tính</label>
+              <select className="input" value={selectedGender} onChange={(e) => setSelectedGender(e.target.value)}>
+                <option value="">Tất cả</option>
+                <option value="MALE">Nam</option>
+                <option value="FEMALE">Nữ</option>
+                <option value="OTHER">Khác</option>
+              </select>
+            </div>
+
+            <div className="min-w-[220px]">
+              <label className="label">Địa chỉ</label>
+              <input className="input" placeholder="Tìm theo địa chỉ" value={addressQuery} onChange={(e) => setAddressQuery(e.target.value)} />
+            </div>
+
+            <div className="min-w-[140px]">
+              <label className="label">Năm sinh</label>
+              <input className="input" type="number" placeholder="VD: 2008" value={birthYear} onChange={(e) => setBirthYear(e.target.value)} />
+            </div>
+
+            {(searchQuery || selectedGrade || selectedClass || selectedGender || addressQuery || birthYear) && (
               <div className="flex items-end">
                 <button onClick={clearFilters} className="btn-secondary text-sm">
                   Xóa bộ lọc

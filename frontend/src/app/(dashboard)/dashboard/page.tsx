@@ -31,7 +31,15 @@ interface SchoolDashboardData {
     totalSubjects: number
     maxClassSize: number
   }
-  activeSemester: { id: string; name: string; year: number; term: number } | null
+  selectedAcademicYear: { id: string; startYear: number; endYear: number } | null
+  selectedSemester: { id: string; name: string; semesterNum?: number } | null
+  academicYears: Array<{
+    id: string
+    startYear: number
+    endYear: number
+    semesterCount: number
+    semesters: Array<{ id: string; name: string; semesterNum: number }>
+  }>
   recentStudents: Array<{
     id: string; fullName: string; studentCode: string; createdAt: string
     class: { name: string } | null
@@ -327,6 +335,8 @@ export default function DashboardPage() {
   const { user } = useAuthStore()
   const [data, setData] = useState<SchoolDashboardData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [selectedYearId, setSelectedYearId] = useState('')
+  const [selectedSemesterId, setSelectedSemesterId] = useState('')
 
   const role = user?.role
 
@@ -335,11 +345,20 @@ export default function DashboardPage() {
       setLoading(false)
       return
     }
-    reportApi.dashboard()
-      .then(res => setData(res.data.data))
+    setLoading(true)
+    reportApi.dashboardByScope({
+      academicYearId: selectedYearId || undefined,
+      semesterId: selectedSemesterId || undefined
+    })
+      .then((res) => {
+        const payload = res.data.data
+        setData(payload)
+        if (!selectedYearId && payload?.selectedAcademicYear?.id) setSelectedYearId(payload.selectedAcademicYear.id)
+        if (!selectedSemesterId && payload?.selectedSemester?.id) setSelectedSemesterId(payload.selectedSemester.id)
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [role])
+  }, [role, selectedYearId, selectedSemesterId])
 
   if (role === 'PLATFORM_ADMIN') return <PlatformAdminDashboard />
   if (role === 'PARENT') return <ParentDashboard />
@@ -370,15 +389,32 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {data?.activeSemester && (
+      {data?.selectedAcademicYear && (
         <div className="card p-4 bg-gradient-to-r from-primary to-blue-600 text-white">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
-              <TrendingUp className="w-5 h-5" />
+          <div className="grid md:grid-cols-4 gap-3 items-end">
+            <div>
+              <p className="text-sm text-white/80">Năm học hiện tại</p>
+              <p className="font-semibold">{data.selectedAcademicYear.startYear}-{data.selectedAcademicYear.endYear}</p>
             </div>
             <div>
-              <p className="text-sm text-white/80">Học kỳ hiện tại</p>
-              <p className="font-semibold">{data.activeSemester.name}</p>
+              <p className="text-sm text-white/80">Số học kỳ trong năm</p>
+              <p className="font-semibold">{data.academicYears.find((y) => y.id === data.selectedAcademicYear?.id)?.semesterCount || 0}</p>
+            </div>
+            <div>
+              <label className="text-xs text-white/80">Chọn năm học</label>
+              <select className="input mt-1 text-gray-900" value={selectedYearId} onChange={(e) => { setSelectedYearId(e.target.value); setSelectedSemesterId('') }}>
+                {data.academicYears.map((year) => (
+                  <option key={year.id} value={year.id}>{year.startYear}-{year.endYear}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-white/80">Chọn học kỳ</label>
+              <select className="input mt-1 text-gray-900" value={selectedSemesterId} onChange={(e) => setSelectedSemesterId(e.target.value)}>
+                {(data.academicYears.find((year) => year.id === selectedYearId)?.semesters || []).map((semester) => (
+                  <option key={semester.id} value={semester.id}>{semester.name}</option>
+                ))}
+              </select>
             </div>
           </div>
         </div>

@@ -51,32 +51,33 @@ const platformAdminMenu: MenuItem[] = [
 const superAdminMenu: MenuItem[] = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
   { href: '/users', icon: Shield, label: 'Quản lý người dùng' },
-  { href: '/students/new', icon: UserPlus, label: 'Tiếp nhận HS', module: 'students' },
-  { href: '/students', icon: Search, label: 'Tra cứu HS', module: 'students' },
+  { href: '/students/new', icon: UserPlus, label: 'Tiếp nhận HS', module: 'student-admission' },
+  { href: '/students', icon: Search, label: 'Tra cứu HS', module: 'student-lookup' },
   { href: '/classes', icon: Users, label: 'Danh sách lớp', module: 'classes' },
+  { href: '/class-transfer', icon: ArrowUpDown, label: 'Chuyển lớp', module: 'class-transfer' },
   { href: '/subjects', icon: BookOpen, label: 'Môn học', module: 'subjects' },
   { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm', module: 'scores' },
-  { href: '/promotion', icon: ArrowUpDown, label: 'Xét lên lớp', module: 'promotion' },
   { href: '/reports', icon: BarChart3, label: 'Báo cáo', module: 'reports' },
   { href: '/parents', icon: UserCheck, label: 'Quản lý Phụ huynh', module: 'parents' },
-  { href: '/fees', icon: CreditCard, label: 'Quản lý học phí' },
+  { href: '/fees', icon: CreditCard, label: 'Quản lý học phí', module: 'fees' },
+  { href: '/export', icon: Download, label: 'Xuất dữ liệu', module: 'export' },
   { href: '/settings', icon: Settings, label: 'Quy định', module: 'settings' },
-  { href: '/settings/academic-years', icon: CalendarRange, label: 'Năm học', module: 'settings' },
+  { href: '/settings/academic-years', icon: CalendarRange, label: 'Năm học', module: 'academic-calendar' },
   { href: '/settings/permissions', icon: Layers, label: 'Phân quyền' },
 ]
 
 // Staff menu — filtered by permissions
 const staffMenu: MenuItem[] = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
-  { href: '/students/new', icon: UserPlus, label: 'Tiếp nhận HS', module: 'students' },
-  { href: '/students', icon: Search, label: 'Tra cứu HS', module: 'students' },
+  { href: '/students/new', icon: UserPlus, label: 'Tiếp nhận HS', module: 'student-admission' },
+  { href: '/students', icon: Search, label: 'Tra cứu HS', module: 'student-lookup' },
   { href: '/classes', icon: Users, label: 'Danh sách lớp', module: 'classes' },
+  { href: '/class-transfer', icon: ArrowUpDown, label: 'Chuyển lớp', module: 'class-transfer' },
   { href: '/subjects', icon: BookOpen, label: 'Môn học', module: 'subjects' },
   { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm', module: 'scores' },
-  { href: '/promotion', icon: ArrowUpDown, label: 'Xét lên lớp', module: 'promotion' },
   { href: '/reports', icon: BarChart3, label: 'Báo cáo', module: 'reports' },
   { href: '/parents', icon: UserCheck, label: 'Quản lý Phụ huynh', module: 'parents' },
-  { href: '/fees', icon: CreditCard, label: 'Quản lý học phí' },
+  { href: '/fees', icon: CreditCard, label: 'Quản lý học phí', module: 'fees' },
   { href: '/export', icon: Download, label: 'Xuất dữ liệu', module: 'export' },
 ]
 
@@ -84,7 +85,7 @@ const staffMenu: MenuItem[] = [
 const teacherMenu: MenuItem[] = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
   { href: '/classes', icon: Users, label: 'Lớp của tôi', module: 'classes' },
-  { href: '/students', icon: Search, label: 'Tra cứu HS', module: 'students' },
+  { href: '/students', icon: Search, label: 'Tra cứu HS', module: 'student-lookup' },
   { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm', module: 'scores' },
   { href: '/reports', icon: BarChart3, label: 'Báo cáo', module: 'reports' },
 ]
@@ -98,7 +99,7 @@ const studentMenu: MenuItem[] = [
 // Parent menu
 const parentMenu: MenuItem[] = [
   { href: '/my-children', icon: GraduationCap, label: 'Con em của tôi' },
-  { href: '/my-children/fees', icon: CreditCard, label: 'Học phí' },
+  { href: '/my-children/fees', icon: CreditCard, label: 'Học phí', module: 'fees' },
 ]
 
 export default function DashboardLayout({
@@ -111,6 +112,7 @@ export default function DashboardLayout({
   const { user, logout, isAuthenticated, hasHydrated } = useAuthStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [rolePermissions, setRolePermissions] = useState<Record<string, string[]> | null>(null)
+  const enabledModules = user?.tenant?.settings?.enabledModules || []
 
   // Fetch role permissions for STAFF/TEACHER
   const fetchPermissions = useCallback(async () => {
@@ -136,14 +138,18 @@ export default function DashboardLayout({
       default: items = []
     }
 
-    // Apply permission filtering for STAFF and TEACHER
+    if (enabledModules.length > 0) {
+      items = items.filter((item) => !item.module || enabledModules.includes(item.module))
+    }
+
+    // Apply permission filtering for STAFF and TEACHER after feature flags
     if (rolePermissions && user?.role && ['STAFF', 'TEACHER'].includes(user.role)) {
       const allowed = rolePermissions[user.role] || []
       items = items.filter(item => !item.module || allowed.includes(item.module))
     }
 
     return items
-  }, [user?.role, rolePermissions])
+  }, [user?.role, rolePermissions, enabledModules])
 
   useEffect(() => {
     if (hasHydrated && isAuthenticated) {

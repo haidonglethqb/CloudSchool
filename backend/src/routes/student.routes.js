@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
+const { requireFeature } = require('../middleware/feature-flags')
 
 // Generate student code
 const generateStudentCode = async (tenantId, tx) => {
@@ -14,9 +15,9 @@ const generateStudentCode = async (tenantId, tx) => {
 }
 
 // GET /students
-router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
+router.get('/', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, search, classId, status } = req.query
+    const { page = 1, limit = 20, search, classId, gradeId, status, address, gender, birthYear } = req.query
     const skip = (parseInt(page) - 1) * parseInt(limit)
 
     const where = {
@@ -28,8 +29,17 @@ router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), asyn
         ]
       }),
       ...(classId && { classId }),
+      ...(gradeId && { class: { gradeId } }),
       ...(status === 'active' && { isActive: true }),
-      ...(status === 'inactive' && { isActive: false })
+      ...(status === 'inactive' && { isActive: false }),
+      ...(address && { address: { contains: String(address), mode: 'insensitive' } }),
+      ...(gender && { gender: String(gender) }),
+      ...(birthYear && Number.isInteger(Number(birthYear)) && {
+        dateOfBirth: {
+          gte: new Date(`${birthYear}-01-01T00:00:00.000Z`),
+          lte: new Date(`${birthYear}-12-31T23:59:59.999Z`)
+        }
+      })
     }
 
     // Teacher can only see students in assigned classes
@@ -68,7 +78,7 @@ router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), asyn
 })
 
 // GET /students/:id
-router.get('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
+router.get('/:id', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
   try {
     const student = await prisma.student.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },
@@ -89,7 +99,7 @@ router.get('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), a
 })
 
 // POST /students
-router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
+router.post('/', authenticate, requireFeature('student-admission'), authorize('SUPER_ADMIN', 'STAFF'), [
   body('fullName').notEmpty().withMessage('Name is required'),
   body('gender').isIn(['MALE', 'FEMALE', 'OTHER']).withMessage('Invalid gender'),
   body('dateOfBirth').isISO8601().withMessage('Invalid date'),
@@ -197,7 +207,7 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
 })
 
 // PUT /students/:id
-router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.put('/:id', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const { fullName, gender, dateOfBirth, address, phone, parentName, parentPhone, classId, isActive, email, admissionDate } = req.body
 
@@ -238,7 +248,7 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
 })
 
 // DELETE /students/:id
-router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+router.delete('/:id', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
     const existingStudent = await prisma.student.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId }
@@ -268,7 +278,7 @@ router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, n
 })
 
 // POST /students/:id/transfer - Transfer class
-router.post('/:id/transfer', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.post('/:id/transfer', authenticate, requireFeature('class-transfer'), authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const classId = req.body.classId || req.body.newClassId
     const { reason } = req.body
@@ -394,7 +404,7 @@ router.post('/:id/transfer', authenticate, authorize('SUPER_ADMIN', 'STAFF'), as
 })
 
 // GET /students/:id/transfer-history
-router.get('/:id/transfer-history', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.get('/:id/transfer-history', authenticate, requireFeature('class-transfer'), authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const history = await prisma.transferHistory.findMany({
       where: { studentId: req.params.id, tenantId: req.tenantId },

@@ -2,234 +2,375 @@ const express = require('express')
 const router = express.Router()
 const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
+const { requireFeature } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 
-// GET /promotion - List promotions
-router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
-  try {
-    const { semesterId, classId } = req.query
+const getAcademicYearWithSemesters = async (tenantId, academicYearId) => {
+  const academicYear = await prisma.academicYear.findFirst({
+    where: { id: academicYearId, tenantId },
+    include: { semesters: { orderBy: { semesterNum: 'asc' } } }
+  })
+  if (!academicYear) throw new AppError('Academic year not found', 404, 'NOT_FOUND')
+  return academicYear
+}
 
-    const where = {
-      tenantId: req.tenantId,
-      ...(semesterId && { semesterId }),
-      ...(classId && { classId })
+const ensureYearEndReady = (academicYear) => {
+  const now = new Date()
+  const semesters = academicYear.semesters.filter((sem) => sem.startDate && sem.endDate)
+  if (semesters.length < 2) {
+    throw new AppError('Năm học cần ít nhất 2 học kỳ để xét lên lớp', 400, 'NOT_ENOUGH_SEMESTERS')
+  }
+  const firstTwo = semesters.slice(0, 2)
+  const notEnded = firstTwo.find((sem) => sem.endDate >= now)
+  if (notEnded) {
+    throw new AppError('Chỉ xét lên lớp khi cả 2 học kỳ đã kết thúc', 400, 'SEMESTER_NOT_FINISHED')
+  }
+}
+
+const buildPromotionEvaluation = async (tenantId, academicYear, classId = null) => {
+  const settings = await prisma.tenantSettings.findUnique({ where: { tenantId } })
+  if (!settings) throw new AppError('Tenant settings not configured', 400, 'SETTINGS_NOT_FOUND')
+
+  const semesterIds = academicYear.semesters.map((sem) => sem.id)
+  const finalSemester = academicYear.semesters[academicYear.semesters.length - 1]
+  if (!finalSemester) throw new AppError('Academic year has no semesters', 400, 'NO_SEMESTERS')
+
+  const yearLabel = `${academicYear.startYear}-${academicYear.endYear}`
+  const students = await prisma.student.findMany({
+    where: {
+      tenantId,
+      isActive: true,
+      ...(classId && { classId }),
+      class: {
+        isActive: true,
+        OR: [
+          { academicYearId: academicYear.id },
+          { academicYear: yearLabel }
+        ]
+      }
+    },
+    include: {
+      class: { include: { grade: true } },
+      scores: {
+        where: { semesterId: { in: semesterIds } },
+        include: {
+          scoreComponent: true,
+          subject: true,
+          semester: true
+        }
+      }
+    },
+    orderBy: [{ class: { name: 'asc' } }, { fullName: 'asc' }]
+  })
+
+  const subjects = await prisma.subject.findMany({
+    where: { tenantId, isActive: true },
+    include: { scoreComponents: { where: { isActive: true } } }
+  })
+
+  const missingScores = []
+  const evaluations = []
+
+  for (const student of students) {
+    const subjectYearlyAverages = []
+    let studentHasMissing = false
+
+    for (const subject of subjects) {
+      const semesterAverages = []
+      for (const semester of academicYear.semesters) {
+        const semesterScores = student.scores.filter((score) => score.subjectId === subject.id && score.semesterId === semester.id)
+        const componentMap = new Map(semesterScores.map((score) => [score.scoreComponentId, score]))
+        const missingComponents = subject.scoreComponents
+          .filter((component) => !componentMap.has(component.id))
+          .map((component) => component.name)
+
+        if (missingComponents.length > 0) {
+          studentHasMissing = true
+          missingScores.push({
+            studentId: student.id,
+            studentCode: student.studentCode,
+            studentName: student.fullName,
+            classId: student.classId,
+            className: student.class?.name || '',
+            subjectName: subject.name,
+            semesterName: semester.name,
+            missingComponents
+          })
+          continue
+        }
+
+        let weightedSum = 0
+        let totalWeight = 0
+        for (const score of semesterScores) {
+          weightedSum += score.value * score.scoreComponent.weight
+          totalWeight += score.scoreComponent.weight
+        }
+        if (totalWeight > 0) semesterAverages.push(weightedSum / totalWeight)
+      }
+
+      if (!studentHasMissing && semesterAverages.length === academicYear.semesters.length) {
+        const subjectYearlyAverage = semesterAverages.reduce((sum, value) => sum + value, 0) / semesterAverages.length
+        subjectYearlyAverages.push(subjectYearlyAverage)
+      }
     }
 
-    const promotions = await prisma.promotion.findMany({
-      where,
-      include: {
-        student: { select: { id: true, fullName: true, studentCode: true } },
-        class: { select: { id: true, name: true } },
-        semester: { select: { id: true, name: true, year: true } }
-      },
-      orderBy: { createdAt: 'desc' }
-    })
+    if (studentHasMissing || subjectYearlyAverages.length === 0) continue
 
-    res.json({ data: promotions })
+    const overallAverage = Math.round((subjectYearlyAverages.reduce((sum, value) => sum + value, 0) / subjectYearlyAverages.length) * 100) / 100
+    const failedSubject = subjectYearlyAverages.some((avg) => avg < settings.passScore)
+
+    evaluations.push({
+      tenantId,
+      studentId: student.id,
+      classId: student.classId,
+      semesterId: finalSemester.id,
+      average: overallAverage,
+      result: overallAverage >= settings.passScore && !failedSubject ? 'PASS' : 'FAIL',
+      note: `Xét năm học ${yearLabel}`
+    })
+  }
+
+  return { missingScores, evaluations, finalSemester }
+}
+
+router.use(authenticate, requireFeature('reports'), authorize('SUPER_ADMIN'))
+
+// POST /promotion/year-end/evaluate
+router.post('/year-end/evaluate', async (req, res, next) => {
+  try {
+    const { academicYearId, classId } = req.body
+    if (!academicYearId) throw new AppError('academicYearId is required', 400, 'MISSING_PARAMS')
+
+    const academicYear = await getAcademicYearWithSemesters(req.tenantId, academicYearId)
+    ensureYearEndReady(academicYear)
+
+    const { missingScores, evaluations, finalSemester } = await buildPromotionEvaluation(req.tenantId, academicYear, classId || null)
+
+    if (missingScores.length > 0) {
+      throw new AppError(
+        `Chưa đủ dữ liệu điểm để xét lên lớp (${missingScores.length} bản ghi thiếu)`,
+        400,
+        'MISSING_SCORES',
+        missingScores.slice(0, 200)
+      )
+    }
+
+    const promotions = await prisma.$transaction(
+      evaluations.map((evaluation) => prisma.promotion.upsert({
+        where: {
+          studentId_classId_semesterId: {
+            studentId: evaluation.studentId,
+            classId: evaluation.classId,
+            semesterId: evaluation.semesterId
+          }
+        },
+        create: evaluation,
+        update: { average: evaluation.average, result: evaluation.result, note: evaluation.note }
+      }))
+    )
+
+    res.json({
+      data: {
+        semesterId: finalSemester.id,
+        total: promotions.length,
+        passCount: promotions.filter((item) => item.result === 'PASS').length,
+        failCount: promotions.filter((item) => item.result === 'FAIL').length,
+      }
+    })
   } catch (error) {
     next(error)
   }
 })
 
-// POST /promotion/calculate - Calculate promotions for a class or all classes
-router.post('/calculate', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+// GET /promotion/year-end/results?academicYearId=...&classId=...
+router.get('/year-end/results', async (req, res, next) => {
   try {
-    const { classId, semesterId } = req.body
+    const { academicYearId, classId } = req.query
+    if (!academicYearId) throw new AppError('academicYearId is required', 400, 'MISSING_PARAMS')
 
-    if (!semesterId) {
-      throw new AppError('semesterId is required', 400, 'MISSING_PARAMS')
-    }
+    const academicYear = await getAcademicYearWithSemesters(req.tenantId, academicYearId)
+    const finalSemester = academicYear.semesters[academicYear.semesters.length - 1]
+    if (!finalSemester) throw new AppError('Academic year has no semesters', 400, 'NO_SEMESTERS')
 
-    // Validate semester belongs to this tenant
-    const semesterCheck = await prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId } })
-    if (!semesterCheck) throw new AppError('Semester not found', 404, 'NOT_FOUND')
+    const promotions = await prisma.promotion.findMany({
+      where: {
+        tenantId: req.tenantId,
+        semesterId: finalSemester.id,
+        ...(classId && { classId })
+      },
+      include: {
+        student: { select: { id: true, fullName: true, studentCode: true, classId: true } },
+        class: { select: { id: true, name: true, grade: true } }
+      },
+      orderBy: [{ result: 'asc' }, { student: { fullName: 'asc' } }]
+    })
 
-    // If classId provided, validate it; otherwise calculate for all classes
-    let classIds = []
-    if (classId) {
-      const classCheck = await prisma.class.findFirst({ where: { id: classId, tenantId: req.tenantId } })
-      if (!classCheck) throw new AppError('Class not found', 404, 'NOT_FOUND')
-      classIds = [classId]
-    } else {
-      const allClasses = await prisma.class.findMany({
-        where: { tenantId: req.tenantId, isActive: true },
-        select: { id: true }
-      })
-      classIds = allClasses.map(c => c.id)
+    res.json({
+      data: {
+        semesterId: finalSemester.id,
+        passStudents: promotions.filter((item) => item.result === 'PASS'),
+        failStudents: promotions.filter((item) => item.result === 'FAIL')
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /promotion/year-end/execute
+router.post('/year-end/execute', async (req, res, next) => {
+  try {
+    const { academicYearId, passAssignments = [], failAssignments = [] } = req.body
+    if (!academicYearId) throw new AppError('academicYearId is required', 400, 'MISSING_PARAMS')
+
+    const academicYear = await getAcademicYearWithSemesters(req.tenantId, academicYearId)
+    ensureYearEndReady(academicYear)
+
+    const finalSemester = academicYear.semesters[academicYear.semesters.length - 1]
+    if (!finalSemester) throw new AppError('Academic year has no semesters', 400, 'NO_SEMESTERS')
+
+    const promotions = await prisma.promotion.findMany({
+      where: { tenantId: req.tenantId, semesterId: finalSemester.id },
+      include: {
+        student: true,
+        class: { include: { grade: true } }
+      }
+    })
+    if (promotions.length === 0) {
+      throw new AppError('Chưa có dữ liệu xét lên lớp. Hãy chạy xét trước.', 400, 'PROMOTION_NOT_EVALUATED')
     }
 
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
-    if (!settings) throw new AppError('Tenant settings not configured', 400, 'SETTINGS_NOT_FOUND')
+    const maxGrade = settings?.maxGradeLevel ?? 12
 
-    // Get all students in target classes
-    const students = await prisma.student.findMany({
-      where: { classId: { in: classIds }, tenantId: req.tenantId, isActive: true },
-      include: {
-        scores: {
-          where: { semesterId },
-          include: { scoreComponent: true, subject: true }
-        }
-      }
+    const passMap = new Map(passAssignments.map((item) => [item.studentId, item.toClassId]))
+    const failMap = new Map(failAssignments.map((item) => [item.studentId, item.toClassId]))
+
+    const allTargetClassIds = [...new Set([...passMap.values(), ...failMap.values()].filter(Boolean))]
+    const classes = await prisma.class.findMany({
+      where: { tenantId: req.tenantId, id: { in: allTargetClassIds } },
+      include: { _count: { select: { students: true } } }
     })
+    const classCapacityMap = new Map(classes.map((item) => [item.id, { capacity: item.capacity, current: item._count.students }]))
 
-    const results = []
+    const promoted = []
+    const archived = []
+    const failedAssigned = []
+    const unresolved = []
 
-    for (const student of students) {
-      // Group scores by subject
-      const subjectScores = {}
-      for (const score of student.scores) {
-        if (!subjectScores[score.subjectId]) {
-          subjectScores[score.subjectId] = []
-        }
-        subjectScores[score.subjectId].push(score)
-      }
+    await prisma.$transaction(async (tx) => {
+      for (const promotion of promotions) {
+        const sourceClassId = promotion.classId
+        const gradeLevel = promotion.class?.grade?.level || 0
+        const isGraduating = gradeLevel >= maxGrade && promotion.result === 'PASS'
 
-      // Calculate weighted average per subject
-      const subjectAverages = []
-      for (const [, scores] of Object.entries(subjectScores)) {
-        let weightedSum = 0
-        let totalWeight = 0
-        for (const s of scores) {
-          weightedSum += s.value * s.scoreComponent.weight
-          totalWeight += s.scoreComponent.weight
-        }
-        if (totalWeight > 0) {
-          subjectAverages.push(weightedSum / totalWeight)
-        }
-      }
+        if (isGraduating) {
+          await tx.student.update({
+            where: { id: promotion.studentId },
+            data: { classId: null, isActive: false }
+          })
 
-      // Overall average
-      const average = subjectAverages.length > 0
-        ? Math.round((subjectAverages.reduce((a, b) => a + b, 0) / subjectAverages.length) * 100) / 100
-        : null
-
-      // Skip students with no scores
-      if (average === null) continue
-
-      // Determine result
-      let result = 'PASS'
-      if (average < settings.passScore) {
-        result = 'FAIL'
-      } else if (subjectAverages.some(avg => avg < settings.passScore)) {
-        result = 'RETAKE'
-      }
-
-      results.push({ studentId: student.id, classId: student.classId, semesterId, average, result })
-    }
-
-    // Upsert promotions and handle retentions atomically
-    const promotions = await prisma.$transaction(async (tx) => {
-      const upserted = []
-      for (const r of results) {
-        const p = await tx.promotion.upsert({
-          where: {
-            studentId_classId_semesterId: {
-              studentId: r.studentId,
-              classId: r.classId,
-              semesterId: r.semesterId
-            }
-          },
-          create: { tenantId: req.tenantId, ...r },
-          update: { average: r.average, result: r.result },
-          include: {
-            student: { select: { id: true, fullName: true, studentCode: true } },
-            class: { select: { id: true, name: true } }
-          }
-        })
-        upserted.push(p)
-      }
-
-      // QĐ9: Auto-deactivate students who exceeded maxRetentions (batch)
-      const failStudentIds = upserted.filter(p => p.result === 'FAIL').map(p => p.studentId)
-      if (failStudentIds.length > 0) {
-        // Scope retention count by current academic year via semester
-        const currentSemester = upserted[0] ? await tx.semester.findFirst({
-          where: { id: upserted[0].semesterId, tenantId: req.tenantId }
-        }) : null
-
-        // Build where clause for fail count: prefer academicYearId, fallback to year string match
-        let failWhere = {
-          studentId: { in: failStudentIds },
-          tenantId: req.tenantId,
-          result: 'FAIL',
-        }
-
-        if (currentSemester?.academicYearId) {
-          failWhere.semester = { academicYearId: currentSemester.academicYearId }
-        } else if (currentSemester?.year) {
-          // Fallback: match semesters by year string (e.g., "2024-2025")
-          const yearMatch = currentSemester.year.match(/(\d{4})-(\d{4})/)
-          if (yearMatch) {
-            const [, startYear, endYear] = yearMatch
-            const matchingSemesters = await tx.semester.findMany({
-              where: {
+          await tx.graduationArchive.upsert({
+            where: {
+              tenantId_studentId_academicYearId: {
                 tenantId: req.tenantId,
-                year: currentSemester.year
-              },
-              select: { id: true }
-            })
-            if (matchingSemesters.length > 0) {
-              failWhere.semesterId = { in: matchingSemesters.map(s => s.id) }
+                studentId: promotion.studentId,
+                academicYearId
+              }
+            },
+            create: {
+              tenantId: req.tenantId,
+              studentId: promotion.studentId,
+              sourceClassId,
+              academicYearId,
+              note: 'Tốt nghiệp lớp cuối cấp',
+              createdBy: req.user.id
+            },
+            update: {
+              sourceClassId,
+              note: 'Tốt nghiệp lớp cuối cấp',
+              createdBy: req.user.id
             }
-          }
+          })
+
+          archived.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, className: promotion.class.name })
+          continue
         }
 
-        const failCounts = await tx.promotion.groupBy({
-          by: ['studentId'],
-          where: failWhere,
-          _count: { _all: true }
+        const targetClassId = promotion.result === 'PASS' ? passMap.get(promotion.studentId) : failMap.get(promotion.studentId)
+        if (!targetClassId) {
+          unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result })
+          continue
+        }
+
+        const capacityState = classCapacityMap.get(targetClassId)
+        if (!capacityState) {
+          unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result, reason: 'Lớp đích không tồn tại' })
+          continue
+        }
+        if (capacityState.current >= capacityState.capacity) {
+          unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result, reason: 'Lớp đích đã đủ sĩ số' })
+          continue
+        }
+
+        capacityState.current += 1
+
+        await tx.student.update({
+          where: { id: promotion.studentId },
+          data: { classId: targetClassId, isActive: true }
         })
 
-        for (const fc of failCounts) {
-          if (fc._count._all >= settings.maxRetentions) {
-            await tx.student.update({
-              where: { id: fc.studentId },
-              data: { isActive: false }
-            })
-            const promo = upserted.find(p => p.studentId === fc.studentId)
-            if (promo) {
-              await tx.promotion.update({
-                where: { id: promo.id },
-                data: { note: `Ngừng tiếp nhận - vượt quá ${settings.maxRetentions} lần lưu ban` }
-              })
-            }
+        await tx.transferHistory.create({
+          data: {
+            tenantId: req.tenantId,
+            studentId: promotion.studentId,
+            fromClassId: sourceClassId,
+            toClassId: targetClassId,
+            semesterId: finalSemester.id,
+            reason: promotion.result === 'PASS' ? 'Lên lớp - xét cuối năm' : 'Sắp lớp lại sau xét cuối năm',
+            transferredBy: req.user.id
           }
+        })
+
+        if (promotion.result === 'PASS') {
+          promoted.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, fromClassId: sourceClassId, toClassId: targetClassId })
+        } else {
+          failedAssigned.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, fromClassId: sourceClassId, toClassId: targetClassId })
         }
       }
-
-      return upserted
     })
 
-    res.json({ data: promotions })
-  } catch (error) {
-    next(error)
-  }
-})
-
-// PUT /promotion/:id - Update promotion result manually
-router.put('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
-  try {
-    const { result, note } = req.body
-
-    if (!['PASS', 'FAIL', 'RETAKE'].includes(result)) {
-      throw new AppError('Invalid result', 400, 'INVALID_RESULT')
-    }
-
-    const existing = await prisma.promotion.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId }
-    })
-    if (!existing) throw new AppError('Promotion not found', 404, 'NOT_FOUND')
-
-    const promotion = await prisma.promotion.update({
-      where: { id: req.params.id },
-      data: { result, note },
-      include: {
-        student: { select: { id: true, fullName: true } },
-        class: { select: { id: true, name: true } }
+    await prisma.activityLog.create({
+      data: {
+        tenantId: req.tenantId,
+        userId: req.user.id,
+        action: 'YEAR_END_PROMOTION_SYNC',
+        entity: 'Promotion',
+        details: JSON.stringify({
+          academicYearId,
+          semesterId: finalSemester.id,
+          promoted: promoted.length,
+          archived: archived.length,
+          failedAssigned: failedAssigned.length,
+          unresolved: unresolved.length
+        })
       }
     })
 
-    res.json({ data: promotion })
+    res.json({
+      data: {
+        promoted,
+        archived,
+        failedAssigned,
+        unresolved,
+        summary: {
+          promoted: promoted.length,
+          archived: archived.length,
+          failedAssigned: failedAssigned.length,
+          unresolved: unresolved.length
+        }
+      }
+    })
   } catch (error) {
     next(error)
   }

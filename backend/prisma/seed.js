@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client')
 const bcrypt = require('bcryptjs')
+const { DEFAULT_ENABLED_MODULES } = require('../src/constants/module-registry')
 
 const prisma = new PrismaClient()
 
@@ -95,6 +96,10 @@ async function main () {
       where: { id: existingTenant.id },
       data: { planId: plan.id }
     })
+    await prisma.tenantSettings.updateMany({
+      where: { tenantId: existingTenant.id, enabledModules: null },
+      data: { enabledModules: DEFAULT_ENABLED_MODULES }
+    })
 
     await prisma.subscriptionPlan.deleteMany({
       where: {
@@ -128,7 +133,8 @@ async function main () {
       minAge: 15,
       maxAge: 20,
       maxClassSize: 40,
-      passScore: 5.0
+      passScore: 5.0,
+      enabledModules: DEFAULT_ENABLED_MODULES
     }
   })
   console.log('✅ Created tenant settings')
@@ -182,16 +188,29 @@ async function main () {
   ])
   console.log('✅ Created grades:', grades.map(g => g.name).join(', '))
 
-  // 9. Create classes
+  // 9. Create academic year
+  const academicYear = await prisma.academicYear.create({
+    data: {
+      tenantId: tenant.id,
+      startYear: 2024,
+      endYear: 2025,
+      startDate: new Date('2024-09-01'),
+      endDate: new Date('2025-08-31'),
+      isActive: true
+    }
+  })
+  console.log('✅ Created academic year:', `${academicYear.startYear}-${academicYear.endYear}`)
+
+  // 10. Create classes
   const classes = await Promise.all([
-    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[0].id, name: '10A1', academicYear: '2024-2025', capacity: 40 } }),
-    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[0].id, name: '10A2', academicYear: '2024-2025', capacity: 40 } }),
-    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[1].id, name: '11A1', academicYear: '2024-2025', capacity: 40 } }),
-    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[2].id, name: '12A1', academicYear: '2024-2025', capacity: 40 } })
+    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[0].id, name: '10A1', academicYear: '2024-2025', academicYearId: academicYear.id, capacity: 40 } }),
+    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[0].id, name: '10A2', academicYear: '2024-2025', academicYearId: academicYear.id, capacity: 40 } }),
+    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[1].id, name: '11A1', academicYear: '2024-2025', academicYearId: academicYear.id, capacity: 40 } }),
+    prisma.class.create({ data: { tenantId: tenant.id, gradeId: grades[2].id, name: '12A1', academicYear: '2024-2025', academicYearId: academicYear.id, capacity: 40 } })
   ])
   console.log('✅ Created classes:', classes.map(c => c.name).join(', '))
 
-  // 10. Create subjects
+  // 11. Create subjects
   const subjects = await Promise.all([
     prisma.subject.create({ data: { tenantId: tenant.id, name: 'Toán', code: 'MATH', description: 'Môn Toán học' } }),
     prisma.subject.create({ data: { tenantId: tenant.id, name: 'Ngữ văn', code: 'LITERATURE', description: 'Môn Ngữ văn' } }),
@@ -204,7 +223,7 @@ async function main () {
   ])
   console.log('✅ Created subjects:', subjects.map(s => s.name).join(', '))
 
-  // 11. Create score components for each subject
+  // 12. Create score components for each subject
   const scoreComponentConfig = [
     { name: 'Kiểm tra miệng', weight: 10 },
     { name: 'Kiểm tra 15 phút', weight: 20 },
@@ -224,7 +243,7 @@ async function main () {
   }
   console.log('✅ Created score components for all subjects')
 
-  // 12. Create teacher assignments
+  // 13. Create teacher assignments
   await prisma.teacherAssignment.create({
     data: {
       tenantId: tenant.id,
@@ -245,7 +264,7 @@ async function main () {
   })
   console.log('✅ Created teacher assignments')
 
-  // 13. Create semester
+  // 14. Create semester
   const semester = await prisma.semester.create({
     data: {
       tenantId: tenant.id,
@@ -254,12 +273,13 @@ async function main () {
       semesterNum: 1,
       startDate: new Date('2024-09-01'),
       endDate: new Date('2025-01-15'),
-      isActive: true
+      isActive: true,
+      academicYearId: academicYear.id
     }
   })
   console.log('✅ Created semester:', semester.name)
 
-  // 14. Create sample students
+  // 15. Create sample students
   const studentData = [
     { fullName: 'Nguyễn Văn An', gender: 'MALE', dateOfBirth: new Date('2009-03-15'), address: '123 Đường ABC, Quận 1, HCM', parentName: 'Nguyễn Văn Phụ Huynh', parentPhone: '0901234567' },
     { fullName: 'Trần Thị Bình', gender: 'FEMALE', dateOfBirth: new Date('2009-07-20'), address: '456 Đường XYZ, Quận 2, HCM', parentName: 'Trần Văn Ba', parentPhone: '0912345678' },
@@ -288,7 +308,7 @@ async function main () {
   )
   console.log('✅ Created students:', students.length)
 
-  // 15. Create sample scores for first 3 subjects
+  // 16. Create sample scores for first 3 subjects
   for (const student of students) {
     for (const subject of subjects.slice(0, 3)) {
       const components = scoreComponents[subject.id]
@@ -308,7 +328,7 @@ async function main () {
   }
   console.log('✅ Created sample scores')
 
-  // 16. Create parent accounts
+  // 17. Create parent accounts
   const parentHash = await bcrypt.hash('parent123', 10)
   await prisma.user.create({
     data: {

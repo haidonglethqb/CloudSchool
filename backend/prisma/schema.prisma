@@ -106,6 +106,7 @@ model Tenant {
   studentFees       StudentFee[]
   academicYears     AcademicYear[]
   classEnrollments  ClassEnrollment[]
+  graduationArchives GraduationArchive[]
 
   @@map("tenants")
 }
@@ -125,6 +126,7 @@ model TenantSettings {
   maxScore       Float   @default(10)
   maxSemesters   Int     @default(2)
   maxRetentions  Int     @default(3)
+  enabledModules Json?
   rolePermissions Json? @default("{}")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -197,6 +199,7 @@ model Class {
   transfersTo        TransferHistory[] @relation("TransferTo")
   fees               Fee[]
   enrollments        ClassEnrollment[]
+  graduationArchives GraduationArchive[] @relation("GraduationSourceClass")
 
   @@unique([tenantId, name, academicYear])
   @@index([tenantId, gradeId])
@@ -299,6 +302,7 @@ model Student {
   transferHistories TransferHistory[]
   studentFees StudentFee[]
   enrollments ClassEnrollment[]
+  graduationArchives GraduationArchive[]
 
   @@unique([tenantId, studentCode])
   @@index([tenantId, classId])
@@ -437,12 +441,16 @@ model AcademicYear {
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   startYear   Int
   endYear     Int
+  startDate   DateTime?
+  endDate     DateTime?
+  isActive    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   semesters   Semester[]
   enrollments ClassEnrollment[]
   classes     Class[]
+  graduationArchives GraduationArchive[]
 
   @@unique([tenantId, startYear, endYear])
   @@index([tenantId])
@@ -468,6 +476,26 @@ model ClassEnrollment {
   @@unique([studentId, semesterId])
   @@index([tenantId, classId, semesterId])
   @@map("class_enrollments")
+}
+
+model GraduationArchive {
+  id              String       @id @default(uuid())
+  tenantId        String
+  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId       String
+  student         Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  sourceClassId   String?
+  sourceClass     Class?       @relation("GraduationSourceClass", fields: [sourceClassId], references: [id], onDelete: SetNull)
+  academicYearId  String
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  promotedAt      DateTime     @default(now())
+  note            String?
+  createdBy       String?
+  createdAt       DateTime     @default(now())
+
+  @@unique([tenantId, studentId, academicYearId])
+  @@index([tenantId, promotedAt])
+  @@map("graduation_archives")
 }
 
 // ==================== FEE MANAGEMENT ====================

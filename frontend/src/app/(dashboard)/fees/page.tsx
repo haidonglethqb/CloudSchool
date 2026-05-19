@@ -63,6 +63,7 @@ export default function FeesPage() {
   const [editingFee, setEditingFee] = useState<Fee | null>(null)
   const [saving, setSaving] = useState(false)
   const [filterCategory, setFilterCategory] = useState<string>('')
+  const [featureDisabled, setFeatureDisabled] = useState(false)
 
   const [form, setForm] = useState({
     name: '',
@@ -80,6 +81,7 @@ export default function FeesPage() {
   const fetchFees = useCallback(async () => {
     try {
       setLoading(true)
+      setFeatureDisabled(false)
       const params: Record<string, string> = {}
       if (filterCategory) params.category = filterCategory
 
@@ -92,8 +94,12 @@ export default function FeesPage() {
       setFees(feesRes.data.data)
       setGrades(gradesRes.data.data)
       setClasses(classesRes.data.data)
-    } catch {
-      toast.error('Lỗi khi tải dữ liệu')
+    } catch (error: any) {
+      if (error.response?.data?.error?.code === 'FEATURE_DISABLED') {
+        setFeatureDisabled(true)
+      } else {
+        toast.error('Lỗi khi tải dữ liệu')
+      }
     } finally {
       setLoading(false)
     }
@@ -192,6 +198,15 @@ export default function FeesPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      </div>
+    )
+  }
+
+  if (featureDisabled) {
+    return (
+      <div className="card p-8 text-center">
+        <AlertCircle className="w-10 h-10 mx-auto text-gray-400 mb-3" />
+        <p className="font-medium text-gray-900">Tính năng đã bị tắt</p>
       </div>
     )
   }

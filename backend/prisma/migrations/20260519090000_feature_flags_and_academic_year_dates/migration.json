@@ -1,0 +1,48 @@
+{
+  "version": "PrismaMigrate",
+  "dialect": "postgresql",
+  "id": "20260519090000",
+  "prevId": "20260408000000",
+  "steps": [
+    {
+      "tag": "AddColumn",
+      "column": {
+        "name": "enabledModules",
+        "type": "jsonb",
+        "default": null,
+        "isNullable": true
+      },
+      "table": "tenant_settings"
+    },
+    {
+      "tag": "AddColumn",
+      "column": {
+        "name": "startDate",
+        "type": "timestamp(3)",
+        "default": null,
+        "isNullable": true
+      },
+      "table": "academic_years"
+    },
+    {
+      "tag": "AddColumn",
+      "column": {
+        "name": "endDate",
+        "type": "timestamp(3)",
+        "default": null,
+        "isNullable": true
+      },
+      "table": "academic_years"
+    },
+    {
+      "tag": "AddColumn",
+      "column": {
+        "name": "isActive",
+        "type": "boolean",
+        "default": false,
+        "isNullable": false
+      },
+      "table": "academic_years"
+    }
+  ]
+}

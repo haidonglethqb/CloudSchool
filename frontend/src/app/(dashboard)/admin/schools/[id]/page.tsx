@@ -15,6 +15,7 @@ const tabs = [
   { key: 'overview', label: 'Tổng quan', icon: Building2 },
   { key: 'users', label: 'Người dùng', icon: Users },
   { key: 'stats', label: 'Thống kê', icon: BarChart3 },
+  { key: 'features', label: 'Tính năng', icon: Shield },
   { key: 'subscription', label: 'Gói dịch vụ', icon: CreditCard },
   { key: 'activity', label: 'Nhật ký', icon: FileText },
 ]
@@ -42,6 +43,9 @@ export default function SchoolDetailPage() {
   const [statsLoading, setStatsLoading] = useState(false)
   const [activity, setActivity] = useState<any[]>([])
   const [activityLoading, setActivityLoading] = useState(false)
+  const [features, setFeatures] = useState<string[]>([])
+  const [allModules, setAllModules] = useState<string[]>([])
+  const [featuresLoading, setFeaturesLoading] = useState(false)
 
   const fetchSchool = useCallback(async () => {
     try {
@@ -83,7 +87,17 @@ export default function SchoolDetailPage() {
         .catch(() => {})
         .finally(() => setActivityLoading(false))
     }
-  }, [activeTab, id, users.length, stats, activity.length])
+    if (activeTab === 'features' && allModules.length === 0) {
+      setFeaturesLoading(true)
+      adminApi.getSchoolFeatures(id)
+        .then((res) => {
+          setFeatures(res.data.data.enabledModules || [])
+          setAllModules(res.data.data.allModules || [])
+        })
+        .catch(() => {})
+        .finally(() => setFeaturesLoading(false))
+    }
+  }, [activeTab, id, users.length, stats, activity.length, allModules.length])
 
   const handleUpdate = async () => {
     try {
@@ -184,8 +198,59 @@ export default function SchoolDetailPage() {
       {activeTab === 'overview' && <OverviewTab school={school} />}
       {activeTab === 'users' && <UsersTab users={users} loading={usersLoading} />}
       {activeTab === 'stats' && <StatsTab stats={stats} loading={statsLoading} />}
+      {activeTab === 'features' && (
+        <FeaturesTab
+          loading={featuresLoading}
+          allModules={allModules}
+          enabledModules={features}
+          onToggle={async (moduleKey) => {
+            const next = features.includes(moduleKey)
+              ? features.filter((m) => m !== moduleKey)
+              : [...features, moduleKey]
+            setFeatures(next)
+            try {
+              await adminApi.updateSchoolFeatures(id, next)
+              toast.success('Cập nhật tính năng thành công')
+            } catch (error: any) {
+              toast.error(error.response?.data?.error?.message || 'Cập nhật thất bại')
+            }
+          }}
+        />
+      )}
       {activeTab === 'subscription' && <SubscriptionTab school={school} />}
       {activeTab === 'activity' && <ActivityTab activity={activity} loading={activityLoading} />}
+    </div>
+  )
+}
+
+function FeaturesTab({
+  loading,
+  allModules,
+  enabledModules,
+  onToggle
+}: {
+  loading: boolean
+  allModules: string[]
+  enabledModules: string[]
+  onToggle: (moduleKey: string) => Promise<void> | void
+}) {
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+
+  return (
+    <div className="card p-6">
+      <h3 className="font-semibold text-gray-900 mb-4">Bật/Tắt module theo trường</h3>
+      <div className="grid md:grid-cols-2 gap-3">
+        {allModules.map((moduleKey) => (
+          <label key={moduleKey} className="flex items-center justify-between border rounded-lg px-3 py-2">
+            <span className="text-sm">{moduleKey}</span>
+            <input
+              type="checkbox"
+              checked={enabledModules.includes(moduleKey)}
+              onChange={() => onToggle(moduleKey)}
+            />
+          </label>
+        ))}
+      </div>
     </div>
   )
 }

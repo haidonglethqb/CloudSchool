@@ -3,10 +3,13 @@ const router = express.Router()
 const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
+const { requireFeature } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 
+router.use(authenticate, requireFeature('scores'))
+
 // GET /scores/class/:classId - Get score sheet for a class
-router.get('/class/:classId', authenticate, async (req, res, next) => {
+router.get('/class/:classId', async (req, res, next) => {
   try {
     const { subjectId, semesterId } = req.query
 
@@ -103,7 +106,7 @@ router.get('/class/:classId', authenticate, async (req, res, next) => {
 })
 
 // GET /scores/student/:studentId - Get all scores for a student
-router.get('/student/:studentId', authenticate, async (req, res, next) => {
+router.get('/student/:studentId', async (req, res, next) => {
   try {
     const { semesterId } = req.query
 

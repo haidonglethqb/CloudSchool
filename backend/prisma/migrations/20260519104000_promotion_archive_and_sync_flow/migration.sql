@@ -1,0 +1,2 @@
+-- Graduation archive schema is included in the initial migration.
+-- No additional SQL is required in this step.

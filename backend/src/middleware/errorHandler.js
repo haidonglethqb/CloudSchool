@@ -77,16 +77,18 @@ const errorHandler = (err, req, res, next) => {
       code: err.code || 'INTERNAL_ERROR',
       message: process.env.NODE_ENV === 'production' 
         ? 'An unexpected error occurred' 
-        : err.message
+        : err.message,
+      ...(err.details ? { details: err.details } : {})
     }
   })
 }
 
 class AppError extends Error {
-  constructor(message, statusCode, code) {
+  constructor(message, statusCode, code, details = null) {
     super(message)
     this.statusCode = statusCode
     this.code = code
+    if (details) this.details = details
     Error.captureStackTrace(this, this.constructor)
   }
 }

@@ -6,6 +6,7 @@ const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
+const { MODULE_KEYS, DEFAULT_ENABLED_MODULES } = require('../constants/module-registry')
 
 // All routes require PLATFORM_ADMIN
 router.use(authenticate, authorize('PLATFORM_ADMIN'))
@@ -166,7 +167,15 @@ router.post('/schools', [
         phone,
         address,
         planId: planId || undefined,
-        settings: { create: { minAge: 15, maxAge: 20, maxClassSize: 40, passScore: 5.0 } },
+        settings: {
+          create: {
+            minAge: 15,
+            maxAge: 20,
+            maxClassSize: 40,
+            passScore: 5.0,
+            enabledModules: DEFAULT_ENABLED_MODULES,
+          }
+        },
         users: {
           create: {
             email: email || `admin@${code.toLowerCase()}.school`,
@@ -214,6 +223,68 @@ router.get('/schools/:id', async (req, res, next) => {
     })
 
     res.json({ data: { ...tenant, usersByRole } })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /admin/schools/:id/features
+router.get('/schools/:id/features', async (req, res, next) => {
+  try {
+    const settings = await prisma.tenantSettings.findFirst({
+      where: { tenantId: req.params.id },
+      select: { tenantId: true, enabledModules: true, updatedAt: true }
+    })
+
+    if (!settings) throw new AppError('School settings not found', 404, 'NOT_FOUND')
+
+    const enabledModules = Array.isArray(settings.enabledModules)
+      ? settings.enabledModules.filter((moduleKey) => MODULE_KEYS.includes(moduleKey))
+      : DEFAULT_ENABLED_MODULES
+
+    res.json({
+      data: {
+        tenantId: settings.tenantId,
+        enabledModules,
+        allModules: MODULE_KEYS,
+        updatedAt: settings.updatedAt
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// PUT /admin/schools/:id/features
+router.put('/schools/:id/features', [
+  body('enabledModules').isArray().withMessage('enabledModules must be an array')
+], async (req, res, next) => {
+  try {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: { code: 'VALIDATION_ERROR', details: errors.array() } })
+    }
+
+    const rawEnabledModules = req.body.enabledModules || []
+    const invalidModule = rawEnabledModules.find((moduleKey) => !MODULE_KEYS.includes(moduleKey))
+    if (invalidModule) {
+      throw new AppError(`Invalid module: ${invalidModule}`, 400, 'INVALID_MODULE')
+    }
+
+    const settings = await prisma.tenantSettings.update({
+      where: { tenantId: req.params.id },
+      data: { enabledModules: rawEnabledModules },
+      select: { tenantId: true, enabledModules: true, updatedAt: true }
+    })
+
+    res.json({
+      data: {
+        tenantId: settings.tenantId,
+        enabledModules: settings.enabledModules,
+        allModules: MODULE_KEYS,
+        updatedAt: settings.updatedAt
+      }
+    })
   } catch (error) {
     next(error)
   }

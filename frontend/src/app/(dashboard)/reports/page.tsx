@@ -1,510 +1,234 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { reportApi, subjectApi } from '@/lib/api'
-import { getPassStatus } from '@/lib/utils'
-import {
-  BarChart3,
-  Loader2,
-  FileText,
-  TrendingUp,
-  TrendingDown,
-  AlertCircle,
-  ArrowRightLeft,
-  UserX,
-} from 'lucide-react'
+import { classApi, promotionApi, reportApi, subjectApi, academicYearApi } from '@/lib/api'
+import { BarChart3, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-interface Subject {
-  id: string
-  name: string
-}
-
-interface Semester {
-  id: string
-  name: string
-  isActive: boolean
-}
-
-interface ClassStat {
-  class: {
-    id: string
-    name: string
-    grade: { name: string; level: number }
-  }
-  totalStudents: number
-  passedStudents: number
-  passRate: number
-  averageScore: number
-}
-
-interface ReportData {
-  subject?: { id: string; name: string }
-  semester?: { id: string; name: string }
-  passScore: number
-  classes: ClassStat[]
-  summary: {
-    totalStudents: number
-    totalPassed: number
-    passRate: number
-    averageScore: number
-  }
-}
-
-type ReportType = 'subject' | 'semester' | 'transfer' | 'retention'
-
-interface TransferEntry {
-  id: string
-  reason: string | null
-  createdAt: string
-  student: { id: string; studentCode: string; fullName: string }
-  fromClass: { id: string; name: string } | null
-  toClass: { id: string; name: string } | null
-  semester: { id: string; name: string; year: string } | null
-}
-
-interface RetentionEntry {
-  student: { id: string; studentCode: string; fullName: string; isActive: boolean }
-  class: { id: string; name: string }
-  semester: { id: string; name: string; year: string }
-  retentionCount: number
-  handling: string
-}
+type Tab = 'bm1' | 'bm2' | 'bm3' | 'bm4' | 'promotion'
 
 export default function ReportsPage() {
-  const [reportType, setReportType] = useState<ReportType>('subject')
-  const [subjects, setSubjects] = useState<Subject[]>([])
-  const [semesters, setSemesters] = useState<Semester[]>([])
-  const [selectedSubject, setSelectedSubject] = useState('')
-  const [selectedSemester, setSelectedSemester] = useState('')
-  const [reportData, setReportData] = useState<ReportData | null>(null)
-  const [transferData, setTransferData] = useState<TransferEntry[] | null>(null)
-  const [retentionData, setRetentionData] = useState<{ retentions: RetentionEntry[]; maxRetentions: number } | null>(null)
+  const [tab, setTab] = useState<Tab>('bm1')
   const [loading, setLoading] = useState(true)
   const [loadingReport, setLoadingReport] = useState(false)
+  const [subjects, setSubjects] = useState<any[]>([])
+  const [semesters, setSemesters] = useState<any[]>([])
+  const [classes, setClasses] = useState<any[]>([])
+  const [years, setYears] = useState<any[]>([])
+  const [subjectId, setSubjectId] = useState('')
+  const [semesterId, setSemesterId] = useState('')
+  const [classId, setClassId] = useState('')
+  const [academicYearId, setAcademicYearId] = useState('')
+  const [data, setData] = useState<any>(null)
+
+  const [results, setResults] = useState<{ passStudents: any[]; failStudents: any[] } | null>(null)
+  const [missingDetails, setMissingDetails] = useState<any[]>([])
+  const [passAssign, setPassAssign] = useState<Record<string, string>>({})
+  const [failAssign, setFailAssign] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [subjectsRes, semestersRes] = await Promise.all([
-          subjectApi.list(),
-          subjectApi.getSemesters(),
-        ])
-        setSubjects(subjectsRes.data.data)
-        setSemesters(semestersRes.data.data)
-
-        // Auto-select active semester
-        const activeSemester = semestersRes.data.data.find(
-          (s: Semester) => s.isActive
-        )
-        if (activeSemester) {
-          setSelectedSemester(activeSemester.id)
-        }
-      } catch (error) {
-        console.error('Failed to fetch data:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchData()
+    Promise.all([subjectApi.list(), subjectApi.getSemesters(), classApi.list(), academicYearApi.list()])
+      .then(([subjectRes, semesterRes, classRes, yearRes]) => {
+        const sems = semesterRes.data.data || []
+        setSubjects(subjectRes.data.data || [])
+        setSemesters(sems)
+        setClasses(classRes.data.data || [])
+        setYears(yearRes.data.data || [])
+        if (sems.length > 0) setSemesterId(sems.find((s: any) => s.isActive)?.id || sems[0].id)
+        const ys = yearRes.data.data || []
+        if (ys.length > 0) setAcademicYearId((ys.find((y: any) => y.isActive) || ys[0]).id)
+      })
+      .catch(() => toast.error('Không thể tải dữ liệu báo cáo'))
+      .finally(() => setLoading(false))
   }, [])
 
-  const fetchReport = async () => {
-    if (!selectedSemester && reportType !== 'transfer') {
-      toast.error('Vui lòng chọn học kỳ')
-      return
-    }
-
-    if (reportType === 'subject' && !selectedSubject) {
-      toast.error('Vui lòng chọn môn học')
-      return
-    }
-
+  const loadReport = async () => {
     try {
       setLoadingReport(true)
-
-      if (reportType === 'transfer') {
-        const response = await reportApi.transferReport({ semesterId: selectedSemester || undefined })
-        setTransferData(response.data.data.transfers)
-        setReportData(null)
-        setRetentionData(null)
-      } else if (reportType === 'retention') {
-        const response = await reportApi.retentionReport({ semesterId: selectedSemester || undefined })
-        setRetentionData(response.data.data)
-        setReportData(null)
-        setTransferData(null)
-      } else {
-        let response
-        if (reportType === 'subject') {
-          response = await reportApi.subjectSummary(selectedSubject, selectedSemester)
-        } else {
-          response = await reportApi.semesterSummary(selectedSemester)
-        }
-        setReportData(response.data.data)
-        setTransferData(null)
-        setRetentionData(null)
+      setData(null)
+      if (tab === 'bm1') {
+        if (!subjectId || !semesterId) return toast.error('Chọn môn học và học kỳ')
+        const res = await reportApi.subjectSummary(subjectId, semesterId)
+        setData(res.data.data)
+      } else if (tab === 'bm2') {
+        if (!classId || !semesterId) return toast.error('Chọn lớp và học kỳ')
+        const res = await reportApi.classPromotionSummary(classId, semesterId)
+        setData(res.data.data)
+      } else if (tab === 'bm3') {
+        if (!semesterId) return toast.error('Chọn học kỳ')
+        const res = await reportApi.semesterPromotionSummary(semesterId)
+        setData(res.data.data)
+      } else if (tab === 'bm4') {
+        if (!academicYearId) return toast.error('Chọn năm học')
+        const res = await reportApi.yearPromotionSummary(academicYearId)
+        setData(res.data.data)
       }
     } catch (error: any) {
-      console.error('Failed to fetch report:', error)
-      toast.error('Không thể tải báo cáo')
+      toast.error(error.response?.data?.error?.message || 'Không thể tải báo cáo')
     } finally {
       setLoadingReport(false)
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    )
+  const evaluatePromotion = async () => {
+    if (!academicYearId) return toast.error('Chọn năm học')
+    setMissingDetails([])
+    setResults(null)
+    try {
+      await promotionApi.evaluateYearEnd({ academicYearId, classId: classId || undefined })
+      const res = await promotionApi.getYearEndResults({ academicYearId, classId: classId || undefined })
+      setResults(res.data.data)
+      toast.success('Đã xét lên lớp')
+    } catch (error: any) {
+      const err = error.response?.data?.error
+      if (err?.code === 'MISSING_SCORES') {
+        setMissingDetails(err.details || [])
+      }
+      toast.error(err?.message || 'Xét lên lớp thất bại')
+    }
   }
+
+  const executePromotion = async () => {
+    if (!academicYearId || !results) return
+    try {
+      const passAssignments = results.passStudents
+        .filter((item) => passAssign[item.studentId])
+        .map((item) => ({ studentId: item.studentId, toClassId: passAssign[item.studentId] }))
+      const failAssignments = results.failStudents
+        .filter((item) => failAssign[item.studentId])
+        .map((item) => ({ studentId: item.studentId, toClassId: failAssign[item.studentId] }))
+
+      const res = await promotionApi.executeYearEnd({ academicYearId, passAssignments, failAssignments })
+      toast.success(`Hoàn tất xét lên lớp: ${res.data.data.summary.promoted} lên lớp, ${res.data.data.summary.archived} lưu trữ`)
+      const re = await promotionApi.getYearEndResults({ academicYearId, classId: classId || undefined })
+      setResults(re.data.data)
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Thực thi xét lên lớp thất bại')
+    }
+  }
+
+  if (loading) return <div className="flex items-center justify-center h-[60vh]"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Báo cáo tổng kết</h1>
-        <p className="text-gray-600 text-sm mt-1">
-          BM5 - Lập báo cáo tổng kết môn học và học kỳ
-        </p>
+        <p className="text-sm text-gray-600 mt-1">BM1/BM2/BM3/BM4 và xét lên lớp đồng bộ</p>
       </div>
 
-      {/* Report Type Selection */}
-      <div className="card">
-        <div className="flex border-b border-gray-100">
-          <button
-            onClick={() => {
-              setReportType('subject')
-              setReportData(null)
-              setTransferData(null)
-              setRetentionData(null)
-            }}
-            className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              reportType === 'subject'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <FileText className="w-4 h-4 inline-block mr-2" />
-            BM5.1 - Tổng kết môn
-          </button>
-          <button
-            onClick={() => {
-              setReportType('semester')
-              setReportData(null)
-              setTransferData(null)
-              setRetentionData(null)
-            }}
-            className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              reportType === 'semester'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <BarChart3 className="w-4 h-4 inline-block mr-2" />
-            BM5.2 - Tổng kết HK
-          </button>
-          <button
-            onClick={() => {
-              setReportType('transfer')
-              setReportData(null)
-              setTransferData(null)
-              setRetentionData(null)
-            }}
-            className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              reportType === 'transfer'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <ArrowRightLeft className="w-4 h-4 inline-block mr-2" />
-            BM8 - Chuyển lớp
-          </button>
-          <button
-            onClick={() => {
-              setReportType('retention')
-              setReportData(null)
-              setTransferData(null)
-              setRetentionData(null)
-            }}
-            className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              reportType === 'retention'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <UserX className="w-4 h-4 inline-block mr-2" />
-            BM9 - Lưu ban
-          </button>
+      <div className="card p-4 space-y-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          <button className={`btn-outline ${tab === 'bm1' ? 'bg-gray-100' : ''}`} onClick={() => setTab('bm1')}>BM1</button>
+          <button className={`btn-outline ${tab === 'bm2' ? 'bg-gray-100' : ''}`} onClick={() => setTab('bm2')}>BM2</button>
+          <button className={`btn-outline ${tab === 'bm3' ? 'bg-gray-100' : ''}`} onClick={() => setTab('bm3')}>BM3</button>
+          <button className={`btn-outline ${tab === 'bm4' ? 'bg-gray-100' : ''}`} onClick={() => setTab('bm4')}>BM4</button>
+          <button className={`btn-outline ${tab === 'promotion' ? 'bg-gray-100' : ''}`} onClick={() => setTab('promotion')}>Xét lên lớp</button>
         </div>
 
-        {/* Filters */}
-        <div className="p-4">
-          <div className="flex flex-wrap gap-4 items-end">
-            {reportType === 'subject' && (
-              <div className="min-w-[200px]">
-                <label className="label">Môn học</label>
-                <select
-                  className="input"
-                  value={selectedSubject}
-                  onChange={(e) => setSelectedSubject(e.target.value)}
-                >
-                  <option value="">Chọn môn học</option>
-                  {subjects.map((subject) => (
-                    <option key={subject.id} value={subject.id}>
-                      {subject.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div className="min-w-[200px]">
-              <label className="label">Học kỳ</label>
-              <select
-                className="input"
-                value={selectedSemester}
-                onChange={(e) => setSelectedSemester(e.target.value)}
-              >
-                <option value="">Chọn học kỳ</option>
-                {semesters.map((semester) => (
-                  <option key={semester.id} value={semester.id}>
-                    {semester.name} {semester.isActive && '(Hiện tại)'}
-                  </option>
-                ))}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {(tab === 'bm1') && (
+            <div>
+              <label className="label">Môn học</label>
+              <select className="input" value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+                <option value="">Chọn môn</option>
+                {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
               </select>
             </div>
+          )}
 
-            <button
-              onClick={fetchReport}
-              disabled={loadingReport}
-              className="btn-primary"
-            >
-              {loadingReport ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <BarChart3 className="w-4 h-4 mr-2" />
-              )}
-              Xem báo cáo
-            </button>
-          </div>
+          {(tab === 'bm2' || tab === 'promotion') && (
+            <div>
+              <label className="label">Lớp</label>
+              <select className="input" value={classId} onChange={(e) => setClassId(e.target.value)}>
+                <option value="">Tất cả lớp</option>
+                {classes.map((cls) => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          {(tab === 'bm1' || tab === 'bm2' || tab === 'bm3') && (
+            <div>
+              <label className="label">Học kỳ</label>
+              <select className="input" value={semesterId} onChange={(e) => setSemesterId(e.target.value)}>
+                <option value="">Chọn học kỳ</option>
+                {semesters.map((semester) => <option key={semester.id} value={semester.id}>{semester.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          {(tab === 'bm4' || tab === 'promotion') && (
+            <div>
+              <label className="label">Năm học</label>
+              <select className="input" value={academicYearId} onChange={(e) => setAcademicYearId(e.target.value)}>
+                <option value="">Chọn năm học</option>
+                {years.map((year) => <option key={year.id} value={year.id}>{year.startYear}-{year.endYear}</option>)}
+              </select>
+            </div>
+          )}
         </div>
+
+        {tab !== 'promotion' ? (
+          <button onClick={loadReport} disabled={loadingReport} className="btn-primary">
+            {loadingReport ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <BarChart3 className="w-4 h-4 mr-2" />}
+            Xem báo cáo
+          </button>
+        ) : (
+          <div className="flex gap-3">
+            <button onClick={evaluatePromotion} className="btn-primary">Xét lên lớp</button>
+            {results && <button onClick={executePromotion} className="btn-outline">Thực thi lên lớp</button>}
+          </div>
+        )}
       </div>
 
-      {/* Report Display */}
-      {loadingReport ? (
-        <div className="card p-8 text-center">
-          <Loader2 className="w-8 h-8 mx-auto animate-spin text-primary" />
+      {tab !== 'promotion' && data && (
+        <div className="card p-4">
+          <pre className="text-xs overflow-auto whitespace-pre-wrap">{JSON.stringify(data, null, 2)}</pre>
         </div>
-      ) : reportData ? (
-        <div className="space-y-6">
-          {/* Report Header */}
-          <div className="card p-4 bg-gradient-to-r from-primary to-primary-600 text-white">
-            <h2 className="text-lg font-semibold">
-              {reportType === 'subject'
-                ? `Báo cáo tổng kết môn ${reportData.subject?.name}`
-                : `Báo cáo tổng kết học kỳ`}
-            </h2>
-            <p className="text-white/80 text-sm mt-1">
-              {reportData.semester?.name} | Điểm đạt ≥ {reportData.passScore}
-            </p>
-          </div>
+      )}
 
-          {/* Summary Stats */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="card p-4 text-center">
-              <p className="text-2xl font-bold text-gray-900">
-                {reportData.summary.totalStudents}
+      {tab === 'promotion' && missingDetails.length > 0 && (
+        <div className="card p-4">
+          <h3 className="font-semibold text-red-700 mb-2">Thiếu điểm, chưa thể xét lên lớp</h3>
+          <div className="space-y-1 text-sm">
+            {missingDetails.slice(0, 50).map((item, idx) => (
+              <p key={idx}>
+                {item.studentName} ({item.studentCode}) - {item.subjectName} - {item.semesterName}: thiếu {item.missingComponents?.join(', ')}
               </p>
-              <p className="text-sm text-gray-500">Tổng học sinh</p>
-            </div>
-            <div className="card p-4 text-center">
-              <p className="text-2xl font-bold text-green-600">
-                {reportData.summary.totalPassed}
-              </p>
-              <p className="text-sm text-gray-500">Học sinh đạt</p>
-            </div>
-            <div className="card p-4 text-center">
-              <div className="flex items-center justify-center gap-1">
-                <p className="text-2xl font-bold text-primary">
-                  {reportData.summary.passRate}%
-                </p>
-                {reportData.summary.passRate >= 50 ? (
-                  <TrendingUp className="w-5 h-5 text-green-500" />
-                ) : (
-                  <TrendingDown className="w-5 h-5 text-red-500" />
-                )}
-              </div>
-              <p className="text-sm text-gray-500">Tỷ lệ đạt</p>
-            </div>
-            <div className="card p-4 text-center">
-              <p className="text-2xl font-bold text-orange-600">
-                {reportData.summary.averageScore}
-              </p>
-              <p className="text-sm text-gray-500">Điểm TB chung</p>
-            </div>
+            ))}
           </div>
+        </div>
+      )}
 
-          {/* Class Details Table */}
-          <div className="card overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100">
-              <h3 className="font-semibold text-gray-900">Chi tiết theo lớp</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="table-header">STT</th>
-                    <th className="table-header">Lớp</th>
-                    <th className="table-header text-center">Sĩ số</th>
-                    <th className="table-header text-center">Số đạt</th>
-                    <th className="table-header text-center">Tỷ lệ</th>
-                    <th className="table-header text-center">Điểm TB</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {reportData.classes.map((cls, idx) => (
-                    <tr key={cls.class.id} className="hover:bg-gray-50">
-                      <td className="table-cell text-center">{idx + 1}</td>
-                      <td className="table-cell">
-                        <span className="font-medium">{cls.class.name}</span>
-                        <span className="text-gray-400 text-xs ml-2">
-                          ({cls.class.grade.name})
-                        </span>
-                      </td>
-                      <td className="table-cell text-center">{cls.totalStudents}</td>
-                      <td className="table-cell text-center text-green-600 font-medium">
-                        {cls.passedStudents}
-                      </td>
-                      <td className="table-cell text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <div className="w-16 h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${
-                                cls.passRate >= 80
-                                  ? 'bg-green-500'
-                                  : cls.passRate >= 50
-                                    ? 'bg-amber-500'
-                                    : 'bg-red-500'
-                              }`}
-                              style={{ width: `${cls.passRate}%` }}
-                            />
-                          </div>
-                          <span
-                            className={`text-sm font-medium ${
-                              cls.passRate >= 80
-                                ? 'text-green-600'
-                                : cls.passRate >= 50
-                                  ? 'text-amber-600'
-                                  : 'text-red-600'
-                            }`}
-                          >
-                            {cls.passRate}%
-                          </span>
-                        </div>
-                      </td>
-                      <td className="table-cell text-center font-semibold">
-                        {cls.averageScore > 0 ? cls.averageScore.toFixed(2) : '-'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {tab === 'promotion' && results && (
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="card p-4">
+            <h3 className="font-semibold text-gray-900 mb-3">Đạt (PASS)</h3>
+            <div className="space-y-2">
+              {results.passStudents.map((item) => (
+                <div key={item.id} className="flex gap-2 items-center">
+                  <span className="text-sm flex-1">{item.student.fullName} ({item.class.name})</span>
+                  <select className="input max-w-[220px]" value={passAssign[item.studentId] || ''} onChange={(e) => setPassAssign((prev) => ({ ...prev, [item.studentId]: e.target.value }))}>
+                    <option value="">Chọn lớp đích</option>
+                    {classes.filter((c) => c.id !== item.classId).map((cls) => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
+                  </select>
+                </div>
+              ))}
             </div>
           </div>
-        </div>
-      ) : transferData ? (
-        <div className="card overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100">
-            <h3 className="font-semibold text-gray-900">Báo cáo chuyển lớp ({transferData.length} lượt)</h3>
-          </div>
-          {transferData.length === 0 ? (
-            <div className="p-8 text-center text-gray-400">Không có dữ liệu chuyển lớp</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="table-header">STT</th>
-                    <th className="table-header">Mã HS</th>
-                    <th className="table-header">Họ tên</th>
-                    <th className="table-header">Lớp cũ</th>
-                    <th className="table-header">Lớp mới</th>
-                    <th className="table-header">Lý do</th>
-                    <th className="table-header">Học kỳ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {transferData.map((t, idx) => (
-                    <tr key={t.id} className="hover:bg-gray-50">
-                      <td className="table-cell text-center">{idx + 1}</td>
-                      <td className="table-cell font-mono text-sm">{t.student.studentCode}</td>
-                      <td className="table-cell font-medium">{t.student.fullName}</td>
-                      <td className="table-cell">{t.fromClass?.name || '-'}</td>
-                      <td className="table-cell">{t.toClass?.name || '-'}</td>
-                      <td className="table-cell text-sm text-gray-500">{t.reason || '-'}</td>
-                      <td className="table-cell text-sm">{t.semester?.name || '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <div className="card p-4">
+            <h3 className="font-semibold text-gray-900 mb-3">Không đạt (FAIL) - xếp lớp riêng</h3>
+            <div className="space-y-2">
+              {results.failStudents.map((item) => (
+                <div key={item.id} className="flex gap-2 items-center">
+                  <span className="text-sm flex-1">{item.student.fullName} ({item.class.name})</span>
+                  <select className="input max-w-[220px]" value={failAssign[item.studentId] || ''} onChange={(e) => setFailAssign((prev) => ({ ...prev, [item.studentId]: e.target.value }))}>
+                    <option value="">Chọn lớp đích</option>
+                    {classes.filter((c) => c.id !== item.classId).map((cls) => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
+                  </select>
+                </div>
+              ))}
             </div>
-          )}
-        </div>
-      ) : retentionData ? (
-        <div className="card overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100">
-            <h3 className="font-semibold text-gray-900">
-              Báo cáo lưu ban ({retentionData.retentions.length} học sinh)
-              <span className="text-sm font-normal text-gray-500 ml-2">
-                Tối đa {retentionData.maxRetentions} lần lưu ban (QĐ9)
-              </span>
-            </h3>
           </div>
-          {retentionData.retentions.length === 0 ? (
-            <div className="p-8 text-center text-gray-400">Không có học sinh lưu ban</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="table-header">STT</th>
-                    <th className="table-header">Mã HS</th>
-                    <th className="table-header">Họ tên</th>
-                    <th className="table-header">Lớp</th>
-                    <th className="table-header text-center">Số lần lưu ban</th>
-                    <th className="table-header text-center">Cách xử lý</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {retentionData.retentions.map((r, idx) => (
-                    <tr key={`${r.student.id}-${idx}`} className="hover:bg-gray-50">
-                      <td className="table-cell text-center">{idx + 1}</td>
-                      <td className="table-cell font-mono text-sm">{r.student.studentCode}</td>
-                      <td className="table-cell font-medium">{r.student.fullName}</td>
-                      <td className="table-cell">{r.class.name}</td>
-                      <td className="table-cell text-center font-semibold">{r.retentionCount}</td>
-                      <td className="table-cell text-center">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          r.handling === 'Ngừng tiếp nhận'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {r.handling}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="card p-8 text-center">
-          <AlertCircle className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-          <p className="text-gray-500">Chọn các tiêu chí và nhấn &quot;Xem báo cáo&quot;</p>
         </div>
       )}
     </div>

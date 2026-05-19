@@ -1,0 +1,12 @@
+{
+  "version": "PrismaMigrate",
+  "dialect": "postgresql",
+  "id": "20260519104000",
+  "prevId": "20260519090000",
+  "steps": [
+    {
+      "tag": "CreateTable",
+      "table": "graduation_archives"
+    }
+  ]
+}

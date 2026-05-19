@@ -72,6 +72,21 @@ The `PUT /users/:id` endpoint enforces strict role assignment:
 
 Implementation: [`backend/src/middleware/auth.js`](../../../backend/src/middleware/auth.js) — `authorize(...roles)` function checks `req.user.role` against a whitelist before proceeding.
 
+## Feature Flag Layer
+
+Tenant modules are controlled by `tenant_settings.enabledModules` and enforced by `requireFeature(...)` middleware.
+
+Order of access checks:
+1. Authentication + role authorization
+2. Tenant feature flag (`FEATURE_DISABLED` if off)
+3. School role-permission filtering for `STAFF` / `TEACHER` (UI + settings policy)
+
+Important:
+- `SUPER_ADMIN` is still blocked by platform feature flags.
+- `PLATFORM_ADMIN` can manage per-school modules via:
+  - `GET /api/admin/schools/:id/features`
+  - `PUT /api/admin/schools/:id/features`
+
 ## Related
 
 - [Authentication Overview](overview.md) — JWT token mechanics

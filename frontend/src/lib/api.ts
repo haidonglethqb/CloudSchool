@@ -88,6 +88,9 @@ export const adminApi = {
   getSchoolStats: (id: string) => api.get(`/admin/schools/${id}/stats`),
   getSchoolActivity: (id: string, params?: { page?: number; limit?: number }) =>
     api.get(`/admin/schools/${id}/activity`, { params }),
+  getSchoolFeatures: (id: string) => api.get(`/admin/schools/${id}/features`),
+  updateSchoolFeatures: (id: string, enabledModules: string[]) =>
+    api.put(`/admin/schools/${id}/features`, { enabledModules }),
   // Subscriptions
   listSubscriptions: () => api.get('/admin/subscriptions'),
   createSubscription: (data: { name: string; maxStudents: number; maxTeachers: number; maxClasses: number; price: number; features?: string[] }) =>
@@ -112,7 +115,7 @@ export const userApi = {
 
 // ==================== Students ====================
 export const studentApi = {
-  list: (params?: { search?: string; classId?: string; gradeId?: string; page?: number; limit?: number }) =>
+  list: (params?: { search?: string; classId?: string; gradeId?: string; address?: string; gender?: string; birthYear?: number; status?: string; page?: number; limit?: number }) =>
     api.get('/students', { params }),
   get: (id: string) => api.get(`/students/${id}`),
   create: (data: { fullName: string; gender: string; dateOfBirth: string; address?: string; phone?: string; email?: string; admissionDate?: string; classId: string; parentName?: string; parentPhone?: string }) =>
@@ -155,13 +158,7 @@ export const subjectApi = {
     api.post('/subjects', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/subjects/${id}`, data),
   delete: (id: string) => api.delete(`/subjects/${id}`),
-  // Semesters
-  getSemesters: () => api.get('/subjects/semesters'),
-  createSemester: (data: { name: string; year: string; semesterNum: number; startDate?: string; endDate?: string; academicYearId?: string }) =>
-    api.post('/subjects/semesters', data),
-  updateSemester: (id: string, data: Record<string, unknown>) =>
-    api.patch(`/subjects/semesters/${id}`, data),
-  deleteSemester: (id: string) => api.delete(`/subjects/semesters/${id}`),
+  getSemesters: () => api.get('/academic-years/semesters'),
 }
 
 // ==================== Score Components ====================
@@ -197,29 +194,32 @@ export const scoreApi = {
 
 // ==================== Promotion ====================
 export const promotionApi = {
-  list: (params?: { semesterId?: string; classId?: string }) =>
-    api.get('/promotion', { params }),
-  calculate: (data: { semesterId: string; classId?: string }) =>
-    api.post('/promotion/calculate', data),
-  override: (id: string, result: string) =>
-    api.put(`/promotion/${id}`, { result }),
-  promote: (data: { semesterId: string; academicYearId?: string; newAcademicYear?: number }) =>
-    api.post('/promotion/promote', data),
-  archiveClasses: (academicYear: string) =>
-    api.post('/promotion/archive-classes', { academicYear }),
+  evaluateYearEnd: (data: { academicYearId: string; classId?: string }) =>
+    api.post('/promotion/year-end/evaluate', data),
+  getYearEndResults: (params: { academicYearId: string; classId?: string }) =>
+    api.get('/promotion/year-end/results', { params }),
+  executeYearEnd: (data: {
+    academicYearId: string
+    passAssignments?: Array<{ studentId: string; toClassId: string }>
+    failAssignments?: Array<{ studentId: string; toClassId: string }>
+  }) => api.post('/promotion/year-end/execute', data),
 }
 
 // ==================== Reports ====================
 export const reportApi = {
   subjectSummary: (subjectId: string, semesterId: string) =>
     api.get('/reports/subject-summary', { params: { subjectId, semesterId } }),
-  semesterSummary: (semesterId: string) =>
-    api.get('/reports/semester-summary', { params: { semesterId } }),
+  classPromotionSummary: (classId: string, semesterId: string) =>
+    api.get('/reports/class-promotion-summary', { params: { classId, semesterId } }),
+  semesterPromotionSummary: (semesterId: string) =>
+    api.get('/reports/semester-promotion-summary', { params: { semesterId } }),
+  yearPromotionSummary: (academicYearId: string) =>
+    api.get('/reports/year-promotion-summary', { params: { academicYearId } }),
   dashboard: () => api.get('/reports/dashboard'),
+  dashboardByScope: (params?: { academicYearId?: string; semesterId?: string }) =>
+    api.get('/reports/dashboard', { params }),
   transferReport: (params?: { semesterId?: string }) =>
     api.get('/reports/transfer-report', { params }),
-  retentionReport: (params?: { semesterId?: string }) =>
-    api.get('/reports/retention-report', { params }),
 }
 
 // ==================== Settings ====================
@@ -228,7 +228,7 @@ export const settingsApi = {
   update: (data: Partial<{
     minAge: number; maxAge: number; maxClassSize: number; passScore: number;
     minGradeLevel: number; maxGradeLevel: number; maxSubjects: number;
-    minScore: number; maxScore: number; maxSemesters: number; maxRetentions: number
+    minScore: number; maxScore: number; maxSemesters: number
   }>) =>
     api.put('/settings', data),
   // Grades
@@ -270,7 +270,7 @@ export const parentApi = {
 
 // ==================== Export ====================
 export const exportApi = {
-  students: (params?: { format?: string; classId?: string; gradeId?: string }) =>
+  students: (params?: { format?: string; classId?: string; gradeId?: string; search?: string; address?: string; gender?: string; birthYear?: number; status?: string }) =>
     api.get('/export/students', { params, responseType: 'blob' }),
   classes: (params?: { format?: string }) =>
     api.get('/export/classes', { params, responseType: 'blob' }),
@@ -278,6 +278,10 @@ export const exportApi = {
     api.get('/export/scores', { params, responseType: 'blob' }),
   schools: (params?: { format?: string }) =>
     api.get('/export/schools', { params, responseType: 'blob' }),
+  report: (
+    type: 'subject-summary' | 'class-promotion-summary' | 'semester-promotion-summary' | 'year-promotion-summary',
+    params?: { format?: string; sections?: string; subjectId?: string; semesterId?: string; classId?: string; academicYearId?: string }
+  ) => api.get(`/export/reports/${type}`, { params, responseType: 'blob' }),
 }
 
 // ==================== Monitoring ====================
@@ -319,9 +323,17 @@ export function downloadBlob(blob: Blob, filename: string) {
 export const academicYearApi = {
   list: () => api.get('/academic-years'),
   get: (id: string) => api.get(`/academic-years/${id}`),
-  create: (data: { startYear: number; endYear: number }) =>
+  create: (data: { startYear: number; endYear: number; startDate: string; endDate: string }) =>
     api.post('/academic-years', data),
-  update: (id: string, data: { startYear?: number; endYear?: number }) =>
+  update: (id: string, data: { startYear?: number; endYear?: number; startDate?: string; endDate?: string }) =>
     api.put(`/academic-years/${id}`, data),
+  activate: (id: string) => api.patch(`/academic-years/${id}/activate`),
+  getSemesters: (id: string) => api.get(`/academic-years/${id}/semesters`),
+  createSemester: (id: string, data: { semesterNum: number; name?: string; startDate: string; endDate: string }) =>
+    api.post(`/academic-years/${id}/semesters`, data),
+  updateSemester: (id: string, semesterId: string, data: { semesterNum?: number; name?: string; startDate?: string; endDate?: string; isActive?: boolean }) =>
+    api.patch(`/academic-years/${id}/semesters/${semesterId}`, data),
+  deleteSemester: (id: string, semesterId: string) =>
+    api.delete(`/academic-years/${id}/semesters/${semesterId}`),
   delete: (id: string) => api.delete(`/academic-years/${id}`),
 }

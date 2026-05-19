@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken')
 const { LRUCache } = require('lru-cache')
 const prisma = require('../lib/prisma')
 const { AppError } = require('./errorHandler')
+const { normalizeEnabledModules } = require('./feature-flags')
 
 const userCache = new LRUCache({ max: 500, ttl: 60 * 1000 })
 const settingsCache = new LRUCache({ max: 100, ttl: 5 * 60 * 1000 })
@@ -40,6 +41,8 @@ const authenticate = async (req, res, next) => {
         if (settings) settingsCache.set(user.tenantId, settings)
       }
       req.tenantSettings = settings
+        ? { ...settings, enabledModules: normalizeEnabledModules(settings.enabledModules) }
+        : null
     }
 
     next()

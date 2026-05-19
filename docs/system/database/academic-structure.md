@@ -107,10 +107,15 @@ model AcademicYear {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   startYear Int
   endYear   Int
+  startDate DateTime?
+  endDate   DateTime?
+  isActive  Boolean  @default(false)
 
   @@unique([tenantId, startYear, endYear])
 }
 ```
+
+`AcademicYear` now stores full date window and active state. Semesters are created under academic-year routes and must stay inside this date window.
 
 ## ClassEnrollment
 
@@ -131,6 +136,23 @@ model ClassEnrollment {
 
   @@unique([studentId, semesterId])
   @@index([tenantId, classId, semesterId])
+}
+```
+
+## GraduationArchive
+
+Stores grade-12 promotion archives after final year-end execution.
+
+```prisma
+model GraduationArchive {
+  id             String       @id @default(uuid())
+  tenantId       String
+  studentId      String
+  sourceClassId  String?
+  academicYearId String
+  promotedAt     DateTime     @default(now())
+  note           String?
+  createdBy      String?
 }
 ```
 

@@ -4,9 +4,13 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize, invalidateSettingsCache } = require('../middleware/auth')
 const { body, param, validationResult } = require('express-validator')
 const { AppError } = require('../middleware/errorHandler')
+const { MODULE_KEYS } = require('../constants/module-registry')
+const { requireFeature } = require('../middleware/feature-flags')
+
+router.use(authenticate, requireFeature('settings'))
 
 // GET /settings - Current settings
-router.get('/', authenticate, async (req, res, next) => {
+router.get('/', async (req, res, next) => {
   try {
     const settings = await prisma.tenantSettings.findUnique({
       where: { tenantId: req.tenantId }
@@ -19,7 +23,7 @@ router.get('/', authenticate, async (req, res, next) => {
 })
 
 // PUT /settings - Update settings
-router.put('/', authenticate, authorize('SUPER_ADMIN'), [
+router.put('/', authorize('SUPER_ADMIN'), [
   body('minAge').optional().isInt({ min: 1, max: 100 }),
   body('maxAge').optional().isInt({ min: 1, max: 100 }),
   body('maxClassSize').optional().isInt({ min: 1, max: 200 }),
@@ -30,7 +34,6 @@ router.put('/', authenticate, authorize('SUPER_ADMIN'), [
   body('minScore').optional().isFloat({ min: 0, max: 100 }),
   body('maxScore').optional().isFloat({ min: 0, max: 100 }),
   body('maxSemesters').optional().isInt({ min: 1, max: 4 }),
-  body('maxRetentions').optional().isInt({ min: 1, max: 10 }),
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req)
@@ -41,7 +44,7 @@ router.put('/', authenticate, authorize('SUPER_ADMIN'), [
     const {
       minAge, maxAge, maxClassSize, passScore,
       minGradeLevel, maxGradeLevel, maxSubjects,
-      minScore, maxScore, maxSemesters, maxRetentions
+      minScore, maxScore, maxSemesters
     } = req.body
 
     const current = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
@@ -85,7 +88,6 @@ router.put('/', authenticate, authorize('SUPER_ADMIN'), [
     if (minScore !== undefined) updateData.minScore = minScore
     if (maxScore !== undefined) updateData.maxScore = maxScore
     if (maxSemesters !== undefined) updateData.maxSemesters = maxSemesters
-    if (maxRetentions !== undefined) updateData.maxRetentions = maxRetentions
 
     const settings = await prisma.tenantSettings.update({
       where: { tenantId: req.tenantId },
@@ -102,12 +104,25 @@ router.put('/', authenticate, authorize('SUPER_ADMIN'), [
 // ==================== ROLE PERMISSIONS ====================
 
 const DEFAULT_PERMISSIONS = {
-  STAFF: ['students', 'classes', 'subjects', 'scores', 'reports', 'parents', 'promotion', 'export'],
-  TEACHER: ['scores', 'classes', 'reports'],
+  STAFF: [
+    'users',
+    'student-admission',
+    'student-lookup',
+    'classes',
+    'class-transfer',
+    'subjects',
+    'scores',
+    'reports',
+    'parents',
+    'academic-calendar',
+    'settings',
+    'export',
+  ],
+  TEACHER: ['student-lookup', 'classes', 'scores', 'reports'],
 }
 
 // GET /settings/role-permissions — accessible by all authenticated users so sidebar can filter
-router.get('/role-permissions', authenticate, async (req, res, next) => {
+router.get('/role-permissions', async (req, res, next) => {
   try {
     const settings = await prisma.tenantSettings.findUnique({
       where: { tenantId: req.tenantId }
@@ -125,7 +140,7 @@ router.get('/role-permissions', authenticate, async (req, res, next) => {
 })
 
 // PUT /settings/role-permissions
-router.put('/role-permissions', authenticate, authorize('SUPER_ADMIN'), [
+router.put('/role-permissions', authorize('SUPER_ADMIN'), [
   body('permissions').isObject().withMessage('Permissions must be an object')
 ], async (req, res, next) => {
   try {
@@ -136,7 +151,7 @@ router.put('/role-permissions', authenticate, authorize('SUPER_ADMIN'), [
 
     const { permissions } = req.body
     const allowedRoles = ['STAFF', 'TEACHER']
-    const allowedModules = ['students', 'classes', 'subjects', 'scores', 'reports', 'parents', 'promotion', 'export', 'settings']
+    const allowedModules = MODULE_KEYS.filter((moduleKey) => moduleKey !== 'fees')
 
     // Validate structure
     for (const [role, modules] of Object.entries(permissions)) {
@@ -168,7 +183,7 @@ router.put('/role-permissions', authenticate, authorize('SUPER_ADMIN'), [
 // ==================== GRADE CRUD ====================
 
 // GET /settings/grades
-router.get('/grades', authenticate, async (req, res, next) => {
+router.get('/grades', async (req, res, next) => {
   try {
     const grades = await prisma.grade.findMany({
       where: { tenantId: req.tenantId },
@@ -181,7 +196,7 @@ router.get('/grades', authenticate, async (req, res, next) => {
 })
 
 // POST /settings/grades
-router.post('/grades', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
+router.post('/grades', authorize('SUPER_ADMIN', 'STAFF'), [
   body('name').notEmpty(),
   body('level').isInt({ min: 1 })
 ], async (req, res, next) => {
@@ -218,7 +233,7 @@ router.post('/grades', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
 })
 
 // PUT /settings/grades/:id
-router.put('/grades/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.put('/grades/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const { name, level } = req.body
 
@@ -246,7 +261,7 @@ router.put('/grades/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async
 })
 
 // DELETE /settings/grades/:id
-router.delete('/grades/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.delete('/grades/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const grade = await prisma.grade.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },

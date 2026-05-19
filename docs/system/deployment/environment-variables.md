@@ -26,13 +26,17 @@
 # docker-compose.yml excerpt
 services:
   backend:
-    environment:
-      - PORT=5000
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/cloudschool
-      - CORS_ORIGIN=http://localhost:3000
-      - COOKIE_SECURE=false
+    image: ghcr.io/${GITHUB_REPOSITORY}/backend:${IMAGE_TAG:-latest}
+  frontend:
+    image: ghcr.io/${GITHUB_REPOSITORY}/frontend:${IMAGE_TAG:-latest}
 ```
+
+## Deploy-only Variables (VPS `.env`)
+
+| Variable | Example | Description |
+|----------|---------|-------------|
+| `GITHUB_REPOSITORY` | `owner/repo` | GHCR namespace used by compose images |
+| `IMAGE_TAG` | `<commit-sha>` | Exact image tag to deploy (set by workflow) |
 
 ## Security Notes
 

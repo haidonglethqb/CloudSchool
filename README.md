@@ -115,9 +115,9 @@ docker-compose -f docker-compose.dev.yml up -d
 cd backend
 npm install
 
-# Tạo Prisma client + database tables + seed dữ liệu mẫu
+# Tạo Prisma client + apply migrations + seed dữ liệu mẫu
 npx prisma generate
-npx prisma db push
+npx prisma migrate dev
 npm run db:seed
 
 # Cài packages cho frontend

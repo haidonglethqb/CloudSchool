@@ -21,6 +21,10 @@ interface User {
     id: string
     name: string
     code: string
+    settings?: {
+      enabledModules?: string[]
+      rolePermissions?: Record<string, string[]>
+    } | null
   }
   children?: Child[]
 }

@@ -4,9 +4,12 @@ const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
 const { authenticate, authorize, tenantGuard } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
+const { requireFeature } = require('../middleware/feature-flags')
+
+router.use(authenticate, requireFeature('classes'))
 
 // GET /classes/grades - Get grades with classes
-router.get('/grades', authenticate, tenantGuard, async (req, res, next) => {
+router.get('/grades', tenantGuard, async (req, res, next) => {
   try {
     const grades = await prisma.grade.findMany({
       where: { tenantId: req.tenantId },
@@ -26,7 +29,7 @@ router.get('/grades', authenticate, tenantGuard, async (req, res, next) => {
 })
 
 // GET /classes
-router.get('/', authenticate, async (req, res, next) => {
+router.get('/', async (req, res, next) => {
   try {
     const { gradeId, academicYear } = req.query
 
@@ -68,7 +71,7 @@ router.get('/', authenticate, async (req, res, next) => {
 })
 
 // GET /classes/:id
-router.get('/:id', authenticate, async (req, res, next) => {
+router.get('/:id', async (req, res, next) => {
   try {
     const classInfo = await prisma.class.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },
@@ -96,7 +99,7 @@ router.get('/:id', authenticate, async (req, res, next) => {
 })
 
 // POST /classes
-router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
+router.post('/', authorize('SUPER_ADMIN', 'STAFF'), [
   body('name').notEmpty().withMessage('Class name is required'),
   body('gradeId').notEmpty().withMessage('Grade is required')
 ], async (req, res, next) => {
@@ -131,7 +134,7 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
 })
 
 // PUT /classes/:id
-router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.put('/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const { name, gradeId, academicYear, capacity, isActive } = req.body
 
@@ -177,7 +180,7 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
 })
 
 // DELETE /classes/:id
-router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+router.delete('/:id', authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
     const classInfo = await prisma.class.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },
@@ -209,7 +212,7 @@ router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, n
 })
 
 // POST /classes/:id/assign-teacher
-router.post('/:id/assign-teacher', authenticate, authorize('SUPER_ADMIN'), [
+router.post('/:id/assign-teacher', authorize('SUPER_ADMIN'), [
   body('teacherId').notEmpty(),
   body('subjectId').notEmpty()
 ], async (req, res, next) => {
@@ -248,7 +251,7 @@ router.post('/:id/assign-teacher', authenticate, authorize('SUPER_ADMIN'), [
 })
 
 // DELETE /classes/:id/assign-teacher/:assignmentId
-router.delete('/:id/assign-teacher/:assignmentId', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+router.delete('/:id/assign-teacher/:assignmentId', authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
     const existingAssignment = await prisma.teacherAssignment.findFirst({
       where: { id: req.params.assignmentId, tenantId: req.tenantId }
@@ -263,7 +266,7 @@ router.delete('/:id/assign-teacher/:assignmentId', authenticate, authorize('SUPE
 })
 
 // GET /classes/:id/students
-router.get('/:id/students', authenticate, async (req, res, next) => {
+router.get('/:id/students', async (req, res, next) => {
   try {
     const students = await prisma.student.findMany({
       where: { classId: req.params.id, tenantId: req.tenantId, isActive: true },
@@ -276,7 +279,7 @@ router.get('/:id/students', authenticate, async (req, res, next) => {
 })
 
 // POST /classes/:id/students - Add student to class
-router.post('/:id/students', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.post('/:id/students', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const { studentId } = req.body
 
@@ -309,7 +312,7 @@ router.post('/:id/students', authenticate, authorize('SUPER_ADMIN', 'STAFF'), as
 })
 
 // DELETE /classes/:id/students/:studentId - Remove student from class
-router.delete('/:id/students/:studentId', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.delete('/:id/students/:studentId', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const existingStudent = await prisma.student.findFirst({
       where: { id: req.params.studentId, tenantId: req.tenantId }

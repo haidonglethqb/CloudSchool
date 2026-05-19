@@ -26,7 +26,6 @@ interface Settings {
   minScore: number
   maxScore: number
   maxSemesters: number
-  maxRetentions: number
 }
 
 interface Grade {
@@ -77,7 +76,6 @@ export default function SettingsPage() {
         minScore: editedSettings.minScore,
         maxScore: editedSettings.maxScore,
         maxSemesters: editedSettings.maxSemesters,
-        maxRetentions: editedSettings.maxRetentions,
       })
       toast.success('Lưu cài đặt thành công')
       fetchData()
@@ -235,20 +233,16 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Max Semesters & Retentions */}
+              {/* Max Semesters */}
               <div className="space-y-4 pt-4 border-t border-gray-100">
                 <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                   <Award className="w-5 h-5 text-primary" />
-                  Học kỳ và lưu ban
+                  Học kỳ
                 </h3>
-                <div className="grid grid-cols-2 gap-4 max-w-md">
+                <div className="max-w-xs">
                   <div>
                     <label className="label">Số học kỳ tối đa</label>
                     <input type="number" className="input" value={editedSettings.maxSemesters || ''} onChange={e => setEditedSettings({ ...editedSettings, maxSemesters: parseInt(e.target.value) })} disabled={!isAdmin} />
-                  </div>
-                  <div>
-                    <label className="label">Số lần lưu ban tối đa</label>
-                    <input type="number" className="input" value={editedSettings.maxRetentions || ''} onChange={e => setEditedSettings({ ...editedSettings, maxRetentions: parseInt(e.target.value) })} disabled={!isAdmin} />
                   </div>
                 </div>
               </div>
