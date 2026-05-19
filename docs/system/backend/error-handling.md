@@ -28,6 +28,7 @@ All errors return a consistent JSON structure:
 | `JsonWebTokenError` | `INVALID_TOKEN` | 401 | Malformed or unverifiable JWT |
 | `TokenExpiredError` | `TOKEN_EXPIRED` | 401 | JWT past its `expiresIn` |
 | `AppError` (custom) | `err.code` | `err.statusCode` | Application-level errors |
+| Export PDF runtime failure | `PDF_EXPORT_FAILED` | 500 | Export route wraps PDF-path failures into explicit AppError code |
 | Unknown | `INTERNAL_ERROR` | 500 | Message hidden in production |
 
 ## Prisma Error Handling
@@ -106,7 +107,13 @@ throw new AppError('Class is full', 400, 'CLASS_FULL')
 throw new AppError('Invalid credentials', 401, 'INVALID_CREDENTIALS')
 throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
 throw new AppError('Score is locked', 403, 'SCORE_LOCKED')
+throw new AppError('PDF export failed', 500, 'PDF_EXPORT_FAILED')
 ```
+
+## Export-Specific Behavior
+
+- For `format=pdf` export routes, unexpected non-AppError exceptions are wrapped as `PDF_EXPORT_FAILED` before reaching global error middleware.
+- This avoids silent fallback to generic `INTERNAL_ERROR` for known PDF-path failures.
 
 ## Production Safety
 

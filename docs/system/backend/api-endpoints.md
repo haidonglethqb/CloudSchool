@@ -170,6 +170,9 @@
 | GET | `/export/reports/:type` | Dynamic report export (CSV/XLSX/PDF); supports section toggles and report-specific column toggles |
 | GET | `/export/schools` | Export schools — PLATFORM_ADMIN only (CSV/XLSX/PDF), supports `sections` + `columns` |
 
+Export note:
+- PDF-path runtime failures are normalized to `500` + `error.code = PDF_EXPORT_FAILED`.
+
 ## Monitoring (PLATFORM_ADMIN only)
 
 | Method | Path | Description |

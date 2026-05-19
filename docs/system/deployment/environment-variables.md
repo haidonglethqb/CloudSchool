@@ -13,6 +13,7 @@
 | `COOKIE_SECURE` | `false` | `true` | Secure flag on httpOnly cookies |
 | `TZ_OFFSET_HOURS` | `7` | `7` | Vietnam UTC+7 |
 | `RATE_LIMIT_BYPASS_SECRET` | _empty_ | _empty_ | Playwright test bypass |
+| `EXPORT_DEBUG` | `0` | `0` | Optional export diagnostics (`1` enables PDF export stage logs) |
 
 ## Frontend (`.env.local`)
 
@@ -45,6 +46,7 @@ services:
 - Frontend production build/start fails if `NEXT_PUBLIC_API_URL` is missing
 - Never commit `.env` or `.env.local` to version control
 - Use `COOKIE_SECURE=true` in production with HTTPS
+- Keep `EXPORT_DEBUG=0` in production unless temporarily troubleshooting export failures
 
 ## Related
 - [Docker Setup](./docker-setup.md)

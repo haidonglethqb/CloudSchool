@@ -100,8 +100,17 @@ const [totalSchools, activeSchools, ..., totalPlans] = await Promise.all([
 ])
 ```
 
+## Export PDF Hardening (`GET /export/*?format=pdf`) — export.routes.js
+
+1. **Buffer-before-send:** PDF is generated to an in-memory buffer first, then response headers/body are sent only after successful render.
+2. **Header correctness:** `Content-Type`, `Content-Disposition`, and `Content-Length` are set only on success to avoid mismatched JSON body with PDF headers.
+3. **Footer strategy:** Page numbers are rendered via `bufferPages` + `writePageFooters` after content generation (no `pageAdded` footer loop).
+4. **Fail-safe footer:** Footer rendering failures are caught and ignored so PDF export can still succeed.
+5. **Route-level wrapping:** Unexpected errors on `format=pdf` routes are wrapped to `AppError('PDF export failed', 500, 'PDF_EXPORT_FAILED')` through a shared handler.
+6. **Debug gate:** Optional `EXPORT_DEBUG=1` enables stage-level export diagnostics (`route-error-raw`, `send-pdf-failed`, `footer-failed-continue`).
+
 ## Related
 
 - [API Endpoints](./api-endpoints.md)
 - [Middleware](./middleware.md)
-- Sources: `backend/src/routes/{student,score,promotion,fee,monitoring,admin}.routes.js`
+- Sources: `backend/src/routes/{student,score,promotion,fee,monitoring,admin,export}.routes.js`
