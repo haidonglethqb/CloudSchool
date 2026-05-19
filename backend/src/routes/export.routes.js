@@ -255,9 +255,7 @@ const drawTable = (doc, title, headers, rows) => {
   })
 }
 
-function sendPDF(res, filename, payload) {
-  res.setHeader('Content-Type', 'application/pdf')
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+async function sendPDF(res, filename, payload) {
   const tableColumnCount = payload.table?.headers?.length || 0
   const studentsColumnCount = payload.studentsTable?.headers?.length || 0
   const maxColumnCount = Math.max(tableColumnCount, studentsColumnCount)
@@ -266,79 +264,94 @@ function sendPDF(res, filename, payload) {
     layout: maxColumnCount >= 8 ? 'landscape' : 'portrait',
     margins: { top: 42, right: 36, bottom: 42, left: 36 }
   })
-  doc.pipe(res)
 
-  if (fs.existsSync(PDF_FONT_REGULAR) && fs.existsSync(PDF_FONT_BOLD)) {
-    doc.registerFont('VN-Regular', PDF_FONT_REGULAR)
-    doc.registerFont('VN-Bold', PDF_FONT_BOLD)
-  } else {
-    doc.registerFont('VN-Regular', 'Helvetica')
-    doc.registerFont('VN-Bold', 'Helvetica-Bold')
-  }
+  const chunks = []
+  const pdfBuffer = await new Promise((resolve, reject) => {
+    doc.on('data', (chunk) => chunks.push(chunk))
+    doc.on('end', () => resolve(Buffer.concat(chunks)))
+    doc.on('error', reject)
 
-  let pageNumber = 1
-  const writeFooter = () => {
-    const currentX = doc.x
-    const currentY = doc.y
-    const width = doc.page.width - doc.page.margins.left - doc.page.margins.right
-    const y = doc.page.height - doc.page.margins.bottom + 12
-    doc.font('VN-Regular').fontSize(8).fillColor(PDF_COLORS.muted).text(`Trang ${pageNumber}`, doc.page.margins.left, y, {
-      width,
-      align: 'right'
-    })
-    doc.x = currentX
-    doc.y = currentY
-    doc.fillColor(PDF_COLORS.text)
-  }
-  doc.on('pageAdded', () => {
-    pageNumber += 1
-    writeFooter()
+    try {
+      if (fs.existsSync(PDF_FONT_REGULAR) && fs.existsSync(PDF_FONT_BOLD)) {
+        doc.registerFont('VN-Regular', PDF_FONT_REGULAR)
+        doc.registerFont('VN-Bold', PDF_FONT_BOLD)
+      } else {
+        doc.registerFont('VN-Regular', 'Helvetica')
+        doc.registerFont('VN-Bold', 'Helvetica-Bold')
+      }
+
+      let pageNumber = 1
+      const writeFooter = () => {
+        const currentX = doc.x
+        const currentY = doc.y
+        const width = doc.page.width - doc.page.margins.left - doc.page.margins.right
+        const y = doc.page.height - doc.page.margins.bottom + 12
+        doc.font('VN-Regular').fontSize(8).fillColor(PDF_COLORS.muted).text(`Trang ${pageNumber}`, doc.page.margins.left, y, {
+          width,
+          align: 'right'
+        })
+        doc.x = currentX
+        doc.y = currentY
+        doc.fillColor(PDF_COLORS.text)
+      }
+      doc.on('pageAdded', () => {
+        pageNumber += 1
+        writeFooter()
+      })
+      writeFooter()
+
+      if (payload.sections.has('cover')) {
+        doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(18).text(normalizePdfText(payload.schoolName || 'CloudSchool'), { align: 'center' })
+        doc.moveDown(0.25)
+        doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(15).text(normalizePdfText(payload.title), { align: 'center' })
+        doc.moveDown(0.25)
+        doc.font('VN-Regular').fillColor(PDF_COLORS.muted).fontSize(10).text(`Ngày xuất: ${new Date().toLocaleString('vi-VN')}`, { align: 'center' })
+      }
+
+      if (payload.sections.has('filters') && payload.filters.length > 0) {
+        doc.moveDown(1)
+        doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(11).text('Bộ lọc áp dụng')
+        doc.moveDown(0.3)
+        writeKVRows(doc, payload.filters, 160)
+      }
+
+      if (payload.sections.has('summary') && payload.summary.length > 0) {
+        doc.moveDown(0.8)
+        doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(11).text('Tổng hợp')
+        doc.moveDown(0.3)
+        writeKVRows(doc, payload.summary, 160)
+      }
+
+      if (payload.sections.has('table') && payload.table) {
+        drawTable(doc, payload.table.title, payload.table.headers, payload.table.rows)
+      }
+
+      if (payload.sections.has('students') && payload.studentsTable) {
+        drawTable(doc, payload.studentsTable.title, payload.studentsTable.headers, payload.studentsTable.rows)
+      }
+
+      if (payload.sections.has('signature')) {
+        const signatureBlockHeight = 84
+        const limit = doc.page.height - doc.page.margins.bottom - signatureBlockHeight
+        if (doc.y > limit) doc.addPage()
+        doc.y = Math.max(doc.y + 16, doc.page.height - 130)
+        doc.font('VN-Regular').fillColor(PDF_COLORS.text).fontSize(10).text(`Ngày ${new Date().getDate()} tháng ${new Date().getMonth() + 1} năm ${new Date().getFullYear()}`, { align: 'right' })
+        doc.moveDown(0.2)
+        doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(10).text('Người lập báo cáo', { align: 'right' })
+        doc.moveDown(2.5)
+        doc.font('VN-Regular').fillColor(PDF_COLORS.muted).fontSize(10).text('(Ký và ghi rõ họ tên)', { align: 'right' })
+      }
+
+      doc.end()
+    } catch (error) {
+      reject(error)
+    }
   })
-  writeFooter()
 
-  if (payload.sections.has('cover')) {
-    doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(18).text(normalizePdfText(payload.schoolName || 'CloudSchool'), { align: 'center' })
-    doc.moveDown(0.25)
-    doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(15).text(normalizePdfText(payload.title), { align: 'center' })
-    doc.moveDown(0.25)
-    doc.font('VN-Regular').fillColor(PDF_COLORS.muted).fontSize(10).text(`Ngày xuất: ${new Date().toLocaleString('vi-VN')}`, { align: 'center' })
-  }
-
-  if (payload.sections.has('filters') && payload.filters.length > 0) {
-    doc.moveDown(1)
-    doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(11).text('Bộ lọc áp dụng')
-    doc.moveDown(0.3)
-    writeKVRows(doc, payload.filters, 160)
-  }
-
-  if (payload.sections.has('summary') && payload.summary.length > 0) {
-    doc.moveDown(0.8)
-    doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(11).text('Tổng hợp')
-    doc.moveDown(0.3)
-    writeKVRows(doc, payload.summary, 160)
-  }
-
-  if (payload.sections.has('table') && payload.table) {
-    drawTable(doc, payload.table.title, payload.table.headers, payload.table.rows)
-  }
-
-  if (payload.sections.has('students') && payload.studentsTable) {
-    drawTable(doc, payload.studentsTable.title, payload.studentsTable.headers, payload.studentsTable.rows)
-  }
-
-  if (payload.sections.has('signature')) {
-    const signatureBlockHeight = 84
-    const limit = doc.page.height - doc.page.margins.bottom - signatureBlockHeight
-    if (doc.y > limit) doc.addPage()
-    doc.y = Math.max(doc.y + 16, doc.page.height - 130)
-    doc.font('VN-Regular').fillColor(PDF_COLORS.text).fontSize(10).text(`Ngày ${new Date().getDate()} tháng ${new Date().getMonth() + 1} năm ${new Date().getFullYear()}`, { align: 'right' })
-    doc.moveDown(0.2)
-    doc.font('VN-Bold').fillColor(PDF_COLORS.text).fontSize(10).text('Người lập báo cáo', { align: 'right' })
-    doc.moveDown(2.5)
-    doc.font('VN-Regular').fillColor(PDF_COLORS.muted).fontSize(10).text('(Ký và ghi rõ họ tên)', { align: 'right' })
-  }
-
-  doc.end()
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+  res.setHeader('Content-Length', String(pdfBuffer.length))
+  res.send(pdfBuffer)
 }
 
 const mapGenderLabel = (gender) => {
@@ -427,7 +440,7 @@ router.get('/students', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), req
     if (format === 'pdf') {
       const sections = normalizeSections(req.query.sections, PDF_SECTION_KEYS, DEFAULT_COMMON_SECTIONS).selectedSet
       const schoolName = await getTenantDisplayName(req)
-      sendPDF(res, `${filename}.pdf`, {
+      await sendPDF(res, `${filename}.pdf`, {
         title: 'Danh sách học sinh',
         schoolName,
         sections,
@@ -490,7 +503,7 @@ router.get('/classes', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), requ
     if (format === 'pdf') {
       const sections = normalizeSections(req.query.sections, PDF_SECTION_KEYS, DEFAULT_COMMON_SECTIONS).selectedSet
       const schoolName = await getTenantDisplayName(req)
-      sendPDF(res, `${filename}.pdf`, {
+      await sendPDF(res, `${filename}.pdf`, {
         title: 'Danh sách lớp',
         schoolName,
         sections,
@@ -601,7 +614,7 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADM
     if (format === 'pdf') {
       const sections = normalizeSections(req.query.sections, PDF_SECTION_KEYS, DEFAULT_COMMON_SECTIONS).selectedSet
       const schoolName = await getTenantDisplayName(req)
-      sendPDF(res, `${filename}.pdf`, {
+      await sendPDF(res, `${filename}.pdf`, {
         title: 'Bảng điểm môn học',
         schoolName,
         sections,
@@ -831,7 +844,7 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
 
     if (format === 'pdf') {
       const schoolName = await getTenantDisplayName(req)
-      sendPDF(res, `${filename}.pdf`, {
+      await sendPDF(res, `${filename}.pdf`, {
         title: reportTitle,
         schoolName,
         sections,
@@ -884,7 +897,7 @@ router.get('/schools', authorize('PLATFORM_ADMIN'), async (req, res, next) => {
     }
     if (format === 'pdf') {
       const sections = normalizeSections(req.query.sections, PDF_SECTION_KEYS, DEFAULT_COMMON_SECTIONS).selectedSet
-      sendPDF(res, `${filename}.pdf`, {
+      await sendPDF(res, `${filename}.pdf`, {
         title: 'Danh sách trường',
         schoolName: 'CloudSchool Platform',
         sections,
