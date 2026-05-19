@@ -164,11 +164,11 @@
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/export/students` | Export students (CSV/Excel) |
-| GET | `/export/classes` | Export classes (CSV/Excel) |
-| GET | `/export/scores` | Export scores for class+subject+semester (CSV/Excel) |
-| GET | `/export/reports/:type` | Dynamic report export; `sections` controls exported parts |
-| GET | `/export/schools` | Export schools — PLATFORM_ADMIN only (CSV/Excel) |
+| GET | `/export/students` | Export students (CSV/XLSX/PDF), supports `sections` + `columns` |
+| GET | `/export/classes` | Export classes (CSV/XLSX/PDF), supports `sections` + `columns` |
+| GET | `/export/scores` | Export scores for class+subject+semester (CSV/XLSX/PDF), supports `sections` + `columns` |
+| GET | `/export/reports/:type` | Dynamic report export (CSV/XLSX/PDF); supports section toggles and report-specific column toggles |
+| GET | `/export/schools` | Export schools — PLATFORM_ADMIN only (CSV/XLSX/PDF), supports `sections` + `columns` |
 
 ## Monitoring (PLATFORM_ADMIN only)
 

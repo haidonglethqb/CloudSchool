@@ -22,6 +22,7 @@
 | **dotenv** | 17.3.1 | Environment variables |
 | **exceljs** | 4.4.0 | Excel export |
 | **json2csv** | 6.0.0-alpha.2 | CSV export |
+| **pdfkit** | 0.18.0 | PDF export |
 
 ## Frontend
 

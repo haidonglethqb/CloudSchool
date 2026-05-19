@@ -1,5 +1,7 @@
 const express = require('express')
 const router = express.Router()
+const fs = require('fs')
+const path = require('path')
 const prisma = require('../lib/prisma')
 const ExcelJS = require('exceljs')
 const PDFDocument = require('pdfkit')
@@ -10,8 +12,8 @@ const { AppError } = require('../middleware/errorHandler')
 const PDF_SECTION_KEYS = ['cover', 'filters', 'summary', 'table', 'students', 'signature']
 const DEFAULT_COMMON_SECTIONS = ['cover', 'filters', 'summary', 'table', 'signature']
 
-const PDF_FONT_REGULAR = '@fontsource/noto-sans/files/noto-sans-latin-ext-400-normal.woff'
-const PDF_FONT_BOLD = '@fontsource/noto-sans/files/noto-sans-latin-ext-700-normal.woff'
+const PDF_FONT_REGULAR = path.join(__dirname, '../assets/fonts/NotoSans-Regular.ttf')
+const PDF_FONT_BOLD = path.join(__dirname, '../assets/fonts/NotoSans-Bold.ttf')
 
 const normalizeFormat = (format) => {
   if (!format) return 'csv'
@@ -105,14 +107,6 @@ async function sendExcel(res, filename, sheets) {
   res.end()
 }
 
-const tryResolveFont = (fontSpec) => {
-  try {
-    return require.resolve(fontSpec)
-  } catch {
-    return null
-  }
-}
-
 const writeKVRows = (doc, rows, labelWidth) => {
   for (const row of rows) {
     doc.font('VN-Bold').fontSize(10).text(`${row.label}:`, { continued: true, width: labelWidth })
@@ -192,11 +186,9 @@ function sendPDF(res, filename, payload) {
   const doc = new PDFDocument({ size: 'A4', margin: 36 })
   doc.pipe(res)
 
-  const regularPath = tryResolveFont(PDF_FONT_REGULAR)
-  const boldPath = tryResolveFont(PDF_FONT_BOLD)
-  if (regularPath && boldPath) {
-    doc.registerFont('VN-Regular', regularPath)
-    doc.registerFont('VN-Bold', boldPath)
+  if (fs.existsSync(PDF_FONT_REGULAR) && fs.existsSync(PDF_FONT_BOLD)) {
+    doc.registerFont('VN-Regular', PDF_FONT_REGULAR)
+    doc.registerFont('VN-Bold', PDF_FONT_BOLD)
   } else {
     doc.registerFont('VN-Regular', 'Helvetica')
     doc.registerFont('VN-Bold', 'Helvetica-Bold')
