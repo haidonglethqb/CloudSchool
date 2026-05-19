@@ -1,5 +1,26 @@
--- Schema columns are created in the initial migration.
--- This migration keeps only data backfill steps for existing databases.
+-- Legacy-safe: ensure required columns exist for databases that were previously
+-- managed by db push / partially baselined migrations.
+ALTER TABLE "tenant_settings"
+ADD COLUMN IF NOT EXISTS "enabledModules" JSONB;
+
+ALTER TABLE "academic_years"
+ADD COLUMN IF NOT EXISTS "startDate" TIMESTAMP(3);
+
+ALTER TABLE "academic_years"
+ADD COLUMN IF NOT EXISTS "endDate" TIMESTAMP(3);
+
+ALTER TABLE "academic_years"
+ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN;
+
+UPDATE "academic_years"
+SET "isActive" = false
+WHERE "isActive" IS NULL;
+
+ALTER TABLE "academic_years"
+ALTER COLUMN "isActive" SET DEFAULT false;
+
+ALTER TABLE "academic_years"
+ALTER COLUMN "isActive" SET NOT NULL;
 
 -- Backfill module defaults for existing tenants (all modules except fees)
 UPDATE "tenant_settings"

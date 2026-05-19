@@ -96,10 +96,34 @@ async function main () {
       where: { id: existingTenant.id },
       data: { planId: plan.id }
     })
-    await prisma.tenantSettings.updateMany({
-      where: { tenantId: existingTenant.id, enabledModules: null },
-      data: { enabledModules: DEFAULT_ENABLED_MODULES }
+    const existingSettings = await prisma.tenantSettings.findUnique({
+      where: { tenantId: existingTenant.id },
+      select: {
+        id: true,
+        enabledModules: true,
+        minAge: true,
+        maxAge: true,
+        maxClassSize: true,
+        passScore: true
+      }
     })
+    if (!existingSettings) {
+      await prisma.tenantSettings.create({
+        data: {
+          tenantId: existingTenant.id,
+          minAge: 15,
+          maxAge: 20,
+          maxClassSize: 40,
+          passScore: 5.0,
+          enabledModules: DEFAULT_ENABLED_MODULES
+        }
+      })
+    } else if (existingSettings.enabledModules === null || existingSettings.enabledModules === undefined) {
+      await prisma.tenantSettings.update({
+        where: { id: existingSettings.id },
+        data: { enabledModules: DEFAULT_ENABLED_MODULES }
+      })
+    }
 
     await prisma.subscriptionPlan.deleteMany({
       where: {
