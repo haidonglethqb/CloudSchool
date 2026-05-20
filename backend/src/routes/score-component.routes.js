@@ -3,10 +3,11 @@ const router = express.Router()
 const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
+const { requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 
 // GET /score-components
-router.get('/', authenticate, async (req, res, next) => {
+router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
   try {
     const { subjectId } = req.query
 
@@ -28,7 +29,7 @@ router.get('/', authenticate, async (req, res, next) => {
 })
 
 // POST /score-components
-router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
+router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('subjects'), [
   body('name').notEmpty().withMessage('Component name is required'),
   body('weight').isInt({ min: 1, max: 100 }).withMessage('Weight must be 1-100'),
   body('subjectId').notEmpty().withMessage('Subject ID is required')
@@ -79,7 +80,7 @@ router.post('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), [
 })
 
 // PUT /score-components/:id
-router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('subjects'), async (req, res, next) => {
   try {
     const { name, weight } = req.body
 
@@ -134,7 +135,7 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
 })
 
 // DELETE /score-components/:id
-router.delete('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.delete('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('subjects'), async (req, res, next) => {
   try {
     const existing = await prisma.scoreComponent.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId }

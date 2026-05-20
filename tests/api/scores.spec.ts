@@ -21,6 +21,8 @@ test.describe('Scores', () => {
   let classId: string;
   let subjectId: string;
   let semesterId: string;
+  let writableSemesterId: string;
+  let closedSemesterId: string;
   let studentId: string;
   let scoreComponentId: string;
 
@@ -51,14 +53,28 @@ test.describe('Scores', () => {
       studentId = studentsBody.data?.[0]?.id;
     }
 
-    // Get the active semester
-    const academicYearsRes = await superAdminCtx.get('/api/academic-years');
-    if (academicYearsRes.ok()) {
-      const ayBody = await academicYearsRes.json();
-      const years = ayBody.data;
-      if (years?.[0]?.semesters) {
-        semesterId = years[0].semesters[0]?.id;
-      }
+    const semestersRes = await superAdminCtx.get('/api/academic-years/semesters');
+    if (semestersRes.ok()) {
+      const semestersBody = await semestersRes.json();
+      const semesters = semestersBody.data || [];
+      semesterId = semesters[0]?.id;
+
+      const now = new Date();
+      const writable = semesters.find((sem: any) => {
+        if (!sem?.isActive || !sem?.startDate || !sem?.endDate) return false;
+        const start = new Date(sem.startDate);
+        const end = new Date(sem.endDate);
+        return now >= start && now <= end;
+      });
+      writableSemesterId = writable?.id;
+
+      const closed = semesters.find((sem: any) => {
+        if (!sem?.startDate || !sem?.endDate) return true;
+        const start = new Date(sem.startDate);
+        const end = new Date(sem.endDate);
+        return !sem.isActive || now < start || now > end;
+      });
+      closedSemesterId = closed?.id;
     }
   });
 
@@ -103,7 +119,7 @@ test.describe('Scores', () => {
 
   test.describe('Upsert Score', () => {
     test('STAFF can upsert a single score', async () => {
-      if (!studentId || !scoreComponentId || !semesterId) {
+      if (!studentId || !scoreComponentId || !subjectId || !writableSemesterId) {
         test.skip();
         return;
       }
@@ -111,8 +127,9 @@ test.describe('Scores', () => {
       const response = await staffCtx.post('/api/scores', {
         data: {
           studentId,
+          subjectId,
           scoreComponentId,
-          semesterId,
+          semesterId: writableSemesterId,
           value: 8.5,
         },
       });
@@ -120,7 +137,7 @@ test.describe('Scores', () => {
     });
 
     test('upsert score with invalid value returns 400', async () => {
-      if (!studentId || !scoreComponentId || !semesterId) {
+      if (!studentId || !scoreComponentId || !subjectId || !writableSemesterId) {
         test.skip();
         return;
       }
@@ -128,18 +145,71 @@ test.describe('Scores', () => {
       const response = await staffCtx.post('/api/scores', {
         data: {
           studentId,
+          subjectId,
           scoreComponentId,
-          semesterId,
+          semesterId: writableSemesterId,
           value: 15, // Max is 10
         },
       });
       expect(response.status()).toBe(400);
     });
+
+    test('upsert score with closed semester returns 403 SEMESTER_CLOSED', async () => {
+      if (!studentId || !scoreComponentId || !subjectId || !closedSemesterId) {
+        test.skip();
+        return;
+      }
+
+      const response = await staffCtx.post('/api/scores', {
+        data: {
+          studentId,
+          subjectId,
+          scoreComponentId,
+          semesterId: closedSemesterId,
+          value: 8.5,
+        },
+      });
+      expect(response.status()).toBe(403);
+      const body = await response.json();
+      expect(body.error?.code).toBe('SEMESTER_CLOSED');
+    });
+
+    test('component subject mismatch returns 400 COMPONENT_SUBJECT_MISMATCH', async () => {
+      if (!studentId || !scoreComponentId || !writableSemesterId) {
+        test.skip();
+        return;
+      }
+
+      const subjectsRes = await superAdminCtx.get('/api/subjects');
+      if (!subjectsRes.ok()) {
+        test.skip();
+        return;
+      }
+      const subjectsBody = await subjectsRes.json();
+      const anotherSubject = (subjectsBody.data || []).find((subject: any) => subject.id !== subjectId);
+      if (!anotherSubject?.id) {
+        test.skip();
+        return;
+      }
+
+      const response = await staffCtx.post('/api/scores', {
+        data: {
+          studentId,
+          subjectId: anotherSubject.id,
+          scoreComponentId,
+          semesterId: writableSemesterId,
+          value: 6.5,
+        },
+      });
+      expect(response.status()).toBe(400);
+      const body = await response.json();
+      expect(body.error?.code).toBe('COMPONENT_SUBJECT_MISMATCH');
+    });
   });
 
   test.describe('Batch Upsert', () => {
     test('TEACHER can batch upsert scores', async () => {
-      if (!studentId || !scoreComponentId || !semesterId) {
+      if (!studentId || !scoreComponentId || !subjectId || !writableSemesterId) {
         test.skip();
         return;
       }
@@ -149,19 +219,19 @@ test.describe('Scores', () => {
           scores: [
             {
               studentId,
+              subjectId,
               scoreComponentId,
-              semesterId,
+              semesterId: writableSemesterId,
               value: 7.0,
             },
           ],
         },
       });
-      // May succeed, or fail based on teacher assignment/semester date window
-      expect([200, 201, 403, 400]).toContain(response.status());
+      expect([200, 201, 403]).toContain(response.status());
     });
 
     test('STAFF can batch upsert scores', async () => {
-      if (!studentId || !scoreComponentId || !semesterId) {
+      if (!studentId || !scoreComponentId || !subjectId || !writableSemesterId) {
         test.skip();
         return;
       }
@@ -171,8 +241,9 @@ test.describe('Scores', () => {
           scores: [
             {
               studentId,
+              subjectId,
               scoreComponentId,
-              semesterId,
+              semesterId: writableSemesterId,
               value: 7.5,
             },
           ],

@@ -5,9 +5,9 @@ const { authenticate, authorize, invalidateSettingsCache } = require('../middlew
 const { body, param, validationResult } = require('express-validator')
 const { AppError } = require('../middleware/errorHandler')
 const { MODULE_KEYS } = require('../constants/module-registry')
-const { requireFeature } = require('../middleware/feature-flags')
+const { requireFeature, requireRolePermission, DEFAULT_ROLE_PERMISSIONS, normalizeRolePermissions } = require('../middleware/feature-flags')
 
-router.use(authenticate, requireFeature('settings'))
+router.use(authenticate, requireFeature('settings'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('settings'))
 
 // GET /settings - Current settings
 router.get('/', async (req, res, next) => {
@@ -103,24 +103,6 @@ router.put('/', authorize('SUPER_ADMIN'), [
 
 // ==================== ROLE PERMISSIONS ====================
 
-const DEFAULT_PERMISSIONS = {
-  STAFF: [
-    'users',
-    'student-admission',
-    'student-lookup',
-    'classes',
-    'class-transfer',
-    'subjects',
-    'scores',
-    'reports',
-    'parents',
-    'academic-calendar',
-    'settings',
-    'export',
-  ],
-  TEACHER: ['student-lookup', 'classes', 'scores', 'reports'],
-}
-
 // GET /settings/role-permissions — accessible by all authenticated users so sidebar can filter
 router.get('/role-permissions', async (req, res, next) => {
   try {
@@ -129,9 +111,7 @@ router.get('/role-permissions', async (req, res, next) => {
     })
     if (!settings) throw new AppError('Settings not found', 404, 'NOT_FOUND')
 
-    const permissions = settings.rolePermissions && Object.keys(settings.rolePermissions).length > 0
-      ? settings.rolePermissions
-      : DEFAULT_PERMISSIONS
+    const permissions = normalizeRolePermissions(settings.rolePermissions)
 
     res.json({ data: permissions })
   } catch (error) {
@@ -151,7 +131,7 @@ router.put('/role-permissions', authorize('SUPER_ADMIN'), [
 
     const { permissions } = req.body
     const allowedRoles = ['STAFF', 'TEACHER']
-    const allowedModules = MODULE_KEYS.filter((moduleKey) => moduleKey !== 'fees')
+    const allowedModules = MODULE_KEYS
 
     // Validate structure
     for (const [role, modules] of Object.entries(permissions)) {
@@ -170,7 +150,12 @@ router.put('/role-permissions', authorize('SUPER_ADMIN'), [
 
     const settings = await prisma.tenantSettings.update({
       where: { tenantId: req.tenantId },
-      data: { rolePermissions: permissions }
+      data: {
+        rolePermissions: {
+          STAFF: permissions.STAFF || DEFAULT_ROLE_PERMISSIONS.STAFF,
+          TEACHER: permissions.TEACHER || DEFAULT_ROLE_PERMISSIONS.TEACHER,
+        }
+      }
     })
 
     invalidateSettingsCache(req.tenantId)

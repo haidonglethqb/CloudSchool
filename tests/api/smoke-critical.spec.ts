@@ -4,14 +4,17 @@ import { createAuthContext } from '../helpers/api-client'
 let superAdminCtx: APIRequestContext
 let staffCtx: APIRequestContext
 let teacherCtx: APIRequestContext
+let platformAdminCtx: APIRequestContext
 
 test.beforeAll(async () => {
+  platformAdminCtx = await createAuthContext('PLATFORM_ADMIN')
   superAdminCtx = await createAuthContext('SUPER_ADMIN')
   staffCtx = await createAuthContext('STAFF')
   teacherCtx = await createAuthContext('TEACHER')
 })
 
 test.afterAll(async () => {
+  await platformAdminCtx.dispose()
   await superAdminCtx.dispose()
   await staffCtx.dispose()
   await teacherCtx.dispose()
@@ -41,16 +44,65 @@ test.describe('Critical Smoke', () => {
     expect([401, 403, 404]).toContain(response.status())
   })
 
+  test('platform admin create school requires admin password', async () => {
+    const response = await platformAdminCtx.post('/api/admin/schools', {
+      data: {
+        name: `Smoke School ${Date.now()}`,
+        adminEmail: `smoke-admin-${Date.now()}@school.test`,
+        adminName: 'Smoke Admin',
+      },
+    })
+    expect(response.status()).toBe(400)
+  })
+
+  test('platform admin can create school and new admin can login', async ({ request }) => {
+    const suffix = Date.now()
+    const adminEmail = `school-admin-${suffix}@school.test`
+    const adminPassword = 'Secret123'
+    const schoolName = `Smoke Academy ${suffix}`
+
+    const createRes = await platformAdminCtx.post('/api/admin/schools', {
+      data: {
+        name: schoolName,
+        adminEmail,
+        adminName: 'Initial Admin',
+        adminPassword,
+      },
+    })
+    expect(createRes.status()).toBe(201)
+    const createBody = await createRes.json()
+    expect(createBody.data?.tenant?.code).toBeTruthy()
+    expect(createBody.data?.initialAdmin?.email).toBe(adminEmail)
+
+    const loginRes = await request.post('/api/auth/login', {
+      data: {
+        email: adminEmail,
+        password: adminPassword,
+        tenantCode: createBody.data.tenant.code,
+      },
+    })
+    expect(loginRes.status()).toBe(200)
+    const loginBody = await loginRes.json()
+    expect(loginBody.data?.user?.role).toBe('SUPER_ADMIN')
+  })
+
   test('locked score cannot be updated by teacher', async () => {
+    const now = new Date()
     const subjectsRes = await superAdminCtx.get('/api/subjects')
     expect(subjectsRes.status()).toBe(200)
     const subjectsBody = await subjectsRes.json()
     const subjectId = subjectsBody.data?.[0]?.id
 
-    const semestersRes = await superAdminCtx.get('/api/subjects/semesters')
+    const semestersRes = await superAdminCtx.get('/api/academic-years/semesters')
     expect(semestersRes.status()).toBe(200)
     const semestersBody = await semestersRes.json()
-    const semesterId = semestersBody.data?.[0]?.id
+    const writableSemester = (semestersBody.data || []).find((sem: any) => {
+      if (!sem?.isActive || !sem?.startDate || !sem?.endDate) return false
+      const start = new Date(sem.startDate)
+      const end = new Date(sem.endDate)
+      return now >= start && now <= end
+    })
+    const semesterId = writableSemester?.id
 
     if (!subjectId || !semesterId) {
       test.skip(true, 'Seed data missing subject/semester')

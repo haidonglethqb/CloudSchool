@@ -23,6 +23,8 @@ interface Semester {
   id: string
   name: string
   isActive: boolean
+  startDate?: string | null
+  endDate?: string | null
 }
 
 interface ScoreComponent {
@@ -64,6 +66,27 @@ export default function ScoresPage() {
   >(new Map())
   const user = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'PLATFORM_ADMIN' || user?.role === 'STAFF'
+  const now = new Date()
+  const selectedSemesterMeta = semesters.find((semester) => semester.id === selectedSemester)
+  const selectedSemesterStart = selectedSemesterMeta?.startDate ? new Date(selectedSemesterMeta.startDate) : null
+  const selectedSemesterEnd = selectedSemesterMeta?.endDate ? new Date(selectedSemesterMeta.endDate) : null
+  const isSemesterOpenForEntry = Boolean(
+    selectedSemesterMeta?.isActive &&
+    selectedSemesterStart &&
+    selectedSemesterEnd &&
+    now >= selectedSemesterStart &&
+    now <= selectedSemesterEnd
+  )
+
+  const getSemesterStatusLabel = (semester: Semester) => {
+    if (!semester.isActive || !semester.startDate || !semester.endDate) return 'Đã dừng'
+    const start = new Date(semester.startDate)
+    const end = new Date(semester.endDate)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 'Đã dừng'
+    if (now < start) return 'Chưa mở'
+    if (now > end) return 'Đã dừng'
+    return 'Đang mở'
+  }
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -170,6 +193,10 @@ export default function ScoresPage() {
 
   const handleSave = async () => {
     if (editedScores.size === 0) { toast.error('Không có thay đổi để lưu'); return }
+    if (!isSemesterOpenForEntry) {
+      toast.error('Kỳ này chưa mở hoặc đã dừng nhập điểm')
+      return
+    }
     try {
       setSaving(true)
       const scores = Array.from(editedScores.values()).map(s => ({
@@ -182,6 +209,10 @@ export default function ScoresPage() {
       setEditedScores(new Map())
       fetchScores()
     } catch (err: any) {
+      if (err.response?.data?.error?.code === 'SEMESTER_CLOSED') {
+        toast.error('Kỳ này chưa mở hoặc đã dừng nhập điểm')
+        return
+      }
       toast.error(err.response?.data?.error?.message || 'Lưu điểm thất bại')
     } finally { setSaving(false) }
   }
@@ -238,10 +269,10 @@ export default function ScoresPage() {
         <div className="flex gap-2">
           {isAdmin && selectedClass && selectedSubject && selectedSemester && (
             <>
-              <button onClick={handleLockClass} className="btn-outline text-yellow-600 border-yellow-300 hover:bg-yellow-50">
+              <button onClick={handleLockClass} disabled={!isSemesterOpenForEntry} className="btn-outline text-yellow-600 border-yellow-300 hover:bg-yellow-50 disabled:opacity-50 disabled:cursor-not-allowed">
                 <Lock className="w-4 h-4 mr-1" /> Khóa lớp
               </button>
-              <button onClick={handleUnlockClass} className="btn-outline text-green-600 border-green-300 hover:bg-green-50">
+              <button onClick={handleUnlockClass} disabled={!isSemesterOpenForEntry} className="btn-outline text-green-600 border-green-300 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed">
                 <Unlock className="w-4 h-4 mr-1" /> Mở khóa lớp
               </button>
             </>
@@ -260,7 +291,7 @@ export default function ScoresPage() {
               <Download className="w-4 h-4 mr-1" /> Xuất
             </button>
           )}
-          <button onClick={handleSave} disabled={!hasChanges || saving} className="btn-primary">
+          <button onClick={handleSave} disabled={!hasChanges || saving || !isSemesterOpenForEntry} className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
             Lưu điểm ({editedScores.size})
           </button>
@@ -288,10 +319,13 @@ export default function ScoresPage() {
             <label className="label">Học kỳ</label>
             <select className="input" value={selectedSemester} onChange={e => setSelectedSemester(e.target.value)}>
               <option value="">Chọn học kỳ</option>
-              {semesters.map(s => <option key={s.id} value={s.id}>{s.name} {s.isActive && '(Hiện tại)'}</option>)}
+              {semesters.map(s => <option key={s.id} value={s.id}>{s.name} - {getSemesterStatusLabel(s)}</option>)}
             </select>
           </div>
         </div>
+        {selectedSemester && !isSemesterOpenForEntry && (
+          <p className="text-sm text-amber-700 mt-3">Kỳ này chưa mở hoặc đã dừng nhập điểm</p>
+        )}
       </div>
 
       {/* Score Table */}
@@ -350,7 +384,7 @@ export default function ScoresPage() {
                                 min="0"
                                 max="10"
                                 step="0.1"
-                                disabled={isLocked}
+                                disabled={isLocked || !isSemesterOpenForEntry}
                                 className={`w-14 px-1 py-1 text-center text-sm border rounded focus:outline-none focus:ring-1 focus:ring-primary ${isLocked ? 'bg-gray-100 text-gray-400 border-gray-200' : 'border-gray-200'}`}
                                 value={entry?.value ?? ''}
                                 onChange={e => handleScoreChange(st.studentId, c.id, e.target.value)}

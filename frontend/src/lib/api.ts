@@ -76,7 +76,7 @@ export const adminApi = {
   listSchools: (params?: { search?: string; status?: string; page?: number; limit?: number }) =>
     api.get('/admin/schools', { params }),
   getSchool: (id: string) => api.get(`/admin/schools/${id}`),
-  createSchool: (data: { name: string; address?: string; phone?: string; email?: string; adminEmail: string; adminName: string; adminPassword?: string; planId?: string }) =>
+  createSchool: (data: { name: string; address?: string; phone?: string; email?: string; adminEmail: string; adminName: string; adminPassword: string; planId?: string }) =>
     api.post('/admin/schools', data),
   updateSchool: (id: string, data: Record<string, unknown>) => api.put(`/admin/schools/${id}`, data),
   deleteSchool: (id: string) => api.delete(`/admin/schools/${id}`),

@@ -14,13 +14,16 @@ const ROLES = [
 ]
 
 const MODULES = [
-  { key: 'students', label: 'Học sinh' },
+  { key: 'student-admission', label: 'Tiếp nhận học sinh' },
+  { key: 'student-lookup', label: 'Tra cứu học sinh' },
   { key: 'classes', label: 'Lớp học' },
+  { key: 'class-transfer', label: 'Chuyển lớp' },
   { key: 'subjects', label: 'Môn học' },
   { key: 'scores', label: 'Điểm số' },
   { key: 'reports', label: 'Báo cáo' },
   { key: 'parents', label: 'Phụ huynh' },
-  { key: 'promotion', label: 'Xét lên lớp' },
+  { key: 'academic-calendar', label: 'Năm học & học kỳ' },
+  { key: 'fees', label: 'Học phí' },
   { key: 'export', label: 'Xuất dữ liệu' },
   { key: 'settings', label: 'Cài đặt' },
 ]

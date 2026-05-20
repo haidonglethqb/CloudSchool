@@ -35,10 +35,12 @@ graph TD
 |------------------------|:--------------:|:-----------:|:-----:|:-------:|:-------:|:------:|
 | `/auth/*`              | ✅             | ✅          | ✅    | ✅      | ✅      | ✅     |
 | `/users` (CRUD)        | ✅             | ✅          | ✅ R  | ❌      | ❌      | ❌     |
-| `/classes` (CRUD)      | ✅             | ✅          | ✅    | ✅ R    | ✅ R    | ❌     |
-| `/subjects` (CRUD)     | ✅             | ✅          | ✅    | ✅ R    | ✅ R    | ❌     |
+| `/classes` (internal)  | ✅             | ✅          | ✅    | ✅ R*   | ❌      | ❌     |
+| `/subjects` (internal) | ✅             | ✅          | ✅    | ✅ R*   | ❌      | ❌     |
 | `/exams` (CRUD)        | ✅             | ✅          | ✅    | ✅ R/W  | ✅ R    | ✅ R   |
-| `/scores` (CRUD)       | ✅             | ✅          | ✅    | ✅ R/W  | ✅ R    | ✅ R   |
+| `/scores` (internal)   | ✅             | ✅          | ✅    | ✅ R/W* | ❌      | ❌     |
+| `/reports` (internal)  | ❌             | ✅          | ✅    | ✅ R*   | ❌      | ❌     |
+| `/settings` (internal) | ❌             | ✅          | ✅ R* | ✅ R*   | ❌      | ❌     |
 | `/timetables` (CRUD)   | ✅             | ✅          | ✅    | ✅ R    | ✅ R    | ❌     |
 | `/assignments` (CRUD)  | ✅             | ✅          | ✅    | ✅ R/W  | ✅ R/W  | ❌     |
 | `/study-units` (CRUD)  | ✅             | ✅          | ✅    | ✅      | ❌      | ❌     |
@@ -47,6 +49,7 @@ graph TD
 | `/tenants/:id/scores`  | ❌             | ✅          | ✅    | ❌      | ❌      | ❌     |
 
 ✅ = Full CRUD | ✅ R = Read only | ✅ R/W = Read + Write | ❌ = No access
+`*` = giới hạn theo phân công giáo viên hoặc module permission của tenant
 
 ## UI Menu Visibility
 
@@ -72,20 +75,19 @@ The `PUT /users/:id` endpoint enforces strict role assignment:
 
 Implementation: [`backend/src/middleware/auth.js`](../../../backend/src/middleware/auth.js) — `authorize(...roles)` function checks `req.user.role` against a whitelist before proceeding.
 
-## Feature Flag Layer
+## Feature + Module Permission
 
-Tenant modules are controlled by `tenant_settings.enabledModules` and enforced by `requireFeature(...)` middleware.
+Tenant modules dùng 2 lớp:
+1. `requireFeature(moduleKey)` kiểm tra `tenant_settings.enabledModules`.
+2. `requireRolePermission(moduleKey)` kiểm tra `tenant_settings.rolePermissions` cho `STAFF`/`TEACHER`.
 
-Order of access checks:
-1. Authentication + role authorization
-2. Tenant feature flag (`FEATURE_DISABLED` if off)
-3. School role-permission filtering for `STAFF` / `TEACHER` (UI + settings policy)
+`SUPER_ADMIN` và `PLATFORM_ADMIN` bypass `requireRolePermission`, nhưng vẫn đi qua feature flag.
 
-Important:
-- `SUPER_ADMIN` is still blocked by platform feature flags.
-- `PLATFORM_ADMIN` can manage per-school modules via:
-  - `GET /api/admin/schools/:id/features`
-  - `PUT /api/admin/schools/:id/features`
+Parent/Student chỉ dùng self-service endpoints:
+- `GET /api/parents/my-children`
+- `GET /api/parents/my-children/:studentId/scores`
+- `GET /api/parents/semesters`
+- `GET /api/fees/parent/my-fees`
 
 ## Related
 

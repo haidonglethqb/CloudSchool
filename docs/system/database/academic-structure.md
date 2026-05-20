@@ -53,6 +53,7 @@ model Class {
 ```
 
 **Unique:** `(tenantId, name, academicYear)` — prevents duplicate class names per year.
+`POST /api/classes` now requires a valid `academicYearId` or an active academic year; response/write stores both `academicYearId` and legacy `academicYear` label.
 
 ## Subject
 
@@ -96,6 +97,8 @@ model Semester {
 }
 ```
 
+When a semester is activated, system deactivates every other semester in the same tenant (not only same academic year), then activates the parent academic year and deactivates other academic years.
+
 ## AcademicYear
 
 Defines academic year ranges.
@@ -138,6 +141,11 @@ model ClassEnrollment {
   @@index([tenantId, classId, semesterId])
 }
 ```
+
+Enrollment is mandatory for semester-aware workflows:
+- `POST /api/classes/:id/students` must upsert enrollment for active semester.
+- `POST /api/students/:id/transfer` must upsert enrollment for active semester.
+- Both flows return `NO_ACTIVE_SEMESTER` if no active semester with `academicYearId`.
 
 ## GraduationArchive
 

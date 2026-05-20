@@ -3,7 +3,7 @@ const router = express.Router()
 const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
-const { requireFeature } = require('../middleware/feature-flags')
+const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 
 const parseDateInput = (value, fieldName) => {
@@ -65,7 +65,7 @@ const validateSemesterWindow = ({ semesterStart, semesterEnd, academicYear, exis
   }
 }
 
-router.use(authenticate, requireFeature('academic-calendar'))
+router.use(authenticate, requireFeature('academic-calendar'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('academic-calendar'))
 
 // GET /academic-years/semesters
 router.get('/semesters', async (req, res, next) => {
@@ -388,8 +388,18 @@ router.patch('/:id/semesters/:semesterId', authorize('SUPER_ADMIN', 'STAFF'), [
     const semester = await prisma.$transaction(async (tx) => {
       if (req.body.isActive === true) {
         await tx.semester.updateMany({
-          where: { tenantId: req.tenantId, academicYearId: req.params.id },
+          where: { tenantId: req.tenantId },
           data: { isActive: false }
+        })
+
+        await tx.academicYear.updateMany({
+          where: { tenantId: req.tenantId },
+          data: { isActive: false }
+        })
+
+        await tx.academicYear.update({
+          where: { id: req.params.id },
+          data: { isActive: true }
         })
       }
       return tx.semester.update({

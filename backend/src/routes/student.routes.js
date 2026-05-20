@@ -4,7 +4,7 @@ const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
-const { requireFeature } = require('../middleware/feature-flags')
+const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 
 // Generate student code
 const generateStudentCode = async (tenantId, tx) => {
@@ -15,7 +15,7 @@ const generateStudentCode = async (tenantId, tx) => {
 }
 
 // GET /students
-router.get('/', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
+router.get('/', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('student-lookup'), async (req, res, next) => {
   try {
     const { page = 1, limit = 20, search, classId, gradeId, status, address, gender, birthYear } = req.query
     const skip = (parseInt(page) - 1) * parseInt(limit)
@@ -78,7 +78,7 @@ router.get('/', authenticate, requireFeature('student-lookup'), authorize('SUPER
 })
 
 // GET /students/:id
-router.get('/:id', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
+router.get('/:id', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('student-lookup'), async (req, res, next) => {
   try {
     const student = await prisma.student.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },
@@ -92,6 +92,19 @@ router.get('/:id', authenticate, requireFeature('student-lookup'), authorize('SU
     })
 
     if (!student) throw new AppError('Student not found', 404, 'NOT_FOUND')
+
+    if (req.user.role === 'TEACHER') {
+      if (!student.classId) throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
+      const assignment = await prisma.teacherAssignment.findFirst({
+        where: {
+          tenantId: req.tenantId,
+          teacherId: req.user.id,
+          classId: student.classId
+        }
+      })
+      if (!assignment) throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
+    }
+
     res.json({ data: student })
   } catch (error) {
     next(error)
@@ -99,7 +112,7 @@ router.get('/:id', authenticate, requireFeature('student-lookup'), authorize('SU
 })
 
 // POST /students
-router.post('/', authenticate, requireFeature('student-admission'), authorize('SUPER_ADMIN', 'STAFF'), [
+router.post('/', authenticate, requireFeature('student-admission'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('student-admission'), [
   body('fullName').notEmpty().withMessage('Name is required'),
   body('gender').isIn(['MALE', 'FEMALE', 'OTHER']).withMessage('Invalid gender'),
   body('dateOfBirth').isISO8601().withMessage('Invalid date'),
@@ -162,39 +175,22 @@ router.post('/', authenticate, requireFeature('student-admission'), authorize('S
       // Create enrollment if student is assigned to a class
       if (classId) {
         const activeSemester = await tx.semester.findFirst({
-          where: { tenantId: req.tenantId, isActive: true }
+          where: { tenantId: req.tenantId, isActive: true, academicYearId: { not: null } },
+          orderBy: [{ updatedAt: 'desc' }, { semesterNum: 'asc' }]
         })
-        if (activeSemester) {
-          // Find or infer academicYearId
-          let academicYearId = activeSemester.academicYearId
-          if (!academicYearId) {
-            // Try to find matching academic year by year string (e.g., "2024-2025")
-            const yearMatch = activeSemester.year.match(/(\d{4})-(\d{4})/)
-            if (yearMatch) {
-              const [, startYear, endYear] = yearMatch
-              const ay = await tx.academicYear.findFirst({
-                where: {
-                  tenantId: req.tenantId,
-                  startYear: parseInt(startYear),
-                  endYear: parseInt(endYear)
-                }
-              })
-              academicYearId = ay?.id
-            }
-          }
-          // Create enrollment only if we have academicYearId
-          if (academicYearId) {
-            await tx.classEnrollment.create({
-              data: {
-                tenantId: req.tenantId,
-                studentId: newStudent.id,
-                classId,
-                semesterId: activeSemester.id,
-                academicYearId
-              }
-            })
-          }
+        if (!activeSemester) {
+          throw new AppError('No active semester found', 400, 'NO_ACTIVE_SEMESTER')
         }
+
+        await tx.classEnrollment.create({
+          data: {
+            tenantId: req.tenantId,
+            studentId: newStudent.id,
+            classId,
+            semesterId: activeSemester.id,
+            academicYearId: activeSemester.academicYearId
+          }
+        })
       }
 
       return newStudent
@@ -207,7 +203,7 @@ router.post('/', authenticate, requireFeature('student-admission'), authorize('S
 })
 
 // PUT /students/:id
-router.put('/:id', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.put('/:id', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('student-lookup'), async (req, res, next) => {
   try {
     const { fullName, gender, dateOfBirth, address, phone, parentName, parentPhone, classId, isActive, email, admissionDate } = req.body
 
@@ -248,7 +244,7 @@ router.put('/:id', authenticate, requireFeature('student-lookup'), authorize('SU
 })
 
 // DELETE /students/:id
-router.delete('/:id', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN'), async (req, res, next) => {
+router.delete('/:id', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN'), requireRolePermission('student-lookup'), async (req, res, next) => {
   try {
     const existingStudent = await prisma.student.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId }
@@ -278,7 +274,7 @@ router.delete('/:id', authenticate, requireFeature('student-lookup'), authorize(
 })
 
 // POST /students/:id/transfer - Transfer class
-router.post('/:id/transfer', authenticate, requireFeature('class-transfer'), authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.post('/:id/transfer', authenticate, requireFeature('class-transfer'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('class-transfer'), async (req, res, next) => {
   try {
     const classId = req.body.classId || req.body.newClassId
     const { reason } = req.body
@@ -317,8 +313,10 @@ router.post('/:id/transfer', authenticate, requireFeature('class-transfer'), aut
 
     // Find active semester for enrollment + transfer history
     const activeSemester = await prisma.semester.findFirst({
-      where: { tenantId: req.tenantId, isActive: true }
+      where: { tenantId: req.tenantId, isActive: true, academicYearId: { not: null } },
+      orderBy: [{ updatedAt: 'desc' }, { semesterNum: 'asc' }]
     })
+    if (!activeSemester) throw new AppError('No active semester found', 400, 'NO_ACTIVE_SEMESTER')
 
     // Update student, record transfer, and update enrollment in a single transaction
     await prisma.$transaction(async (tx) => {
@@ -335,7 +333,7 @@ router.post('/:id/transfer', authenticate, requireFeature('class-transfer'), aut
             studentId: req.params.id,
             fromClassId,
             toClassId: classId,
-            semesterId: activeSemester?.id || null,
+            semesterId: activeSemester.id,
             reason: reason || null,
             transferredBy: req.user.id
           }
@@ -343,41 +341,25 @@ router.post('/:id/transfer', authenticate, requireFeature('class-transfer'), aut
       }
 
       // Create/update enrollment for new class
-      if (activeSemester) {
-        let academicYearId = activeSemester.academicYearId
-        if (!academicYearId) {
-          const yearMatch = activeSemester.year.match(/(\d{4})-(\d{4})/)
-          if (yearMatch) {
-            const [, startYear, endYear] = yearMatch
-            const ay = await tx.academicYear.findFirst({
-              where: {
-                tenantId: req.tenantId,
-                startYear: parseInt(startYear),
-                endYear: parseInt(endYear)
-              }
-            })
-            academicYearId = ay?.id
+      await tx.classEnrollment.upsert({
+        where: {
+          studentId_semesterId: {
+            studentId: req.params.id,
+            semesterId: activeSemester.id
           }
+        },
+        create: {
+          tenantId: req.tenantId,
+          studentId: req.params.id,
+          classId,
+          semesterId: activeSemester.id,
+          academicYearId: activeSemester.academicYearId
+        },
+        update: {
+          classId,
+          academicYearId: activeSemester.academicYearId
         }
-        if (academicYearId) {
-          await tx.classEnrollment.upsert({
-            where: {
-              studentId_semesterId: {
-                studentId: req.params.id,
-                semesterId: activeSemester.id
-              }
-            },
-            create: {
-              tenantId: req.tenantId,
-              studentId: req.params.id,
-              classId,
-              semesterId: activeSemester.id,
-              academicYearId
-            },
-            update: { classId }
-          })
-        }
-      }
+      })
     })
 
     const student = await prisma.student.findUnique({
@@ -404,7 +386,7 @@ router.post('/:id/transfer', authenticate, requireFeature('class-transfer'), aut
 })
 
 // GET /students/:id/transfer-history
-router.get('/:id/transfer-history', authenticate, requireFeature('class-transfer'), authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.get('/:id/transfer-history', authenticate, requireFeature('class-transfer'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('class-transfer'), async (req, res, next) => {
   try {
     const history = await prisma.transferHistory.findMany({
       where: { studentId: req.params.id, tenantId: req.tenantId },

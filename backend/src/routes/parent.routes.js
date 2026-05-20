@@ -5,9 +5,9 @@ const { body, validationResult, param } = require('express-validator')
 const prisma = require('../lib/prisma')
 const { AppError } = require('../middleware/errorHandler')
 const { authenticate, authorize, invalidateUserCache } = require('../middleware/auth')
-const { requireFeature } = require('../middleware/feature-flags')
+const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 
-router.use(authenticate, requireFeature('parents'))
+router.use(authenticate, requireFeature('parents'), requireRolePermission('parents'))
 
 // Helper: weighted average from scores with scoreComponent
 function calcWeightedAverage (scores) {

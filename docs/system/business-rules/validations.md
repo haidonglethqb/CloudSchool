@@ -50,6 +50,11 @@ All routes use `express-validator` chains:
 | **Academic year overlap** | No overlapping `[startDate, endDate]` ranges | `POST/PUT /academic-years` |
 | **Role escalation** | Only `SUPER_ADMIN`, `STAFF`, `TEACHER` via `PUT /users` | `PUT /users/:id` |
 | **PassScore range** | `passScore ∈ [minScore, maxScore]` | `PUT /settings` |
+| **Class creation order** | Must have active academic year (or valid `academicYearId`) | `POST /classes` |
+| **Enrollment order** | Add-to-class / transfer require active semester with academicYearId | `POST /classes/:id/students`, `POST /students/:id/transfer` |
+| **Semester score window** | Score write only when semester active + configured + in date range | `POST /scores`, `POST /scores/batch` |
+| **Component-subject consistency** | `scoreComponent.subjectId` must equal payload `subjectId` | `POST /scores`, `POST /scores/batch` |
+| **Subject/component active** | Block writes if subject or component inactive | `POST /scores`, `POST /scores/batch` |
 
 ## Student Delete Guard
 
@@ -85,3 +90,11 @@ const scoreSchema = z.object({
 - [Business Logic Protections](../security/business-logic-protections.md)
 - `backend/src/routes/*.routes.js` (validation chains)
 - `frontend/src/lib/api.ts`
+
+## Common Error Codes
+
+- `NO_ACTIVE_ACADEMIC_YEAR`
+- `NO_ACTIVE_SEMESTER`
+- `SEMESTER_NOT_CONFIGURED`
+- `SEMESTER_CLOSED`
+- `COMPONENT_SUBJECT_MISMATCH`

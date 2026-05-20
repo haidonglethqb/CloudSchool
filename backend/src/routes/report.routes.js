@@ -2,7 +2,7 @@ const express = require('express')
 const router = express.Router()
 const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
-const { requireFeature } = require('../middleware/feature-flags')
+const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 
 function calcWeightedAverage(scores) {
@@ -40,7 +40,7 @@ const getCalendarContext = async (tenantId, selectedAcademicYearId = null, selec
   return { academicYears, selectedAcademicYear, selectedSemester }
 }
 
-router.use(authenticate, requireFeature('reports'))
+router.use(authenticate, requireFeature('reports'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('reports'))
 
 // GET /reports/subject-summary (BM1)
 router.get('/subject-summary', async (req, res, next) => {

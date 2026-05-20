@@ -4,10 +4,13 @@ const bcrypt = require('bcryptjs')
 const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
 const { authenticate, authorize, invalidateUserCache } = require('../middleware/auth')
+const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 
+router.use(authenticate, requireFeature('users'))
+
 // GET /users - List users (SUPER_ADMIN, STAFF)
-router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.get('/', authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('users'), async (req, res, next) => {
   try {
     const { page = 1, limit = 20, search, role, status } = req.query
     const skip = (parseInt(page) - 1) * parseInt(limit)
@@ -47,7 +50,7 @@ router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res
 })
 
 // GET /users/:id
-router.get('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.get('/:id', authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('users'), async (req, res, next) => {
   try {
     const user = await prisma.user.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },
@@ -68,7 +71,7 @@ router.get('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF'), async (req, 
 })
 
 // POST /users - Create user (SUPER_ADMIN only)
-router.post('/', authenticate, authorize('SUPER_ADMIN'), [
+router.post('/', authorize('SUPER_ADMIN'), [
   body('fullName').notEmpty().withMessage('Name is required'),
   body('email').isEmail().withMessage('Invalid email'),
   body('password').isLength({ min: 6 }).withMessage('Password min 6 chars'),
@@ -103,7 +106,7 @@ router.post('/', authenticate, authorize('SUPER_ADMIN'), [
 })
 
 // PUT /users/:id
-router.put('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+router.put('/:id', authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
     const { fullName, email, role, department, phone, isActive, password } = req.body
 
@@ -153,7 +156,7 @@ router.put('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next
 })
 
 // PATCH /users/:id/disable
-router.patch('/:id/disable', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+router.patch('/:id/disable', authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
     // Prevent self-disable
     if (req.params.id === req.user.id) {
@@ -176,7 +179,7 @@ router.patch('/:id/disable', authenticate, authorize('SUPER_ADMIN'), async (req,
 })
 
 // PUT /users/:id/assignments - Manage teacher assignments (SUPER_ADMIN only)
-router.put('/:id/assignments', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+router.put('/:id/assignments', authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
     const { assignments } = req.body
     if (!Array.isArray(assignments)) {
@@ -233,7 +236,7 @@ router.put('/:id/assignments', authenticate, authorize('SUPER_ADMIN'), async (re
 })
 
 // DELETE /users/:id
-router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), async (req, res, next) => {
+router.delete('/:id', authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
     // Prevent self-deletion
     if (req.params.id === req.user.id) {

@@ -69,6 +69,23 @@ const tenantGuard = (req, res, next) => {
 }
 ```
 
+## requireRolePermission(moduleKey)
+
+Module-level permission cho `STAFF`/`TEACHER`, đọc từ `tenant_settings.rolePermissions`.
+
+- `SUPER_ADMIN`/`PLATFORM_ADMIN`: bypass.
+- `STAFF`/`TEACHER`: phải có `moduleKey` trong role permissions (fallback `DEFAULT_ROLE_PERMISSIONS`).
+- Role khác (`PARENT`, `STUDENT`): không bị middleware này chặn trực tiếp, nhưng bị chặn bởi `authorize(...)` ở router.
+
+```js
+router.use(
+  authenticate,
+  requireFeature('scores'),
+  authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'),
+  requireRolePermission('scores')
+)
+```
+
 ## Cache Invalidation
 
 Call these after mutations to keep caches fresh:

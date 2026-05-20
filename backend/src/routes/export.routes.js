@@ -6,7 +6,7 @@ const prisma = require('../lib/prisma')
 const ExcelJS = require('exceljs')
 const PDFDocument = require('pdfkit')
 const { authenticate, authorize } = require('../middleware/auth')
-const { requireFeature, requireAllFeatures } = require('../middleware/feature-flags')
+const { requireFeature, requireAllFeatures, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 
 const PDF_SECTION_KEYS = ['cover', 'filters', 'summary', 'table', 'students', 'signature']
@@ -439,7 +439,7 @@ const buildRowsFromColumns = (items, columns) => {
   return { headers, rows }
 }
 
-router.use(authenticate, requireFeature('export'))
+router.use(authenticate, requireFeature('export'), requireRolePermission('export'))
 
 router.get('/students', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), requireFeature('student-lookup'), async (req, res, next) => {
   try {

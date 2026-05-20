@@ -3,10 +3,10 @@ const router = express.Router()
 const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
-const { requireFeature } = require('../middleware/feature-flags')
+const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 
-router.use(authenticate, requireFeature('subjects'))
+router.use(authenticate, requireFeature('subjects'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'))
 
 // GET /subjects
 router.get('/', async (req, res, next) => {
@@ -17,7 +17,7 @@ router.get('/', async (req, res, next) => {
 
     if (req.user.role === 'TEACHER') {
       const assignments = await prisma.teacherAssignment.findMany({
-        where: { teacherId: req.user.id },
+        where: { teacherId: req.user.id, tenantId: req.tenantId },
         select: { subjectId: true },
         distinct: ['subjectId'],
       })
@@ -39,6 +39,13 @@ router.get('/', async (req, res, next) => {
 // GET /subjects/:id
 router.get('/:id', async (req, res, next) => {
   try {
+    if (req.user.role === 'TEACHER') {
+      const assignment = await prisma.teacherAssignment.findFirst({
+        where: { teacherId: req.user.id, tenantId: req.tenantId, subjectId: req.params.id }
+      })
+      if (!assignment) throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
+    }
+
     const subject = await prisma.subject.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },
       include: { scoreComponents: { orderBy: { weight: 'desc' } } }
@@ -53,7 +60,7 @@ router.get('/:id', async (req, res, next) => {
 })
 
 // POST /subjects
-router.post('/', authorize('SUPER_ADMIN', 'STAFF'), [
+router.post('/', authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('subjects'), [
   body('name').notEmpty().withMessage('Subject name is required'),
   body('code').notEmpty().withMessage('Subject code is required')
 ], async (req, res, next) => {
@@ -94,7 +101,7 @@ router.post('/', authorize('SUPER_ADMIN', 'STAFF'), [
 })
 
 // PUT /subjects/:id
-router.put('/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.put('/:id', authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('subjects'), async (req, res, next) => {
   try {
     const existing = await prisma.subject.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId }
@@ -122,7 +129,7 @@ router.put('/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => 
 })
 
 // DELETE /subjects/:id (soft delete)
-router.delete('/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.delete('/:id', authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('subjects'), async (req, res, next) => {
   try {
     const existing = await prisma.subject.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId }

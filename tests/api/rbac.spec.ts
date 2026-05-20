@@ -103,6 +103,28 @@ test.describe('RBAC - Role-Based Access Control', () => {
       });
       expect(response.status()).toBe(403);
     });
+
+    test('PARENT cannot read internal class and subject endpoints', async () => {
+      const classesRes = await parentCtx.get('/api/classes');
+      expect(classesRes.status()).toBe(403);
+
+      const classesByIdRes = await parentCtx.get('/api/classes/invalid-id');
+      expect(classesByIdRes.status()).toBe(403);
+
+      const subjectsRes = await parentCtx.get('/api/subjects');
+      expect(subjectsRes.status()).toBe(403);
+    });
+
+    test('PARENT cannot read internal reports/settings/scores endpoints', async () => {
+      const dashboardRes = await parentCtx.get('/api/reports/dashboard');
+      expect(dashboardRes.status()).toBe(403);
+
+      const settingsRes = await parentCtx.get('/api/settings');
+      expect(settingsRes.status()).toBe(403);
+
+      const scoreSheetRes = await parentCtx.get('/api/scores/class/invalid-id?subjectId=x&semesterId=y');
+      expect(scoreSheetRes.status()).toBe(403);
+    });
   });
 
   test.describe('STAFF restrictions', () => {
@@ -122,6 +144,33 @@ test.describe('RBAC - Role-Based Access Control', () => {
         data: { maxClassSize: 50 },
       });
       expect(response.status()).toBe(403);
+    });
+
+    test('STAFF cannot create user', async () => {
+      const response = await staffCtx.post('/api/users', {
+        data: {
+          fullName: 'Unauthorized Staff Create',
+          email: `staff-no-create-${Date.now()}@test.local`,
+          password: 'Secret123',
+          role: 'TEACHER',
+        },
+      });
+      expect(response.status()).toBe(403);
+    });
+  });
+
+  test.describe('SUPER_ADMIN capabilities', () => {
+    test('SUPER_ADMIN can create STAFF or TEACHER users', async () => {
+      const email = `rbac-user-${Date.now()}@test.local`;
+      const createStaffRes = await superAdminCtx.post('/api/users', {
+        data: {
+          fullName: 'RBAC Staff',
+          email,
+          password: 'Secret123',
+          role: 'STAFF',
+        },
+      });
+      expect([200, 201]).toContain(createStaffRes.status());
     });
   });
 

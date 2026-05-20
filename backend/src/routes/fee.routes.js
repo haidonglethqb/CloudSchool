@@ -3,10 +3,10 @@ const router = express.Router()
 const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
-const { requireFeature } = require('../middleware/feature-flags')
+const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 
-router.use(authenticate, requireFeature('fees'))
+router.use(authenticate, requireFeature('fees'), requireRolePermission('fees'))
 
 // GET /fees - List all fees for the tenant
 router.get('/', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {

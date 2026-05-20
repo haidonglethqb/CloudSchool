@@ -62,7 +62,7 @@ test.describe('Reports', () => {
 
       if (semesterId) {
         const response = await superAdminCtx.get(
-          `/api/reports/semester-summary?semesterId=${semesterId}`
+          `/api/reports/semester-promotion-summary?semesterId=${semesterId}`
         );
         expect(response.status()).toBe(200);
       }

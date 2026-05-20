@@ -4,9 +4,35 @@ const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
 const { authenticate, authorize, tenantGuard } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
-const { requireFeature } = require('../middleware/feature-flags')
+const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 
-router.use(authenticate, requireFeature('classes'))
+router.use(authenticate, requireFeature('classes'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('classes'))
+
+const buildAcademicYearLabel = (academicYear) => `${academicYear.startYear}-${academicYear.endYear}`
+
+const getActiveSemesterWithAcademicYear = async (tenantId, tx) => {
+  const client = tx || prisma
+  const activeSemester = await client.semester.findFirst({
+    where: { tenantId, isActive: true },
+    include: { academicYear: true },
+    orderBy: [{ updatedAt: 'desc' }, { semesterNum: 'asc' }]
+  })
+  if (!activeSemester || !activeSemester.academicYearId) {
+    throw new AppError('Không có học kỳ đang hoạt động hợp lệ', 400, 'NO_ACTIVE_SEMESTER')
+  }
+  return activeSemester
+}
+
+const ensureTeacherClassAccess = async (req, classId) => {
+  if (req.user.role !== 'TEACHER') return
+  const assignment = await prisma.teacherAssignment.findFirst({
+    where: { tenantId: req.tenantId, teacherId: req.user.id, classId },
+    select: { id: true }
+  })
+  if (!assignment) {
+    throw new AppError('Not assigned to this class', 403, 'FORBIDDEN')
+  }
+}
 
 // GET /classes/grades - Get grades with classes
 router.get('/grades', tenantGuard, async (req, res, next) => {
@@ -73,6 +99,8 @@ router.get('/', async (req, res, next) => {
 // GET /classes/:id
 router.get('/:id', async (req, res, next) => {
   try {
+    await ensureTeacherClassAccess(req, req.params.id)
+
     const classInfo = await prisma.class.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },
       include: {
@@ -101,7 +129,8 @@ router.get('/:id', async (req, res, next) => {
 // POST /classes
 router.post('/', authorize('SUPER_ADMIN', 'STAFF'), [
   body('name').notEmpty().withMessage('Class name is required'),
-  body('gradeId').notEmpty().withMessage('Grade is required')
+  body('gradeId').notEmpty().withMessage('Grade is required'),
+  body('academicYearId').optional().isString().notEmpty().withMessage('academicYearId must be a valid string'),
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req)
@@ -109,19 +138,29 @@ router.post('/', authorize('SUPER_ADMIN', 'STAFF'), [
       return res.status(400).json({ error: { code: 'VALIDATION_ERROR', details: errors.array() } })
     }
 
-    const { name, gradeId, academicYear, capacity } = req.body
+    const { name, gradeId, academicYearId, capacity } = req.body
 
     const grade = await prisma.grade.findFirst({ where: { id: gradeId, tenantId: req.tenantId } })
     if (!grade) throw new AppError('Grade not found', 404, 'GRADE_NOT_FOUND')
 
+    const targetAcademicYear = academicYearId
+      ? await prisma.academicYear.findFirst({ where: { id: academicYearId, tenantId: req.tenantId } })
+      : await prisma.academicYear.findFirst({ where: { tenantId: req.tenantId, isActive: true } })
+
+    if (!targetAcademicYear) {
+      throw new AppError('No active academic year found', 400, 'NO_ACTIVE_ACADEMIC_YEAR')
+    }
+
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    const academicYearLabel = buildAcademicYearLabel(targetAcademicYear)
 
     const classInfo = await prisma.class.create({
       data: {
         tenantId: req.tenantId,
         gradeId,
         name,
-        academicYear: academicYear || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
+        academicYearId: targetAcademicYear.id,
+        academicYear: academicYearLabel,
         capacity: capacity || settings?.maxClassSize || 40
       },
       include: { grade: true }
@@ -268,6 +307,8 @@ router.delete('/:id/assign-teacher/:assignmentId', authorize('SUPER_ADMIN'), asy
 // GET /classes/:id/students
 router.get('/:id/students', async (req, res, next) => {
   try {
+    await ensureTeacherClassAccess(req, req.params.id)
+
     const students = await prisma.student.findMany({
       where: { classId: req.params.id, tenantId: req.tenantId, isActive: true },
       orderBy: { fullName: 'asc' }
@@ -285,6 +326,8 @@ router.post('/:id/students', authorize('SUPER_ADMIN', 'STAFF'), async (req, res,
 
     // Use transaction to prevent race conditions
     const student = await prisma.$transaction(async (tx) => {
+      const activeSemester = await getActiveSemesterWithAcademicYear(req.tenantId, tx)
+
       const cls = await tx.class.findFirst({
         where: { id: req.params.id, tenantId: req.tenantId },
         include: { _count: { select: { students: true } } }
@@ -300,10 +343,32 @@ router.post('/:id/students', authorize('SUPER_ADMIN', 'STAFF'), async (req, res,
       })
       if (!existingStudent) throw new AppError('Student not found', 404, 'NOT_FOUND')
 
-      return tx.student.update({
+      const updatedStudent = await tx.student.update({
         where: { id: studentId },
         data: { classId: req.params.id }
       })
+
+      await tx.classEnrollment.upsert({
+        where: {
+          studentId_semesterId: {
+            studentId,
+            semesterId: activeSemester.id
+          }
+        },
+        create: {
+          tenantId: req.tenantId,
+          studentId,
+          classId: req.params.id,
+          semesterId: activeSemester.id,
+          academicYearId: activeSemester.academicYearId
+        },
+        update: {
+          classId: req.params.id,
+          academicYearId: activeSemester.academicYearId
+        }
+      })
+
+      return updatedStudent
     }, { isolationLevel: 'Serializable' })
     res.json({ data: student })
   } catch (error) {

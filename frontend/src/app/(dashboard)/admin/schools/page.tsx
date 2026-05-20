@@ -66,8 +66,12 @@ export default function SchoolsPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.name || !form.adminEmail || !form.adminName) {
+    if (!form.name || !form.adminEmail || !form.adminName || !form.adminPassword) {
       toast.error('Vui lòng điền đủ thông tin bắt buộc')
+      return
+    }
+    if (form.adminPassword.length < 6) {
+      toast.error('Mật khẩu admin tối thiểu 6 ký tự')
       return
     }
     setCreating(true)
@@ -79,7 +83,7 @@ export default function SchoolsPage() {
         email: form.email || undefined,
         adminEmail: form.adminEmail,
         adminName: form.adminName,
-        adminPassword: form.adminPassword || undefined,
+        adminPassword: form.adminPassword,
         planId: form.planId || undefined,
       })
       toast.success('Tạo trường thành công!')
@@ -263,8 +267,8 @@ export default function SchoolsPage() {
                 </div>
               </div>
               <div>
-                <label className="label">Mật khẩu (mặc định: Admin@123)</label>
-                <input type="password" className="input" value={form.adminPassword} onChange={e => setForm({ ...form, adminPassword: e.target.value })} placeholder="Admin@123" />
+                <label className="label">Mật khẩu admin *</label>
+                <input type="password" minLength={6} className="input" value={form.adminPassword} onChange={e => setForm({ ...form, adminPassword: e.target.value })} placeholder="Tối thiểu 6 ký tự" />
               </div>
               <hr />
               <div>

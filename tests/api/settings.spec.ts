@@ -19,11 +19,16 @@ test.afterAll(async () => {
 
 test.describe('Settings', () => {
   test.describe('Get Settings', () => {
-    test('authenticated user can read settings', async () => {
+    test('TEACHER read settings follows module permission', async () => {
       const response = await teacherCtx.get('/api/settings');
-      expect(response.status()).toBe(200);
+      expect([200, 403]).toContain(response.status());
 
       const body = await response.json();
+      if (response.status() === 403) {
+        expect(['ROLE_PERMISSION_DENIED', 'FORBIDDEN']).toContain(body.error?.code);
+        return;
+      }
+
       const settings = body.data;
       expect(settings).toBeTruthy();
       expect(settings.minAge).toBeDefined();

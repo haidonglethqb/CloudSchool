@@ -20,8 +20,11 @@ Teacher/staff enters scores for students in a class, subject, and semester.
 | Score range | 0 ≤ value ≤ 10 |
 | Lock status | `isLocked === false` |
 | Component ownership | Score component belongs to subject |
+| Component/Subject active | `subject.isActive === true` và `scoreComponent.isActive === true` |
 | Tenant validation | All students belong to tenant |
-| Teacher assignment | TEACHER role must have `TeacherAssignment` for this class |
+| Teacher assignment | TEACHER phải có `TeacherAssignment` đúng `classId + subjectId` |
+| Semester open window | Semester phải active + có `startDate/endDate` + `now ∈ [startDate, endDate]` |
+| Student source by semester | Ưu tiên `ClassEnrollment` theo `semesterId`; fallback `student.classId` cho dữ liệu legacy |
 
 ## Sequence Diagram
 
@@ -42,6 +45,7 @@ sequenceDiagram
     T->>F: Enter scores, click "Save All"
     F->>S: POST /api/scores/batch [{studentId, componentId, value}]
     S->>S: Validate each score
+    S->>S: assertSemesterOpenForScoreEntry
     S->>S: Check TeacherAssignment (if TEACHER)
     S->>D: BEGIN TRANSACTION
     loop Each score
@@ -63,6 +67,12 @@ sequenceDiagram
 
 // Response 200
 { "saved": 2 }
+
+// Response 403 (semester closed / inactive / out-of-window)
+{ "error": { "code": "SEMESTER_CLOSED" } }
+
+// Response 400 (semester missing date config)
+{ "error": { "code": "SEMESTER_NOT_CONFIGURED" } }
 ```
 
 ## Related

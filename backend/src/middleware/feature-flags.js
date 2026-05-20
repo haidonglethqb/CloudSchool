@@ -1,6 +1,25 @@
 const { AppError } = require('./errorHandler')
 const { MODULE_KEYS, DEFAULT_ENABLED_MODULES } = require('../constants/module-registry')
 
+const DEFAULT_ROLE_PERMISSIONS = {
+  STAFF: [
+    'users',
+    'student-admission',
+    'student-lookup',
+    'classes',
+    'class-transfer',
+    'subjects',
+    'scores',
+    'reports',
+    'parents',
+    'academic-calendar',
+    'settings',
+    'export',
+    'fees',
+  ],
+  TEACHER: ['student-lookup', 'classes', 'scores', 'reports'],
+}
+
 const normalizeEnabledModules = (rawValue) => {
   if (!Array.isArray(rawValue)) return [...DEFAULT_ENABLED_MODULES]
   const valid = rawValue.filter((key) => MODULE_KEYS.includes(key))
@@ -32,9 +51,53 @@ const requireAllFeatures = (moduleKeys = []) => {
   }
 }
 
+const normalizeRolePermissions = (rawPermissions) => {
+  if (!rawPermissions || typeof rawPermissions !== 'object' || Array.isArray(rawPermissions)) {
+    return DEFAULT_ROLE_PERMISSIONS
+  }
+
+  const normalized = {}
+  for (const roleKey of ['STAFF', 'TEACHER']) {
+    const rawModules = rawPermissions[roleKey]
+    if (!Array.isArray(rawModules)) {
+      normalized[roleKey] = [...DEFAULT_ROLE_PERMISSIONS[roleKey]]
+      continue
+    }
+    const validModules = rawModules.filter((moduleKey) => MODULE_KEYS.includes(moduleKey))
+    normalized[roleKey] = validModules
+  }
+
+  return normalized
+}
+
+const requireRolePermission = (moduleKey) => {
+  return (req, res, next) => {
+    if (!MODULE_KEYS.includes(moduleKey)) {
+      return next(new AppError(`Invalid module key: ${moduleKey}`, 500, 'INVALID_MODULE_KEY'))
+    }
+
+    const userRole = req.user?.role
+    if (!userRole) {
+      return next(new AppError('Authentication required', 401, 'AUTH_REQUIRED'))
+    }
+
+    if (userRole === 'SUPER_ADMIN' || userRole === 'PLATFORM_ADMIN') return next()
+    if (userRole !== 'STAFF' && userRole !== 'TEACHER') return next()
+
+    const permissions = normalizeRolePermissions(req.tenantSettings?.rolePermissions)
+    const allowedModules = permissions[userRole] || []
+    if (allowedModules.includes(moduleKey)) return next()
+
+    return next(new AppError('Bạn không có quyền truy cập chức năng này', 403, 'ROLE_PERMISSION_DENIED'))
+  }
+}
+
 module.exports = {
   requireFeature,
   requireAllFeatures,
+  requireRolePermission,
   isFeatureEnabled,
   normalizeEnabledModules,
+  DEFAULT_ROLE_PERMISSIONS,
+  normalizeRolePermissions,
 }

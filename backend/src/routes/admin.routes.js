@@ -1,6 +1,5 @@
 const express = require('express')
 const router = express.Router()
-const crypto = require('crypto')
 const bcrypt = require('bcryptjs')
 const { body, validationResult } = require('express-validator')
 const prisma = require('../lib/prisma')
@@ -10,6 +9,20 @@ const { MODULE_KEYS, DEFAULT_ENABLED_MODULES } = require('../constants/module-re
 
 // All routes require PLATFORM_ADMIN
 router.use(authenticate, authorize('PLATFORM_ADMIN'))
+
+const generateUniqueTenantCode = async (schoolName) => {
+  const normalized = schoolName.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'SCHOOL'
+  const prefix = normalized.slice(0, 8)
+
+  for (let i = 0; i < 30; i += 1) {
+    const suffix = Math.random().toString(36).substring(2, 5).toUpperCase()
+    const candidate = `${prefix}${suffix}`
+    const existing = await prisma.tenant.findUnique({ where: { code: candidate }, select: { id: true } })
+    if (!existing) return candidate
+  }
+
+  throw new AppError('Unable to generate unique tenant code', 500, 'TENANT_CODE_GENERATION_FAILED')
+}
 
 // GET /admin/dashboard
 router.get('/dashboard', async (req, res, next) => {
@@ -133,7 +146,9 @@ router.post('/schools', [
   body('schoolName').optional(),
   body('name').optional(),
   body('email').optional().isEmail(),
-  body('adminEmail').optional().isEmail(),
+  body('adminEmail').notEmpty().withMessage('adminEmail is required').bail().isEmail(),
+  body('adminName').notEmpty().withMessage('adminName is required').bail().isString().isLength({ min: 1, max: 100 }),
+  body('adminPassword').notEmpty().withMessage('adminPassword is required').bail().isString().isLength({ min: 6 }).withMessage('adminPassword must be at least 6 characters'),
   body('phone').optional(),
   body('address').optional(),
   body('planId').optional()
@@ -149,13 +164,11 @@ router.post('/schools', [
       throw new AppError('School name is required', 400, 'VALIDATION_ERROR')
     }
 
-    const { phone, address, planId } = req.body
-    const email = req.body.adminEmail || req.body.email
-    const adminName = req.body.adminName || `Admin - ${schoolName}`
-    const adminPassword = req.body.adminPassword || crypto.randomBytes(12).toString('base64url')
-
-    const code = schoolName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 8).toUpperCase() +
-      Math.random().toString(36).substring(2, 5).toUpperCase()
+    const { phone, address, planId, adminEmail, adminName, adminPassword } = req.body
+    if (!adminEmail || !adminName || !adminPassword) {
+      throw new AppError('adminEmail, adminName and adminPassword are required', 400, 'VALIDATION_ERROR')
+    }
+    const code = await generateUniqueTenantCode(schoolName)
 
     const hashedPassword = await bcrypt.hash(adminPassword, 10)
 
@@ -163,7 +176,7 @@ router.post('/schools', [
       data: {
         name: schoolName,
         code,
-        email: email || undefined,
+        email: req.body.email || adminEmail,
         phone,
         address,
         planId: planId || undefined,
@@ -178,7 +191,7 @@ router.post('/schools', [
         },
         users: {
           create: {
-            email: email || `admin@${code.toLowerCase()}.school`,
+            email: adminEmail,
             password: hashedPassword,
             fullName: adminName,
             role: 'SUPER_ADMIN'
@@ -192,10 +205,20 @@ router.post('/schools', [
           ]
         }
       },
-      include: { plan: true, users: { select: { id: true, email: true, role: true } } }
+      include: {
+        plan: true,
+        users: { select: { id: true, email: true, fullName: true, role: true } }
+      }
     })
 
-    res.status(201).json({ data: tenant })
+    const initialAdmin = tenant.users[0] || null
+    const { users, ...tenantData } = tenant
+    res.status(201).json({
+      data: {
+        tenant: tenantData,
+        initialAdmin
+      }
+    })
   } catch (error) {
     next(error)
   }
