@@ -175,6 +175,8 @@ export const scoreComponentApi = {
 export const scoreApi = {
   getByClass: (classId: string, subjectId: string, semesterId: string) =>
     api.get(`/scores/class/${classId}`, { params: { subjectId, semesterId } }),
+  history: (params: { classId: string; subjectId: string; semesterId: string; scoreComponentId?: string; page?: number; limit?: number }) =>
+    api.get('/scores/history', { params }),
   getByStudent: (studentId: string, semesterId?: string) =>
     api.get(`/scores/student/${studentId}`, { params: { semesterId } }),
   save: (data: { studentId: string; subjectId: string; semesterId: string; scoreComponentId: string; value: number }) =>

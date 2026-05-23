@@ -18,16 +18,7 @@ const assertSemesterOpenForScoreEntry = async (tenantId, semesterId) => {
     throw new AppError('Semester not found', 404, 'NOT_FOUND')
   }
 
-  if (!semester.startDate || !semester.endDate) {
-    throw new AppError('Semester start/end date is not configured', 400, 'SEMESTER_NOT_CONFIGURED')
-  }
-
   if (!semester.isActive) {
-    throw new AppError('Semester is not open for score entry', 403, 'SEMESTER_CLOSED')
-  }
-
-  const now = new Date()
-  if (now < semester.startDate || now > semester.endDate) {
     throw new AppError('Semester is not open for score entry', 403, 'SEMESTER_CLOSED')
   }
 
@@ -90,6 +81,98 @@ const assertTeacherCanAccessStudent = async (req, studentId) => {
   })
   if (!assignment) throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
 }
+
+const createActorSnapshot = (user) => ({
+  actorId: user?.id || null,
+  actorName: user?.fullName || user?.email || 'Unknown',
+  actorRole: String(user?.role || 'UNKNOWN'),
+})
+
+const createScoreHistoryPayload = ({
+  tenantId,
+  scoreId = null,
+  studentId,
+  studentCode = null,
+  studentName,
+  classId = null,
+  className = null,
+  subjectId,
+  subjectName,
+  semesterId,
+  semesterName,
+  scoreComponentId,
+  scoreComponentName,
+  action,
+  oldValue = null,
+  newValue = null,
+  actor,
+}) => ({
+  tenantId,
+  scoreId,
+  studentId,
+  studentCode,
+  studentName,
+  classId,
+  className,
+  subjectId,
+  subjectName,
+  semesterId,
+  semesterName,
+  scoreComponentId,
+  scoreComponentName,
+  action,
+  oldValue,
+  newValue,
+  actorId: actor.actorId,
+  actorName: actor.actorName,
+  actorRole: actor.actorRole,
+})
+
+// GET /scores/history - Get score mutation history for a class/subject/semester context
+router.get('/history', async (req, res, next) => {
+  try {
+    const { classId, subjectId, semesterId, scoreComponentId, page = 1, limit = 20 } = req.query
+
+    if (!classId || !subjectId || !semesterId) {
+      throw new AppError('classId, subjectId and semesterId are required', 400, 'MISSING_PARAMS')
+    }
+
+    if (req.user.role === 'TEACHER') {
+      await assertTeacherAssignmentForClassSubject(req.tenantId, req.user.id, classId, subjectId)
+    }
+
+    const skip = (Number(page) - 1) * Number(limit)
+    const where = {
+      tenantId: req.tenantId,
+      classId,
+      subjectId,
+      semesterId,
+      ...(scoreComponentId ? { scoreComponentId } : {}),
+    }
+
+    const [entries, total] = await Promise.all([
+      prisma.scoreHistory.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: Number(limit),
+      }),
+      prisma.scoreHistory.count({ where }),
+    ])
+
+    res.json({
+      data: entries,
+      meta: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit)),
+      },
+    })
+  } catch (error) {
+    next(error)
+  }
+})
 
 // GET /scores/class/:classId - Get score sheet for a class
 router.get('/class/:classId', async (req, res, next) => {
@@ -320,12 +403,21 @@ router.post('/', [
       )
     }
 
-    await assertSemesterOpenForScoreEntry(req.tenantId, semesterId)
+    const semester = await assertSemesterOpenForScoreEntry(req.tenantId, semesterId)
 
     const [studentCheck, subjectCheck, componentCheck] = await Promise.all([
-      prisma.student.findFirst({ where: { id: studentId, tenantId: req.tenantId } }),
-      prisma.subject.findFirst({ where: { id: subjectId, tenantId: req.tenantId } }),
-      prisma.scoreComponent.findFirst({ where: { id: scoreComponentId, tenantId: req.tenantId } })
+      prisma.student.findFirst({
+        where: { id: studentId, tenantId: req.tenantId },
+        select: { id: true, fullName: true, studentCode: true }
+      }),
+      prisma.subject.findFirst({
+        where: { id: subjectId, tenantId: req.tenantId },
+        select: { id: true, name: true, isActive: true }
+      }),
+      prisma.scoreComponent.findFirst({
+        where: { id: scoreComponentId, tenantId: req.tenantId },
+        select: { id: true, name: true, subjectId: true, isActive: true }
+      })
     ])
     if (!studentCheck) throw new AppError('Student not found in your school', 404, 'NOT_FOUND')
     if (!subjectCheck) throw new AppError('Subject not found', 404, 'NOT_FOUND')
@@ -350,11 +442,19 @@ router.post('/', [
         studentId_subjectId_semesterId_scoreComponentId: {
           studentId, subjectId, semesterId, scoreComponentId
         }
-      }
+      },
+      select: { id: true, value: true, isLocked: true }
     })
     if (existingScore?.isLocked && req.user.role === 'TEACHER') {
       throw new AppError('Score is locked. Only Admin/Staff can edit locked scores.', 403, 'SCORE_LOCKED')
     }
+
+    const classSnapshot = await prisma.class.findFirst({
+      where: { id: classId, tenantId: req.tenantId },
+      select: { id: true, name: true }
+    })
+
+    const actor = createActorSnapshot(req.user)
 
     const score = await prisma.score.upsert({
       where: {
@@ -366,8 +466,29 @@ router.post('/', [
         tenantId: req.tenantId,
         studentId, subjectId, semesterId, scoreComponentId, value
       },
-      update: { value },
-      include: { scoreComponent: true, subject: true, student: true }
+      update: { value }
+    })
+
+    await prisma.scoreHistory.create({
+      data: createScoreHistoryPayload({
+        tenantId: req.tenantId,
+        scoreId: score.id,
+        studentId,
+        studentCode: studentCheck.studentCode,
+        studentName: studentCheck.fullName,
+        classId: classSnapshot?.id || null,
+        className: classSnapshot?.name || null,
+        subjectId,
+        subjectName: subjectCheck.name,
+        semesterId,
+        semesterName: semester.name,
+        scoreComponentId,
+        scoreComponentName: componentCheck.name,
+        action: existingScore ? 'UPDATE' : 'CREATE',
+        oldValue: existingScore?.value ?? null,
+        newValue: value,
+        actor,
+      })
     })
 
     res.json({ data: score })
@@ -405,7 +526,7 @@ router.post('/batch', async (req, res, next) => {
     const allStudentIds = [...new Set(scores.map(s => s.studentId))]
     const students = await prisma.student.findMany({
       where: { id: { in: allStudentIds }, tenantId: req.tenantId, isActive: true },
-      select: { id: true, classId: true }
+      select: { id: true, classId: true, fullName: true, studentCode: true }
     })
     if (students.length !== allStudentIds.length) {
       throw new AppError('One or more students not found in your school', 404, 'STUDENT_NOT_FOUND')
@@ -413,22 +534,45 @@ router.post('/batch', async (req, res, next) => {
     // Validate scoreComponents belong to their subjects
     const componentIds = [...new Set(scores.map(s => s.scoreComponentId))]
     const subjectIds = [...new Set(scores.map(s => s.subjectId))]
-    const [components, subjects] = await Promise.all([
-      prisma.scoreComponent.findMany({ where: { id: { in: componentIds }, tenantId: req.tenantId }, select: { id: true, subjectId: true, isActive: true } }),
-      prisma.subject.findMany({ where: { id: { in: subjectIds }, tenantId: req.tenantId }, select: { id: true, isActive: true } })
+    const [components, subjects, semesters, existingScores] = await Promise.all([
+      prisma.scoreComponent.findMany({ where: { id: { in: componentIds }, tenantId: req.tenantId }, select: { id: true, name: true, subjectId: true, isActive: true } }),
+      prisma.subject.findMany({ where: { id: { in: subjectIds }, tenantId: req.tenantId }, select: { id: true, name: true, isActive: true } }),
+      prisma.semester.findMany({ where: { id: { in: semesterIds }, tenantId: req.tenantId }, select: { id: true, name: true } }),
+      prisma.score.findMany({
+        where: {
+          tenantId: req.tenantId,
+          OR: scores.map(s => ({
+            studentId: s.studentId,
+            subjectId: s.subjectId,
+            semesterId: s.semesterId,
+            scoreComponentId: s.scoreComponentId,
+          }))
+        },
+        select: { id: true, studentId: true, subjectId: true, semesterId: true, scoreComponentId: true, value: true, isLocked: true }
+      })
     ])
     const componentMap = new Map(components.map((component) => [component.id, component]))
     const subjectMap = new Map(subjects.map((subject) => [subject.id, subject]))
+    const semesterMap = new Map(semesters.map((semester) => [semester.id, semester]))
+    const studentMap = new Map(students.map((student) => [student.id, student]))
+    const existingScoreMap = new Map(existingScores.map((score) => [
+      `${score.studentId}::${score.subjectId}::${score.semesterId}::${score.scoreComponentId}`,
+      score,
+    ]))
 
     for (const s of scores) {
       const component = componentMap.get(s.scoreComponentId)
       const subject = subjectMap.get(s.subjectId)
+      const semester = semesterMap.get(s.semesterId)
 
       if (!component) {
         throw new AppError(`Score component ${s.scoreComponentId} not found`, 404, 'COMPONENT_NOT_FOUND')
       }
       if (!subject) {
         throw new AppError(`Subject ${s.subjectId} not found`, 404, 'SUBJECT_NOT_FOUND')
+      }
+      if (!semester) {
+        throw new AppError(`Semester ${s.semesterId} not found`, 404, 'NOT_FOUND')
       }
       if (component.subjectId !== s.subjectId) {
         throw new AppError(`Score component does not belong to the specified subject`, 400, 'COMPONENT_SUBJECT_MISMATCH')
@@ -441,6 +585,30 @@ router.post('/batch', async (req, res, next) => {
       }
     }
 
+    const studentSemesterPairs = new Map()
+    for (const score of scores) {
+      const key = `${score.studentId}::${score.semesterId}`
+      if (!studentSemesterPairs.has(key)) {
+        studentSemesterPairs.set(key, { studentId: score.studentId, semesterId: score.semesterId })
+      }
+    }
+
+    const classByStudentSemester = new Map()
+    for (const { studentId, semesterId } of studentSemesterPairs.values()) {
+      const classId = await resolveStudentClassInSemester(req.tenantId, studentId, semesterId)
+      if (!classId) {
+        throw new AppError('Student not found or not assigned to a class', 400, 'INVALID_STUDENT')
+      }
+      classByStudentSemester.set(`${studentId}::${semesterId}`, classId)
+    }
+
+    const classIds = [...new Set(Array.from(classByStudentSemester.values()))]
+    const classes = await prisma.class.findMany({
+      where: { id: { in: classIds }, tenantId: req.tenantId },
+      select: { id: true, name: true }
+    })
+    const classMap = new Map(classes.map((classItem) => [classItem.id, classItem]))
+
     if (req.user.role === 'TEACHER') {
       // Batch validate all student+subject pairs at once
       const pairsToCheck = new Map()
@@ -451,19 +619,8 @@ router.post('/batch', async (req, res, next) => {
         }
       }
 
-      const classIds = []
-      const classByStudentSemester = new Map()
-      for (const s of scores) {
-        const classId = await resolveStudentClassInSemester(req.tenantId, s.studentId, s.semesterId)
-        if (!classId) {
-          throw new AppError('Student not found or not assigned to a class', 400, 'INVALID_STUDENT')
-        }
-        classByStudentSemester.set(`${s.studentId}::${s.semesterId}`, classId)
-        classIds.push(classId)
-      }
-
       const assignments = await prisma.teacherAssignment.findMany({
-        where: { teacherId: req.user.id, classId: { in: [...new Set(classIds)] }, tenantId: req.tenantId },
+        where: { teacherId: req.user.id, classId: { in: classIds }, tenantId: req.tenantId },
         select: { classId: true, subjectId: true }
       })
       const assignmentSet = new Set(assignments.map(a => `${a.classId}::${a.subjectId}`))
@@ -475,39 +632,63 @@ router.post('/batch', async (req, res, next) => {
         }
       }
 
-      // Check locked scores
-      const existingScores = await prisma.score.findMany({
-        where: {
-          tenantId: req.tenantId,
-          OR: scores.map(s => ({
-            studentId: s.studentId,
-            subjectId: s.subjectId,
-            semesterId: s.semesterId,
-            scoreComponentId: s.scoreComponentId,
-          }))
-        },
-        select: { studentId: true, subjectId: true, semesterId: true, scoreComponentId: true, isLocked: true }
-      })
-
       const lockedScore = existingScores.find(s => s.isLocked)
       if (lockedScore) {
         throw new AppError('One or more scores are locked. Only Admin/Staff can edit locked scores.', 403, 'SCORE_LOCKED')
       }
     }
 
-    const results = await prisma.$transaction(
-      scores.map(({ studentId, subjectId, semesterId, scoreComponentId, value }) => {
-        return prisma.score.upsert({
-          where: {
-            studentId_subjectId_semesterId_scoreComponentId: {
-              studentId, subjectId, semesterId, scoreComponentId
-            }
-          },
-          create: { tenantId: req.tenantId, studentId, subjectId, semesterId, scoreComponentId, value: Number(value) },
-          update: { value: Number(value) }
+    const actor = createActorSnapshot(req.user)
+
+    const results = await prisma.$transaction(async (tx) => {
+      const upsertedScores = await Promise.all(
+        scores.map(({ studentId, subjectId, semesterId, scoreComponentId, value }) => {
+          return tx.score.upsert({
+            where: {
+              studentId_subjectId_semesterId_scoreComponentId: {
+                studentId, subjectId, semesterId, scoreComponentId
+              }
+            },
+            create: { tenantId: req.tenantId, studentId, subjectId, semesterId, scoreComponentId, value: Number(value) },
+            update: { value: Number(value) }
+          })
+        })
+      )
+
+      await tx.scoreHistory.createMany({
+        data: scores.map((scoreInput, index) => {
+          const existingScore = existingScoreMap.get(`${scoreInput.studentId}::${scoreInput.subjectId}::${scoreInput.semesterId}::${scoreInput.scoreComponentId}`)
+          const student = studentMap.get(scoreInput.studentId)
+          const subject = subjectMap.get(scoreInput.subjectId)
+          const semester = semesterMap.get(scoreInput.semesterId)
+          const component = componentMap.get(scoreInput.scoreComponentId)
+          const classId = classByStudentSemester.get(`${scoreInput.studentId}::${scoreInput.semesterId}`)
+          const classSnapshot = classMap.get(classId)
+
+          return createScoreHistoryPayload({
+            tenantId: req.tenantId,
+            scoreId: upsertedScores[index].id,
+            studentId: scoreInput.studentId,
+            studentCode: student?.studentCode || null,
+            studentName: student?.fullName || 'Unknown',
+            classId: classSnapshot?.id || null,
+            className: classSnapshot?.name || null,
+            subjectId: scoreInput.subjectId,
+            subjectName: subject?.name || 'Unknown',
+            semesterId: scoreInput.semesterId,
+            semesterName: semester?.name || 'Unknown',
+            scoreComponentId: scoreInput.scoreComponentId,
+            scoreComponentName: component?.name || 'Unknown',
+            action: existingScore ? 'UPDATE' : 'CREATE',
+            oldValue: existingScore?.value ?? null,
+            newValue: Number(scoreInput.value),
+            actor,
+          })
         })
       })
-    )
+
+      return upsertedScores
+    })
 
     res.json({ data: results })
   } catch (error) {
@@ -519,14 +700,53 @@ router.post('/batch', async (req, res, next) => {
 router.patch('/:id/lock', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const existing = await prisma.score.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId }
+      where: { id: req.params.id, tenantId: req.tenantId },
+      include: {
+        student: { select: { id: true, fullName: true, studentCode: true } },
+        subject: { select: { id: true, name: true } },
+        semester: { select: { id: true, name: true } },
+        scoreComponent: { select: { id: true, name: true } },
+      }
     })
     if (!existing) throw new AppError('Score not found', 404, 'NOT_FOUND')
 
-    const score = await prisma.score.update({
-      where: { id: req.params.id },
-      data: { isLocked: true }
+    const classId = await resolveStudentClassInSemester(req.tenantId, existing.studentId, existing.semesterId)
+    const classSnapshot = classId
+      ? await prisma.class.findFirst({ where: { id: classId, tenantId: req.tenantId }, select: { id: true, name: true } })
+      : null
+    const actor = createActorSnapshot(req.user)
+
+    const score = await prisma.$transaction(async (tx) => {
+      const updated = await tx.score.update({
+        where: { id: req.params.id },
+        data: { isLocked: true }
+      })
+
+      await tx.scoreHistory.create({
+        data: createScoreHistoryPayload({
+          tenantId: req.tenantId,
+          scoreId: updated.id,
+          studentId: existing.student.id,
+          studentCode: existing.student.studentCode,
+          studentName: existing.student.fullName,
+          classId: classSnapshot?.id || null,
+          className: classSnapshot?.name || null,
+          subjectId: existing.subject.id,
+          subjectName: existing.subject.name,
+          semesterId: existing.semester.id,
+          semesterName: existing.semester.name,
+          scoreComponentId: existing.scoreComponent.id,
+          scoreComponentName: existing.scoreComponent.name,
+          action: 'LOCK',
+          oldValue: existing.value,
+          newValue: existing.value,
+          actor,
+        })
+      })
+
+      return updated
     })
+
     res.json({ data: score })
   } catch (error) {
     next(error)
@@ -537,14 +757,53 @@ router.patch('/:id/lock', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, ne
 router.patch('/:id/unlock', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
     const existing = await prisma.score.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId }
+      where: { id: req.params.id, tenantId: req.tenantId },
+      include: {
+        student: { select: { id: true, fullName: true, studentCode: true } },
+        subject: { select: { id: true, name: true } },
+        semester: { select: { id: true, name: true } },
+        scoreComponent: { select: { id: true, name: true } },
+      }
     })
     if (!existing) throw new AppError('Score not found', 404, 'NOT_FOUND')
 
-    const score = await prisma.score.update({
-      where: { id: req.params.id },
-      data: { isLocked: false }
+    const classId = await resolveStudentClassInSemester(req.tenantId, existing.studentId, existing.semesterId)
+    const classSnapshot = classId
+      ? await prisma.class.findFirst({ where: { id: classId, tenantId: req.tenantId }, select: { id: true, name: true } })
+      : null
+    const actor = createActorSnapshot(req.user)
+
+    const score = await prisma.$transaction(async (tx) => {
+      const updated = await tx.score.update({
+        where: { id: req.params.id },
+        data: { isLocked: false }
+      })
+
+      await tx.scoreHistory.create({
+        data: createScoreHistoryPayload({
+          tenantId: req.tenantId,
+          scoreId: updated.id,
+          studentId: existing.student.id,
+          studentCode: existing.student.studentCode,
+          studentName: existing.student.fullName,
+          classId: classSnapshot?.id || null,
+          className: classSnapshot?.name || null,
+          subjectId: existing.subject.id,
+          subjectName: existing.subject.name,
+          semesterId: existing.semester.id,
+          semesterName: existing.semester.name,
+          scoreComponentId: existing.scoreComponent.id,
+          scoreComponentName: existing.scoreComponent.name,
+          action: 'UNLOCK',
+          oldValue: existing.value,
+          newValue: existing.value,
+          actor,
+        })
+      })
+
+      return updated
     })
+
     res.json({ data: score })
   } catch (error) {
     next(error)
@@ -560,19 +819,64 @@ router.post('/class/:classId/lock', authorize('SUPER_ADMIN', 'STAFF'), async (re
       throw new AppError('subjectId and semesterId are required', 400, 'MISSING_PARAMS')
     }
 
-    const classCheck = await prisma.class.findFirst({ where: { id: req.params.classId, tenantId: req.tenantId } })
+    const classCheck = await prisma.class.findFirst({ where: { id: req.params.classId, tenantId: req.tenantId }, select: { id: true, name: true } })
     if (!classCheck) throw new AppError('Class not found', 404, 'NOT_FOUND')
 
     const studentIds = await getStudentIdsForClassAndSemester(req.tenantId, req.params.classId, semesterId)
 
-    const result = await prisma.score.updateMany({
+    const affectedScores = await prisma.score.findMany({
       where: {
         studentId: { in: studentIds },
         subjectId,
         semesterId,
         tenantId: req.tenantId
       },
-      data: { isLocked: true }
+      include: {
+        student: { select: { id: true, fullName: true, studentCode: true } },
+        subject: { select: { id: true, name: true } },
+        semester: { select: { id: true, name: true } },
+        scoreComponent: { select: { id: true, name: true } },
+      }
+    })
+
+    const actor = createActorSnapshot(req.user)
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedResult = await tx.score.updateMany({
+        where: {
+          studentId: { in: studentIds },
+          subjectId,
+          semesterId,
+          tenantId: req.tenantId
+        },
+        data: { isLocked: true }
+      })
+
+      if (affectedScores.length > 0) {
+        await tx.scoreHistory.createMany({
+          data: affectedScores.map((score) => createScoreHistoryPayload({
+            tenantId: req.tenantId,
+            scoreId: score.id,
+            studentId: score.student.id,
+            studentCode: score.student.studentCode,
+            studentName: score.student.fullName,
+            classId: classCheck.id,
+            className: classCheck.name,
+            subjectId: score.subject.id,
+            subjectName: score.subject.name,
+            semesterId: score.semester.id,
+            semesterName: score.semester.name,
+            scoreComponentId: score.scoreComponent.id,
+            scoreComponentName: score.scoreComponent.name,
+            action: 'LOCK',
+            oldValue: score.value,
+            newValue: score.value,
+            actor,
+          }))
+        })
+      }
+
+      return updatedResult
     })
 
     res.json({ data: { message: `Locked ${result.count} scores` } })
@@ -590,19 +894,64 @@ router.post('/class/:classId/unlock', authorize('SUPER_ADMIN', 'STAFF'), async (
       throw new AppError('subjectId and semesterId are required', 400, 'MISSING_PARAMS')
     }
 
-    const classCheck = await prisma.class.findFirst({ where: { id: req.params.classId, tenantId: req.tenantId } })
+    const classCheck = await prisma.class.findFirst({ where: { id: req.params.classId, tenantId: req.tenantId }, select: { id: true, name: true } })
     if (!classCheck) throw new AppError('Class not found', 404, 'NOT_FOUND')
 
     const studentIds = await getStudentIdsForClassAndSemester(req.tenantId, req.params.classId, semesterId)
 
-    const result = await prisma.score.updateMany({
+    const affectedScores = await prisma.score.findMany({
       where: {
         studentId: { in: studentIds },
         subjectId,
         semesterId,
         tenantId: req.tenantId
       },
-      data: { isLocked: false }
+      include: {
+        student: { select: { id: true, fullName: true, studentCode: true } },
+        subject: { select: { id: true, name: true } },
+        semester: { select: { id: true, name: true } },
+        scoreComponent: { select: { id: true, name: true } },
+      }
+    })
+
+    const actor = createActorSnapshot(req.user)
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedResult = await tx.score.updateMany({
+        where: {
+          studentId: { in: studentIds },
+          subjectId,
+          semesterId,
+          tenantId: req.tenantId
+        },
+        data: { isLocked: false }
+      })
+
+      if (affectedScores.length > 0) {
+        await tx.scoreHistory.createMany({
+          data: affectedScores.map((score) => createScoreHistoryPayload({
+            tenantId: req.tenantId,
+            scoreId: score.id,
+            studentId: score.student.id,
+            studentCode: score.student.studentCode,
+            studentName: score.student.fullName,
+            classId: classCheck.id,
+            className: classCheck.name,
+            subjectId: score.subject.id,
+            subjectName: score.subject.name,
+            semesterId: score.semester.id,
+            semesterName: score.semester.name,
+            scoreComponentId: score.scoreComponent.id,
+            scoreComponentName: score.scoreComponent.name,
+            action: 'UNLOCK',
+            oldValue: score.value,
+            newValue: score.value,
+            actor,
+          }))
+        })
+      }
+
+      return updatedResult
     })
 
     res.json({ data: { message: `Unlocked ${result.count} scores` } })
@@ -615,11 +964,47 @@ router.post('/class/:classId/unlock', authorize('SUPER_ADMIN', 'STAFF'), async (
 router.delete('/:id', authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
     const existing = await prisma.score.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId }
+      where: { id: req.params.id, tenantId: req.tenantId },
+      include: {
+        student: { select: { id: true, fullName: true, studentCode: true } },
+        subject: { select: { id: true, name: true } },
+        semester: { select: { id: true, name: true } },
+        scoreComponent: { select: { id: true, name: true } },
+      }
     })
     if (!existing) throw new AppError('Score not found', 404, 'NOT_FOUND')
 
-    await prisma.score.delete({ where: { id: req.params.id } })
+    const classId = await resolveStudentClassInSemester(req.tenantId, existing.studentId, existing.semesterId)
+    const classSnapshot = classId
+      ? await prisma.class.findFirst({ where: { id: classId, tenantId: req.tenantId }, select: { id: true, name: true } })
+      : null
+    const actor = createActorSnapshot(req.user)
+
+    await prisma.$transaction(async (tx) => {
+      await tx.score.delete({ where: { id: req.params.id } })
+      await tx.scoreHistory.create({
+        data: createScoreHistoryPayload({
+          tenantId: req.tenantId,
+          scoreId: existing.id,
+          studentId: existing.student.id,
+          studentCode: existing.student.studentCode,
+          studentName: existing.student.fullName,
+          classId: classSnapshot?.id || null,
+          className: classSnapshot?.name || null,
+          subjectId: existing.subject.id,
+          subjectName: existing.subject.name,
+          semesterId: existing.semester.id,
+          semesterName: existing.semester.name,
+          scoreComponentId: existing.scoreComponent.id,
+          scoreComponentName: existing.scoreComponent.name,
+          action: 'DELETE',
+          oldValue: existing.value,
+          newValue: null,
+          actor,
+        })
+      })
+    })
+
     res.json({ data: { message: 'Score deleted' } })
   } catch (error) {
     next(error)

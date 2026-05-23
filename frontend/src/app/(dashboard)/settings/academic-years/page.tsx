@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { academicYearApi, settingsApi } from '@/lib/api'
+import { getSemesterEntryStatus, getSemesterScheduleStatus } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
 import { Plus, Loader2, Trash2, Edit2, X, CheckCircle2, CalendarDays } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -25,9 +26,19 @@ interface AcademicYear {
   semesters: Semester[]
 }
 
+interface DeleteTarget {
+  type: 'year' | 'semester'
+  id: string
+  yearId?: string
+  name: string
+  title: string
+  description: string
+}
+
 export default function AcademicYearsPage() {
   const { user } = useAuthStore()
   const isAdmin = user?.role === 'SUPER_ADMIN'
+  const now = new Date()
 
   const [years, setYears] = useState<AcademicYear[]>([])
   const [loading, setLoading] = useState(true)
@@ -45,6 +56,10 @@ export default function AcademicYearsPage() {
 
   const [showSemesterModal, setShowSemesterModal] = useState(false)
   const [semesterYear, setSemesterYear] = useState<AcademicYear | null>(null)
+  const [editingSemester, setEditingSemester] = useState<Semester | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const [deleteConfirmValue, setDeleteConfirmValue] = useState('')
+  const [deleting, setDeleting] = useState(false)
   const [semesterForm, setSemesterForm] = useState({
     semesterNum: 1,
     name: '',
@@ -118,14 +133,48 @@ export default function AcademicYearsPage() {
     }
   }
 
-  const deleteYear = async (id: string) => {
-    if (!confirm('Xóa năm học này?')) return
+  const openDeleteYear = (year: AcademicYear) => {
+    setDeleteConfirmValue('')
+    setDeleteTarget({
+      type: 'year',
+      id: year.id,
+      name: `${year.startYear}-${year.endYear}`,
+      title: 'Xác nhận xóa năm học',
+      description: 'Thao tác này không thể hoàn tác. Hệ thống vẫn sẽ chặn xóa nếu năm học còn học kỳ, phân lớp hoặc dữ liệu liên quan.',
+    })
+  }
+
+  const openDeleteSemester = (yearId: string, semester: Semester) => {
+    setDeleteConfirmValue('')
+    setDeleteTarget({
+      type: 'semester',
+      id: semester.id,
+      yearId,
+      name: semester.name,
+      title: 'Xác nhận xóa học kỳ',
+      description: 'Thao tác này không thể hoàn tác. Hệ thống sẽ chặn xóa nếu học kỳ đã phát sinh điểm, phân lớp, học phí hoặc dữ liệu chuyển lớp.',
+    })
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return
+
     try {
-      await academicYearApi.delete(id)
-      toast.success('Xóa năm học thành công')
+      setDeleting(true)
+      if (deleteTarget.type === 'year') {
+        await academicYearApi.delete(deleteTarget.id)
+        toast.success('Xóa năm học thành công')
+      } else {
+        await academicYearApi.deleteSemester(deleteTarget.yearId!, deleteTarget.id)
+        toast.success('Xóa học kỳ thành công')
+      }
+      setDeleteTarget(null)
+      setDeleteConfirmValue('')
       fetchData()
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Xóa năm học thất bại')
+      toast.error(error.response?.data?.error?.message || 'Xóa thất bại')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -133,6 +182,7 @@ export default function AcademicYearsPage() {
     const usedNums = new Set(year.semesters.map((s) => s.semesterNum))
     const nextNum = Array.from({ length: maxSemesters }, (_, i) => i + 1).find((n) => !usedNums.has(n)) || 1
     setSemesterYear(year)
+    setEditingSemester(null)
     setSemesterForm({
       semesterNum: nextNum,
       name: `Học kỳ ${nextNum}`,
@@ -142,18 +192,37 @@ export default function AcademicYearsPage() {
     setShowSemesterModal(true)
   }
 
+  const openEditSemester = (year: AcademicYear, semester: Semester) => {
+    setSemesterYear(year)
+    setEditingSemester(semester)
+    setSemesterForm({
+      semesterNum: semester.semesterNum,
+      name: semester.name,
+      startDate: semester.startDate?.slice(0, 10) || '',
+      endDate: semester.endDate?.slice(0, 10) || ''
+    })
+    setShowSemesterModal(true)
+  }
+
   const submitSemester = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!semesterYear) return
     if (!semesterForm.startDate || !semesterForm.endDate) return toast.error('Cần chọn ngày bắt đầu/kết thúc')
+    if (new Date(semesterForm.startDate) >= new Date(semesterForm.endDate)) return toast.error('Ngày bắt đầu phải trước ngày kết thúc')
     try {
       setSaving(true)
-      await academicYearApi.createSemester(semesterYear.id, semesterForm)
-      toast.success('Thêm học kỳ thành công')
+      if (editingSemester) {
+        await academicYearApi.updateSemester(semesterYear.id, editingSemester.id, semesterForm)
+        toast.success('Cập nhật học kỳ thành công')
+      } else {
+        await academicYearApi.createSemester(semesterYear.id, semesterForm)
+        toast.success('Thêm học kỳ thành công')
+      }
       setShowSemesterModal(false)
+      setEditingSemester(null)
       await fetchData()
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Thêm học kỳ thất bại')
+      toast.error(error.response?.data?.error?.message || 'Lưu học kỳ thất bại')
     } finally {
       setSaving(false)
     }
@@ -166,17 +235,6 @@ export default function AcademicYearsPage() {
       fetchData()
     } catch (error: any) {
       toast.error(error.response?.data?.error?.message || 'Cập nhật học kỳ thất bại')
-    }
-  }
-
-  const deleteSemester = async (yearId: string, semesterId: string) => {
-    if (!confirm('Xóa học kỳ này?')) return
-    try {
-      await academicYearApi.deleteSemester(yearId, semesterId)
-      toast.success('Xóa học kỳ thành công')
-      fetchData()
-    } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Xóa học kỳ thất bại')
     }
   }
 
@@ -220,7 +278,7 @@ export default function AcademicYearsPage() {
                   <button onClick={() => openEditYear(year)} className="p-2 text-gray-500 hover:bg-gray-100 rounded">
                     <Edit2 className="w-4 h-4" />
                   </button>
-                  <button onClick={() => deleteYear(year.id)} className="p-2 text-red-500 hover:bg-red-50 rounded">
+                  <button onClick={() => openDeleteYear(year)} className="p-2 text-red-500 hover:bg-red-50 rounded">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
@@ -241,15 +299,24 @@ export default function AcademicYearsPage() {
                   {year.semesters.map((semester) => (
                     <div key={semester.id} className="flex items-center justify-between bg-gray-50 border rounded px-3 py-2">
                       <div>
-                        <p className="text-sm font-medium">{semester.name}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium">{semester.name}</p>
+                          <span className={`text-xs px-2 py-0.5 rounded ${getSemesterEntryStatus(semester).className}`}>
+                            Nhập điểm: {getSemesterEntryStatus(semester).label}
+                          </span>
+                          <span className={`text-xs px-2 py-0.5 rounded ${getSemesterScheduleStatus(semester, now).className}`}>
+                            {getSemesterScheduleStatus(semester, now).label}
+                          </span>
+                        </div>
                         <p className="text-xs text-gray-600">{new Date(semester.startDate).toLocaleDateString('vi-VN')} - {new Date(semester.endDate).toLocaleDateString('vi-VN')}</p>
                       </div>
                       {isAdmin && (
                         <div className="flex items-center gap-2">
                           <button onClick={() => toggleSemesterActive(year.id, semester)} className={`text-xs px-2 py-1 rounded ${semester.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                            {semester.isActive ? 'Đang dùng' : 'Kích hoạt'}
+                            {semester.isActive ? 'Đang kích hoạt' : 'Kích hoạt'}
                           </button>
-                          <button onClick={() => deleteSemester(year.id, semester.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
+                          <button onClick={() => openEditSemester(year, semester)} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded" title="Sửa học kỳ"><Edit2 className="w-4 h-4" /></button>
+                          <button onClick={() => openDeleteSemester(year.id, semester)} className="p-1.5 text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
                         </div>
                       )}
                     </div>
@@ -290,7 +357,7 @@ export default function AcademicYearsPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="card p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Thêm học kỳ ({semesterYear.startYear}-{semesterYear.endYear})</h2>
+              <h2 className="text-lg font-semibold">{editingSemester ? 'Sửa học kỳ' : 'Thêm học kỳ'} ({semesterYear.startYear}-{semesterYear.endYear})</h2>
               <button onClick={() => setShowSemesterModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={submitSemester} className="space-y-4">
@@ -299,7 +366,7 @@ export default function AcademicYearsPage() {
                   <label className="label">Số thứ tự kỳ</label>
                   <select className="input" value={semesterForm.semesterNum} onChange={(e) => setSemesterForm({ ...semesterForm, semesterNum: Number(e.target.value), name: `Học kỳ ${e.target.value}` })}>
                     {Array.from({ length: maxSemesters }, (_, i) => i + 1)
-                      .filter((num) => !semesterYear.semesters.some((s) => s.semesterNum === num))
+                      .filter((num) => !semesterYear.semesters.some((s) => s.semesterNum === num && s.id !== editingSemester?.id))
                       .map((num) => <option key={num} value={num}>Học kỳ {num}</option>)}
                   </select>
                 </div>
@@ -314,9 +381,52 @@ export default function AcademicYearsPage() {
               </div>
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setShowSemesterModal(false)} className="btn-outline flex-1">Hủy</button>
-                <button type="submit" disabled={saving} className="btn-primary flex-1">{saving ? 'Đang lưu...' : 'Lưu'}</button>
+                <button type="submit" disabled={saving} className="btn-primary flex-1">{saving ? 'Đang lưu...' : editingSemester ? 'Cập nhật' : 'Lưu'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="card w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">{deleteTarget.title}</h2>
+              <button onClick={() => { setDeleteTarget(null); setDeleteConfirmValue('') }} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="space-y-3 text-sm text-gray-600">
+              <p>{deleteTarget.description}</p>
+              <p>
+                Nhập chính xác <span className="font-semibold text-gray-900">{deleteTarget.name}</span> để xác nhận xóa.
+              </p>
+              <input
+                className="input"
+                value={deleteConfirmValue}
+                onChange={(e) => setDeleteConfirmValue(e.target.value)}
+                placeholder={`Nhập: ${deleteTarget.name}`}
+              />
+            </div>
+
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => { setDeleteTarget(null); setDeleteConfirmValue('') }}
+                className="btn-outline flex-1"
+                disabled={deleting}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deleting || deleteConfirmValue.trim() !== deleteTarget.name}
+                className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleting ? 'Đang xóa...' : 'Xóa vĩnh viễn'}
+              </button>
+            </div>
           </div>
         </div>
       )}

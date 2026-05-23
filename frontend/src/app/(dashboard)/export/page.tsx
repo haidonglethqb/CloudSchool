@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { academicYearApi, classApi, downloadBlob, exportApi, subjectApi } from '@/lib/api'
 import { Download, Loader2, SlidersHorizontal } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -118,21 +118,54 @@ export default function ExportPage() {
   const [classId, setClassId] = useState('')
   const [semesterId, setSemesterId] = useState('')
   const [academicYearId, setAcademicYearId] = useState('')
+  const semesterIdRef = useRef('')
 
   const sectionOptions = useMemo(() => sectionConfig[target], [target])
   const columnOptions = useMemo(() => columnConfig[target], [target])
 
   useEffect(() => {
-    Promise.all([subjectApi.list(), classApi.list(), academicYearApi.list(), subjectApi.getSemesters()])
-      .then(([subjectRes, classRes, yearRes, semesterRes]) => {
+    semesterIdRef.current = semesterId
+  }, [semesterId])
+
+  const refreshSemesters = useCallback(async (options?: { notifyIfSelectionMissing?: boolean }) => {
+    const semesterRes = await subjectApi.getSemesters()
+    const nextSemesters = semesterRes.data.data || []
+    const currentSemesterId = semesterIdRef.current
+
+    setSemesters(nextSemesters)
+
+    if (currentSemesterId && !nextSemesters.some((semester: any) => semester.id === currentSemesterId)) {
+      setSemesterId('')
+      if (options?.notifyIfSelectionMissing) {
+        toast.error('Học kỳ đang chọn đã bị xóa hoặc không còn khả dụng. Vui lòng chọn lại học kỳ.')
+      }
+      return nextSemesters
+    }
+
+    return nextSemesters
+  }, [])
+
+  useEffect(() => {
+    Promise.all([subjectApi.list(), classApi.list(), academicYearApi.list(), refreshSemesters()])
+      .then(([subjectRes, classRes, yearRes]) => {
         setSubjects(subjectRes.data.data || [])
         setClasses(classRes.data.data || [])
         setYears(yearRes.data.data || [])
-        setSemesters(semesterRes.data.data || [])
       })
       .catch(() => toast.error('Không thể tải dữ liệu export'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [refreshSemesters])
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshSemesters({ notifyIfSelectionMissing: true }).catch(() => {})
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [refreshSemesters])
 
   useEffect(() => {
     setSections(toDefaultValues(sectionConfig[target]))
@@ -204,6 +237,10 @@ export default function ExportPage() {
       }
       toast.success('Xuất file thành công')
     } catch (error: any) {
+      if (error.response?.data?.error?.code === 'NOT_FOUND') {
+        await refreshSemesters({ notifyIfSelectionMissing: true })
+        return
+      }
       toast.error(error.response?.data?.error?.message || 'Xuất file thất bại')
     } finally {
       setExporting(false)

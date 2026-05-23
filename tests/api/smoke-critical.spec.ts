@@ -87,7 +87,6 @@ test.describe('Critical Smoke', () => {
   })
 
   test('locked score cannot be updated by teacher', async () => {
-    const now = new Date()
     const subjectsRes = await superAdminCtx.get('/api/subjects')
     expect(subjectsRes.status()).toBe(200)
     const subjectsBody = await subjectsRes.json()
@@ -96,12 +95,7 @@ test.describe('Critical Smoke', () => {
     const semestersRes = await superAdminCtx.get('/api/academic-years/semesters')
     expect(semestersRes.status()).toBe(200)
     const semestersBody = await semestersRes.json()
-    const writableSemester = (semestersBody.data || []).find((sem: any) => {
-      if (!sem?.isActive || !sem?.startDate || !sem?.endDate) return false
-      const start = new Date(sem.startDate)
-      const end = new Date(sem.endDate)
-      return now >= start && now <= end
-    })
+    const writableSemester = (semestersBody.data || []).find((sem: any) => sem?.isActive)
     const semesterId = writableSemester?.id
 
     if (!subjectId || !semesterId) {

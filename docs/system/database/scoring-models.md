@@ -68,6 +68,50 @@ model Score {
 
 When `true`, the score is finalized and cannot be modified. Used after report card generation.
 
+## ScoreHistory
+
+Immutable audit snapshots for score entry, edits, locks, unlocks, and deletions.
+
+```prisma
+model ScoreHistory {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  scoreId            String?
+  studentId          String
+  studentCode        String?
+  studentName        String
+  classId            String?
+  className          String?
+  subjectId          String
+  subjectName        String
+  semesterId         String
+  semesterName       String
+  scoreComponentId   String
+  scoreComponentName String
+  action             String
+  oldValue           Float?
+  newValue           Float?
+  actorId            String?
+  actorName          String
+  actorRole          String
+  createdAt          DateTime @default(now())
+}
+```
+
+### Purpose
+
+- Keeps an immutable timeline for `CREATE`, `UPDATE`, `LOCK`, `UNLOCK`, and `DELETE` score actions.
+- Stores denormalized snapshots so the audit feed still renders after later renames or deletions.
+- Supports the score-entry history panel filtered by class, subject, semester, and score component.
+
+### Indexes
+
+| Index | Fields | Purpose |
+|---|---|---|
+| `@@index` | `(tenantId, classId, subjectId, semesterId, createdAt)` | Main score-entry history feed |
+| `@@index` | `(tenantId, studentId, semesterId, createdAt)` | Student-specific audit lookup |
+| `@@index` | `(tenantId, scoreComponentId, createdAt)` | Component-level investigation |
+
 ## Promotion
 
 Student pass/fail results per class and semester.

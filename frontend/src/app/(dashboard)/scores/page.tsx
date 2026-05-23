@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { classApi, subjectApi, scoreApi, scoreComponentApi, settingsApi, exportApi, downloadBlob } from '@/lib/api'
-import { getPassStatus } from '@/lib/utils'
+import { formatDateTime, getPassStatus, getSemesterEntryStatus, getSemesterScheduleStatus } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
-import { Save, Loader2, AlertCircle, CheckCircle, Lock, Unlock, Download } from 'lucide-react'
+import { Save, Loader2, AlertCircle, CheckCircle, Lock, Unlock, Download, ChevronLeft, ChevronRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface Class {
@@ -48,6 +48,20 @@ interface StudentRow {
   average: number | null
 }
 
+interface ScoreHistoryEntry {
+  id: string
+  studentId: string
+  studentCode: string | null
+  studentName: string
+  scoreComponentName: string
+  action: string
+  oldValue: number | null
+  newValue: number | null
+  actorName: string
+  actorRole: string
+  createdAt: string
+}
+
 export default function ScoresPage() {
   const [classes, setClasses] = useState<Class[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
@@ -58,8 +72,12 @@ export default function ScoresPage() {
   const [selectedSemester, setSelectedSemester] = useState('')
   const [components, setComponents] = useState<ScoreComponent[]>([])
   const [students, setStudents] = useState<StudentRow[]>([])
+  const [historyEntries, setHistoryEntries] = useState<ScoreHistoryEntry[]>([])
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyTotalPages, setHistoryTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
   const [loadingScores, setLoadingScores] = useState(false)
+  const [loadingHistory, setLoadingHistory] = useState(false)
   const [saving, setSaving] = useState(false)
   const [editedScores, setEditedScores] = useState<
     Map<string, { studentId: string; scoreComponentId: string; value: number }>
@@ -67,46 +85,72 @@ export default function ScoresPage() {
   const user = useAuthStore(s => s.user)
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'PLATFORM_ADMIN' || user?.role === 'STAFF'
   const now = new Date()
+  const selectedSemesterRef = useRef('')
   const selectedSemesterMeta = semesters.find((semester) => semester.id === selectedSemester)
-  const selectedSemesterStart = selectedSemesterMeta?.startDate ? new Date(selectedSemesterMeta.startDate) : null
-  const selectedSemesterEnd = selectedSemesterMeta?.endDate ? new Date(selectedSemesterMeta.endDate) : null
-  const isSemesterOpenForEntry = Boolean(
-    selectedSemesterMeta?.isActive &&
-    selectedSemesterStart &&
-    selectedSemesterEnd &&
-    now >= selectedSemesterStart &&
-    now <= selectedSemesterEnd
-  )
+  const isSemesterOpenForEntry = Boolean(selectedSemesterMeta?.isActive)
 
-  const getSemesterStatusLabel = (semester: Semester) => {
-    if (!semester.isActive || !semester.startDate || !semester.endDate) return 'Đã dừng'
-    const start = new Date(semester.startDate)
-    const end = new Date(semester.endDate)
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 'Đã dừng'
-    if (now < start) return 'Chưa mở'
-    if (now > end) return 'Đã dừng'
-    return 'Đang mở'
-  }
+  const selectedSemesterEntryStatus = selectedSemesterMeta ? getSemesterEntryStatus(selectedSemesterMeta) : null
+  const selectedSemesterScheduleStatus = selectedSemesterMeta ? getSemesterScheduleStatus(selectedSemesterMeta, now) : null
+
+  useEffect(() => {
+    selectedSemesterRef.current = selectedSemester
+  }, [selectedSemester])
+
+  const refreshSemesters = useCallback(async (options?: { notifyIfSelectionMissing?: boolean }) => {
+    const semestersRes = await subjectApi.getSemesters()
+    const nextSemesters = semestersRes.data.data || []
+    const currentSemesterId = selectedSemesterRef.current
+
+    setSemesters(nextSemesters)
+
+    if (currentSemesterId && !nextSemesters.some((semester: Semester) => semester.id === currentSemesterId)) {
+      setSelectedSemester('')
+      setStudents([])
+      setEditedScores(new Map())
+      if (options?.notifyIfSelectionMissing) {
+        toast.error('Học kỳ đang chọn đã bị xóa hoặc không còn khả dụng. Vui lòng chọn lại học kỳ.')
+      }
+      return nextSemesters
+    }
+
+    if (!currentSemesterId) {
+      const activeSem = nextSemesters.find((semester: Semester) => semester.isActive)
+      if (activeSem) {
+        setSelectedSemester(activeSem.id)
+      }
+    }
+
+    return nextSemesters
+  }, [])
 
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        const [classesRes, subjectsRes, semestersRes, settingsRes] = await Promise.all([
-          classApi.list(), subjectApi.list(), subjectApi.getSemesters(), settingsApi.get(),
+        const [classesRes, subjectsRes, settingsRes] = await Promise.all([
+          classApi.list(), subjectApi.list(), settingsApi.get(),
         ])
         setClasses(classesRes.data.data)
         setSubjects(subjectsRes.data.data)
-        setSemesters(semestersRes.data.data)
         setPassScore(settingsRes.data.data?.passScore ?? 5)
 
-        const activeSem = semestersRes.data.data.find((s: Semester) => s.isActive)
-        if (activeSem) setSelectedSemester(activeSem.id)
+        await refreshSemesters()
       } catch {
-        console.error('Failed to fetch initial data')
+        toast.error('Không thể tải dữ liệu ban đầu')
       } finally { setLoading(false) }
     }
     fetchInitialData()
-  }, [])
+  }, [refreshSemesters])
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshSemesters({ notifyIfSelectionMissing: true }).catch(() => {})
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [refreshSemesters])
 
   // Load score components when subject changes
   useEffect(() => {
@@ -146,12 +190,51 @@ export default function ScoresPage() {
       })
       setStudents(rows)
       setEditedScores(new Map())
-    } catch {
+    } catch (err: any) {
+      if (err.response?.data?.error?.code === 'NOT_FOUND') {
+        await refreshSemesters({ notifyIfSelectionMissing: true })
+        return
+      }
       toast.error('Không thể tải điểm')
     } finally { setLoadingScores(false) }
-  }, [selectedClass, selectedSubject, selectedSemester])
+  }, [selectedClass, selectedSubject, selectedSemester, refreshSemesters])
 
   useEffect(() => { fetchScores() }, [fetchScores])
+
+  useEffect(() => {
+    setHistoryPage(1)
+  }, [selectedClass, selectedSubject, selectedSemester])
+
+  const fetchHistory = useCallback(async () => {
+    if (!selectedClass || !selectedSubject || !selectedSemester) {
+      setHistoryEntries([])
+      setHistoryTotalPages(1)
+      return
+    }
+
+    try {
+      setLoadingHistory(true)
+      const response = await scoreApi.history({
+        classId: selectedClass,
+        subjectId: selectedSubject,
+        semesterId: selectedSemester,
+        page: historyPage,
+        limit: 10,
+      })
+      setHistoryEntries(response.data.data || [])
+      setHistoryTotalPages(response.data.meta?.totalPages || 1)
+    } catch (err: any) {
+      if (err.response?.data?.error?.code === 'NOT_FOUND') {
+        await refreshSemesters({ notifyIfSelectionMissing: true })
+        return
+      }
+      toast.error('Không thể tải lịch sử nhập điểm')
+    } finally {
+      setLoadingHistory(false)
+    }
+  }, [selectedClass, selectedSubject, selectedSemester, historyPage, refreshSemesters])
+
+  useEffect(() => { fetchHistory() }, [fetchHistory])
 
   const calcAverage = (scores: Record<string, ScoreEntry>) => {
     let totalW = 0, totalV = 0
@@ -194,7 +277,7 @@ export default function ScoresPage() {
   const handleSave = async () => {
     if (editedScores.size === 0) { toast.error('Không có thay đổi để lưu'); return }
     if (!isSemesterOpenForEntry) {
-      toast.error('Kỳ này chưa mở hoặc đã dừng nhập điểm')
+      toast.error('Học kỳ này đang đóng nhập điểm. Hãy kích hoạt học kỳ ở phần Năm học & Học kỳ')
       return
     }
     try {
@@ -208,9 +291,14 @@ export default function ScoresPage() {
       toast.success('Lưu điểm thành công')
       setEditedScores(new Map())
       fetchScores()
+      fetchHistory()
     } catch (err: any) {
       if (err.response?.data?.error?.code === 'SEMESTER_CLOSED') {
-        toast.error('Kỳ này chưa mở hoặc đã dừng nhập điểm')
+        toast.error('Học kỳ này đang đóng nhập điểm. Hãy kích hoạt học kỳ ở phần Năm học & Học kỳ')
+        return
+      }
+      if (err.response?.data?.error?.code === 'NOT_FOUND') {
+        await refreshSemesters({ notifyIfSelectionMissing: true })
         return
       }
       toast.error(err.response?.data?.error?.message || 'Lưu điểm thất bại')
@@ -222,6 +310,7 @@ export default function ScoresPage() {
       await scoreApi.lock(scoreId)
       toast.success('Đã khóa điểm')
       fetchScores()
+      fetchHistory()
     } catch { toast.error('Lỗi khóa điểm') }
   }
 
@@ -230,6 +319,7 @@ export default function ScoresPage() {
       await scoreApi.unlock(scoreId)
       toast.success('Đã mở khóa điểm')
       fetchScores()
+      fetchHistory()
     } catch { toast.error('Lỗi mở khóa điểm') }
   }
 
@@ -239,6 +329,7 @@ export default function ScoresPage() {
       await scoreApi.lockClass(selectedClass, { subjectId: selectedSubject, semesterId: selectedSemester })
       toast.success('Đã khóa điểm cả lớp')
       fetchScores()
+      fetchHistory()
     } catch { toast.error('Lỗi khóa điểm lớp') }
   }
 
@@ -248,7 +339,25 @@ export default function ScoresPage() {
       await scoreApi.unlockClass(selectedClass, { subjectId: selectedSubject, semesterId: selectedSemester })
       toast.success('Đã mở khóa điểm cả lớp')
       fetchScores()
+      fetchHistory()
     } catch { toast.error('Lỗi mở khóa điểm lớp') }
+  }
+
+  const getHistoryActionBadge = (action: string) => {
+    switch (action) {
+      case 'CREATE':
+        return 'bg-emerald-100 text-emerald-700'
+      case 'UPDATE':
+        return 'bg-blue-100 text-blue-700'
+      case 'LOCK':
+        return 'bg-amber-100 text-amber-700'
+      case 'UNLOCK':
+        return 'bg-violet-100 text-violet-700'
+      case 'DELETE':
+        return 'bg-red-100 text-red-700'
+      default:
+        return 'bg-gray-100 text-gray-700'
+    }
   }
 
   if (loading) {
@@ -319,12 +428,37 @@ export default function ScoresPage() {
             <label className="label">Học kỳ</label>
             <select className="input" value={selectedSemester} onChange={e => setSelectedSemester(e.target.value)}>
               <option value="">Chọn học kỳ</option>
-              {semesters.map(s => <option key={s.id} value={s.id}>{s.name} - {getSemesterStatusLabel(s)}</option>)}
+              {semesters.map((semester) => {
+                const entryStatus = getSemesterEntryStatus(semester)
+                const scheduleStatus = getSemesterScheduleStatus(semester, now)
+                return (
+                  <option key={semester.id} value={semester.id}>
+                    {semester.name} - {entryStatus.label} | {scheduleStatus.label}
+                  </option>
+                )
+              })}
             </select>
           </div>
         </div>
-        {selectedSemester && !isSemesterOpenForEntry && (
-          <p className="text-sm text-amber-700 mt-3">Kỳ này chưa mở hoặc đã dừng nhập điểm</p>
+        {selectedSemesterMeta && (
+          <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${selectedSemesterEntryStatus?.className}`}>
+                Nhập điểm: {selectedSemesterEntryStatus?.label}
+              </span>
+              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${selectedSemesterScheduleStatus?.className}`}>
+                Lịch học kỳ: {selectedSemesterScheduleStatus?.label}
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-gray-600">
+              {selectedSemesterMeta.startDate && selectedSemesterMeta.endDate
+                ? `Thời gian học kỳ: ${new Date(selectedSemesterMeta.startDate).toLocaleDateString('vi-VN')} - ${new Date(selectedSemesterMeta.endDate).toLocaleDateString('vi-VN')}`
+                : 'Học kỳ này chưa cấu hình ngày bắt đầu và ngày kết thúc.'}
+            </p>
+            {!isSemesterOpenForEntry && (
+              <p className="mt-2 text-sm text-amber-700">Học kỳ này đang đóng nhập điểm. Muốn nhập điểm thì vào Năm học & Học kỳ để kích hoạt.</p>
+            )}
+          </div>
         )}
       </div>
 
@@ -432,6 +566,82 @@ export default function ScoresPage() {
               <span className="font-medium">Công thức:</span> TB = Σ(điểm × trọng số) / Σ trọng số
             </p>
           </div>
+        </div>
+      )}
+
+      {selectedClass && selectedSubject && selectedSemester && (
+        <div className="card overflow-hidden">
+          <div className="border-b border-gray-100 px-4 py-3">
+            <h2 className="text-base font-semibold text-gray-900">Lịch sử nhập và sửa điểm</h2>
+            <p className="mt-1 text-sm text-gray-600">Hiển thị theo bộ lọc hiện tại: lớp, môn học và học kỳ đang chọn.</p>
+          </div>
+
+          {loadingHistory ? (
+            <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+          ) : historyEntries.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-gray-500">Chưa có lịch sử nhập hoặc sửa điểm cho bộ lọc hiện tại.</div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50">
+                      <th className="table-header">Học sinh</th>
+                      <th className="table-header">Đầu điểm</th>
+                      <th className="table-header text-center">Thao tác</th>
+                      <th className="table-header text-center">Giá trị</th>
+                      <th className="table-header">Người sửa</th>
+                      <th className="table-header">Thời gian</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {historyEntries.map((entry) => (
+                      <tr key={entry.id} className="hover:bg-gray-50">
+                        <td className="table-cell">
+                          <div className="font-medium text-gray-900">{entry.studentName}</div>
+                          {entry.studentCode && <div className="text-xs text-gray-500">{entry.studentCode}</div>}
+                        </td>
+                        <td className="table-cell">{entry.scoreComponentName}</td>
+                        <td className="table-cell text-center">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${getHistoryActionBadge(entry.action)}`}>
+                            {entry.action}
+                          </span>
+                        </td>
+                        <td className="table-cell text-center text-sm text-gray-700">
+                          {entry.oldValue !== null ? entry.oldValue.toFixed(1) : '-'} {'->'} {entry.newValue !== null ? entry.newValue.toFixed(1) : '-'}
+                        </td>
+                        <td className="table-cell">
+                          <div className="font-medium text-gray-900">{entry.actorName}</div>
+                          <div className="text-xs text-gray-500">{entry.actorRole}</div>
+                        </td>
+                        <td className="table-cell text-sm text-gray-600">{formatDateTime(entry.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {historyTotalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 border-t border-gray-100 px-4 py-3">
+                  <button
+                    onClick={() => setHistoryPage((page) => Math.max(1, page - 1))}
+                    disabled={historyPage === 1}
+                    className="rounded border p-2 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="text-sm text-gray-600">Trang {historyPage} / {historyTotalPages}</span>
+                  <button
+                    onClick={() => setHistoryPage((page) => Math.min(historyTotalPages, page + 1))}
+                    disabled={historyPage === historyTotalPages}
+                    className="rounded border p-2 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>

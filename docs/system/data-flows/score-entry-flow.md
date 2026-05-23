@@ -6,12 +6,15 @@ Teacher/staff enters scores for students in a class, subject, and semester.
 ## User Journey
 
 1. Teacher visits `/scores`
-2. Selects Class → `GET /api/classes/:id/students`
-3. Selects Subject → `GET /api/score-components?subjectId=X`
-4. Selects Semester
-5. `GET /api/scores/class/:classId?subjectId=X&semesterId=Y` → Loads score table
-6. Frontend renders table: Rows = Students, Columns = Score Components
-7. User enters scores, clicks "Save All" → `POST /api/scores/batch`
+2. Frontend fetches semesters from `GET /api/academic-years/semesters` and marks each term as `Đang mở nhập điểm` or `Đã đóng nhập điểm` from `semester.isActive`
+3. Selects Class → `GET /api/classes/:id/students`
+4. Selects Subject → `GET /api/score-components?subjectId=X`
+5. Selects Semester
+6. `GET /api/scores/class/:classId?subjectId=X&semesterId=Y` → Loads score table
+7. `GET /api/scores/history?classId=A&subjectId=X&semesterId=Y` → Loads audit timeline for the same context
+8. Frontend renders table: Rows = Students, Columns = Score Components
+9. User enters scores, clicks "Save All" → `POST /api/scores/batch`
+10. Frontend refreshes both the score table and the history panel; it also re-fetches semesters when the tab regains focus so deleted terms disappear immediately
 
 ## Backend Validation
 
@@ -23,7 +26,7 @@ Teacher/staff enters scores for students in a class, subject, and semester.
 | Component/Subject active | `subject.isActive === true` và `scoreComponent.isActive === true` |
 | Tenant validation | All students belong to tenant |
 | Teacher assignment | TEACHER phải có `TeacherAssignment` đúng `classId + subjectId` |
-| Semester open window | Semester phải active + có `startDate/endDate` + `now ∈ [startDate, endDate]` |
+| Semester entry status | Semester phải được `isActive === true`; `startDate/endDate` chỉ dùng để hiển thị lịch trên UI |
 | Student source by semester | Ưu tiên `ClassEnrollment` theo `semesterId`; fallback `student.classId` cho dữ liệu legacy |
 
 ## Sequence Diagram
@@ -50,10 +53,13 @@ sequenceDiagram
     S->>D: BEGIN TRANSACTION
     loop Each score
         S->>D: UPSERT score
+      S->>D: INSERT score_histories snapshot
     end
     S->>D: COMMIT
     S-->>F: 200 { saved: N }
-    F-->>T: Success toast, refresh table
+    F->>S: GET /api/scores/history?classId=A&subjectId=X&semesterId=Y
+    S-->>F: Updated audit timeline
+    F-->>T: Success toast, refresh table + history
 ```
 
 ## Request/Response
@@ -68,11 +74,8 @@ sequenceDiagram
 // Response 200
 { "saved": 2 }
 
-// Response 403 (semester closed / inactive / out-of-window)
+// Response 403 (semester inactive)
 { "error": { "code": "SEMESTER_CLOSED" } }
-
-// Response 400 (semester missing date config)
-{ "error": { "code": "SEMESTER_NOT_CONFIGURED" } }
 ```
 
 ## Related

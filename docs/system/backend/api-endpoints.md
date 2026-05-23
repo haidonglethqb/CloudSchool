@@ -104,6 +104,7 @@
 | Method | Path | Description |
 |---|---|---|
 | GET | `/scores/class/:classId` | Score sheet for a class (subject + semester) |
+| GET | `/scores/history` | Score mutation history for class + subject + semester context |
 | GET | `/scores/student/:studentId` | All scores for a student + ranking |
 | GET | `/scores/student/:studentId/yearly` | Yearly score summary (all semesters) |
 | POST | `/scores` | Create/update single score (upsert, lock check, assignment check) |

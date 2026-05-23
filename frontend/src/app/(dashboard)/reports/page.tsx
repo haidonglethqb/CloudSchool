@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { classApi, promotionApi, reportApi, subjectApi, academicYearApi } from '@/lib/api'
 import { BarChart3, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -20,6 +20,7 @@ export default function ReportsPage() {
   const [classId, setClassId] = useState('')
   const [academicYearId, setAcademicYearId] = useState('')
   const [data, setData] = useState<any>(null)
+  const semesterIdRef = useRef('')
 
   const [results, setResults] = useState<{ passStudents: any[]; failStudents: any[] } | null>(null)
   const [missingDetails, setMissingDetails] = useState<any[]>([])
@@ -27,20 +28,54 @@ export default function ReportsPage() {
   const [failAssign, setFailAssign] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    Promise.all([subjectApi.list(), subjectApi.getSemesters(), classApi.list(), academicYearApi.list()])
-      .then(([subjectRes, semesterRes, classRes, yearRes]) => {
-        const sems = semesterRes.data.data || []
+    semesterIdRef.current = semesterId
+  }, [semesterId])
+
+  const refreshSemesters = useCallback(async (options?: { notifyIfSelectionMissing?: boolean }) => {
+    const semesterRes = await subjectApi.getSemesters()
+    const nextSemesters = semesterRes.data.data || []
+    const currentSemesterId = semesterIdRef.current
+
+    setSemesters(nextSemesters)
+
+    if (currentSemesterId && !nextSemesters.some((semester: any) => semester.id === currentSemesterId)) {
+      setSemesterId('')
+      if (options?.notifyIfSelectionMissing) {
+        toast.error('Học kỳ đang chọn đã bị xóa hoặc không còn khả dụng. Vui lòng chọn lại học kỳ.')
+      }
+      return nextSemesters
+    }
+
+    if (!currentSemesterId && nextSemesters.length > 0) {
+      setSemesterId(nextSemesters.find((semester: any) => semester.isActive)?.id || nextSemesters[0].id)
+    }
+
+    return nextSemesters
+  }, [])
+
+  useEffect(() => {
+    Promise.all([subjectApi.list(), classApi.list(), academicYearApi.list(), refreshSemesters()])
+      .then(([subjectRes, classRes, yearRes, sems]) => {
         setSubjects(subjectRes.data.data || [])
-        setSemesters(sems)
         setClasses(classRes.data.data || [])
         setYears(yearRes.data.data || [])
-        if (sems.length > 0) setSemesterId(sems.find((s: any) => s.isActive)?.id || sems[0].id)
         const ys = yearRes.data.data || []
         if (ys.length > 0) setAcademicYearId((ys.find((y: any) => y.isActive) || ys[0]).id)
       })
       .catch(() => toast.error('Không thể tải dữ liệu báo cáo'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [refreshSemesters])
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshSemesters({ notifyIfSelectionMissing: true }).catch(() => {})
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [refreshSemesters])
 
   const loadReport = async () => {
     try {
@@ -64,6 +99,10 @@ export default function ReportsPage() {
         setData(res.data.data)
       }
     } catch (error: any) {
+      if (error.response?.data?.error?.code === 'NOT_FOUND') {
+        await refreshSemesters({ notifyIfSelectionMissing: true })
+        return
+      }
       toast.error(error.response?.data?.error?.message || 'Không thể tải báo cáo')
     } finally {
       setLoadingReport(false)

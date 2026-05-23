@@ -59,21 +59,10 @@ test.describe('Scores', () => {
       const semesters = semestersBody.data || [];
       semesterId = semesters[0]?.id;
 
-      const now = new Date();
-      const writable = semesters.find((sem: any) => {
-        if (!sem?.isActive || !sem?.startDate || !sem?.endDate) return false;
-        const start = new Date(sem.startDate);
-        const end = new Date(sem.endDate);
-        return now >= start && now <= end;
-      });
+      const writable = semesters.find((sem: any) => sem?.isActive);
       writableSemesterId = writable?.id;
 
-      const closed = semesters.find((sem: any) => {
-        if (!sem?.startDate || !sem?.endDate) return true;
-        const start = new Date(sem.startDate);
-        const end = new Date(sem.endDate);
-        return !sem.isActive || now < start || now > end;
-      });
+      const closed = semesters.find((sem: any) => !sem?.isActive);
       closedSemesterId = closed?.id;
     }
   });
@@ -154,7 +143,7 @@ test.describe('Scores', () => {
       expect(response.status()).toBe(400);
     });
 
-    test('upsert score with closed semester returns 403 SEMESTER_CLOSED', async () => {
+    test('upsert score with inactive semester returns 403 SEMESTER_CLOSED', async () => {
       if (!studentId || !scoreComponentId || !subjectId || !closedSemesterId) {
         test.skip();
         return;
@@ -250,6 +239,101 @@ test.describe('Scores', () => {
         },
       });
       expect([200, 201]).toContain(response.status());
+    });
+  });
+
+  test.describe('Score History', () => {
+    test('STAFF can view score history for the selected class, subject, and semester', async () => {
+      if (!studentId || !scoreComponentId || !subjectId || !writableSemesterId || !classId) {
+        test.skip();
+        return;
+      }
+
+      const uniqueValue = 9.1;
+      const saveResponse = await staffCtx.post('/api/scores', {
+        data: {
+          studentId,
+          subjectId,
+          scoreComponentId,
+          semesterId: writableSemesterId,
+          value: uniqueValue,
+        },
+      });
+      expect([200, 201]).toContain(saveResponse.status());
+
+      const historyResponse = await staffCtx.get(
+        `/api/scores/history?classId=${classId}&subjectId=${subjectId}&semesterId=${writableSemesterId}&scoreComponentId=${scoreComponentId}`
+      );
+
+      expect(historyResponse.status()).toBe(200);
+      const historyBody = await historyResponse.json();
+      expect(Array.isArray(historyBody.data)).toBeTruthy();
+      expect(historyBody.meta?.total).toBeGreaterThan(0);
+
+      const matchingEntry = historyBody.data.find(
+        (entry: any) =>
+          entry.studentId === studentId &&
+          entry.scoreComponentId === scoreComponentId &&
+          entry.semesterId === writableSemesterId &&
+          Number(entry.newValue) === uniqueValue
+      );
+
+      expect(matchingEntry).toBeTruthy();
+      expect(['CREATE', 'UPDATE']).toContain(matchingEntry.action);
+      expect(matchingEntry.actorRole).toBe('STAFF');
+    });
+  });
+
+  test.describe('Semester Deletion Consistency', () => {
+    test('deleted semester is removed from the semesters listing immediately', async () => {
+      const now = new Date();
+      const startYear = now.getUTCFullYear() + 3;
+      const endYear = startYear + 1;
+
+      const yearResponse = await superAdminCtx.post('/api/academic-years', {
+        data: {
+          startYear,
+          endYear,
+          startDate: `${startYear}-08-01T00:00:00.000Z`,
+          endDate: `${endYear}-05-31T23:59:59.000Z`,
+        },
+      });
+
+      expect([200, 201]).toContain(yearResponse.status());
+      const yearBody = await yearResponse.json();
+      const tempAcademicYearId = yearBody.data?.id;
+      expect(tempAcademicYearId).toBeTruthy();
+
+      const semesterResponse = await superAdminCtx.post(`/api/academic-years/${tempAcademicYearId}/semesters`, {
+        data: {
+          semesterNum: 1,
+          name: 'Semester deletion smoke test',
+          startDate: `${startYear}-08-15T00:00:00.000Z`,
+          endDate: `${startYear}-12-15T23:59:59.000Z`,
+        },
+      });
+
+      expect([200, 201]).toContain(semesterResponse.status());
+      const semesterBody = await semesterResponse.json();
+      const tempSemesterId = semesterBody.data?.id;
+      expect(tempSemesterId).toBeTruthy();
+
+      const deleteSemesterResponse = await superAdminCtx.delete(
+        `/api/academic-years/${tempAcademicYearId}/semesters/${tempSemesterId}`
+      );
+      expect(deleteSemesterResponse.status()).toBe(200);
+
+      const semestersResponse = await superAdminCtx.get('/api/academic-years/semesters');
+      expect(semestersResponse.status()).toBe(200);
+
+      const semestersBody = await semestersResponse.json();
+      const deletedSemesterStillVisible = (semestersBody.data || []).some(
+        (semester: any) => semester.id === tempSemesterId
+      );
+      expect(deletedSemesterStillVisible).toBeFalsy();
+
+      const deleteYearResponse = await superAdminCtx.delete(`/api/academic-years/${tempAcademicYearId}`);
+      expect(deleteYearResponse.status()).toBe(200);
     });
   });
 });

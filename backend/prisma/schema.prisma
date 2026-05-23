@@ -96,6 +96,7 @@ model Tenant {
   subjects          Subject[]
   semesters         Semester[]
   scores            Score[]
+  scoreHistories    ScoreHistory[]
   scoreComponents   ScoreComponent[]
   promotions        Promotion[]
   settings          TenantSettings?
@@ -366,6 +367,36 @@ model Score {
   @@index([studentId, subjectId, semesterId])
   @@index([tenantId, studentId])
   @@map("scores")
+}
+
+model ScoreHistory {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scoreId            String?
+  studentId          String
+  studentCode        String?
+  studentName        String
+  classId            String?
+  className          String?
+  subjectId          String
+  subjectName        String
+  semesterId         String
+  semesterName       String
+  scoreComponentId   String
+  scoreComponentName String
+  action             String
+  oldValue           Float?
+  newValue           Float?
+  actorId            String?
+  actorName          String
+  actorRole          String
+  createdAt          DateTime @default(now())
+
+  @@index([tenantId, classId, subjectId, semesterId])
+  @@index([tenantId, studentId, semesterId])
+  @@index([tenantId, scoreComponentId, createdAt])
+  @@map("score_histories")
 }
 
 // ==================== PROMOTION MODEL ====================
