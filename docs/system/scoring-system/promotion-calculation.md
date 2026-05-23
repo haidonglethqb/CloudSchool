@@ -17,13 +17,15 @@ Year-end promotion is now **synchronous**, **school-admin only**, and executed f
      - If missing scores: return `MISSING_SCORES` with detailed list
 
 2. `GET /api/promotion/year-end/results`
-   - Returns `passStudents` and `failStudents` groups for assignment UI.
+   - Returns `passStudents` and `failStudents` groups.
+   - `PASS` rows include `autoTargetClassId/autoTargetClassName` (rule: keep class suffix, increase grade by 1, e.g. `10A1 -> 11A1`).
+   - Also returns `nextAcademicYear` for assignment filtering.
 
 3. `POST /api/promotion/year-end/execute`
-   - Input: one-shot class assignments for PASS and FAIL groups.
+   - Input: manual assignments for `FAIL` group only.
    - Behavior:
-     - PASS students move to assigned destination class.
-     - FAIL students stay in separate assignment pool and are assigned manually.
+     - PASS students move by auto-mapping, no manual override.
+     - FAIL students are assigned manually, but destination must belong to next academic year and grade level must be `<=` current grade.
      - Grade-12 PASS students are archived in `graduation_archives` and removed from active class.
      - Transfer history records are written.
 
@@ -39,3 +41,4 @@ Year-end promotion is now **synchronous**, **school-admin only**, and executed f
 - `backend/src/routes/promotion.routes.js`
 - `backend/src/routes/report.routes.js`
 - `backend/prisma/schema.prisma` (`GraduationArchive`)
+- `GET /api/reports/graduation-summary?academicYearId=...`

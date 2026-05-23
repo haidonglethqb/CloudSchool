@@ -222,6 +222,8 @@ export const reportApi = {
     api.get('/reports/dashboard', { params }),
   transferReport: (params?: { semesterId?: string }) =>
     api.get('/reports/transfer-report', { params }),
+  graduationSummary: (academicYearId: string) =>
+    api.get('/reports/graduation-summary', { params: { academicYearId } }),
 }
 
 // ==================== Settings ====================

@@ -383,4 +383,42 @@ router.get('/transfer-report', authorize('SUPER_ADMIN', 'STAFF'), async (req, re
   }
 })
 
+// GET /reports/graduation-summary
+router.get('/graduation-summary', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+  try {
+    const { academicYearId } = req.query
+    if (!academicYearId) throw new AppError('academicYearId is required', 400, 'MISSING_PARAMS')
+
+    const academicYear = await prisma.academicYear.findFirst({
+      where: { id: academicYearId, tenantId: req.tenantId }
+    })
+    if (!academicYear) throw new AppError('Academic year not found', 404, 'NOT_FOUND')
+
+    const graduations = await prisma.graduationArchive.findMany({
+      where: { tenantId: req.tenantId, academicYearId },
+      include: {
+        student: { select: { id: true, fullName: true, studentCode: true } },
+        sourceClass: { select: { id: true, name: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    })
+
+    res.json({
+      data: {
+        academicYear: {
+          id: academicYear.id,
+          startYear: academicYear.startYear,
+          endYear: academicYear.endYear
+        },
+        graduates: graduations,
+        summary: {
+          totalGraduated: graduations.length
+        }
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 module.exports = router

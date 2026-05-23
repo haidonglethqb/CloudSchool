@@ -149,10 +149,10 @@ export default function ReportsPage() {
 
   const [promotionFilters, setPromotionFilters] = useState({ classId: '', academicYearId: '' })
   const [promotionLoading, setPromotionLoading] = useState(false)
-  const [promotionResults, setPromotionResults] = useState<{ passStudents: any[]; failStudents: any[] } | null>(null)
+  const [promotionResults, setPromotionResults] = useState<{ passStudents: any[]; failStudents: any[]; nextAcademicYear?: any | null } | null>(null)
   const [missingDetails, setMissingDetails] = useState<any[]>([])
-  const [passAssign, setPassAssign] = useState<Record<string, string>>({})
   const [failAssign, setFailAssign] = useState<Record<string, string>>({})
+  const [graduationData, setGraduationData] = useState<any>(null)
 
   const scrollToPromotionSection = () => {
     document.getElementById('promotion-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -353,7 +353,6 @@ export default function ReportsPage() {
 
     setMissingDetails([])
     setPromotionResults(null)
-    setPassAssign({})
     setFailAssign({})
 
     try {
@@ -387,21 +386,20 @@ export default function ReportsPage() {
     try {
       setPromotionLoading(true)
 
-      const passAssignments = promotionResults.passStudents
-        .filter((item) => passAssign[item.studentId])
-        .map((item) => ({ studentId: item.studentId, toClassId: passAssign[item.studentId] }))
-
       const failAssignments = promotionResults.failStudents
         .filter((item) => failAssign[item.studentId])
         .map((item) => ({ studentId: item.studentId, toClassId: failAssign[item.studentId] }))
 
       const res = await promotionApi.executeYearEnd({
         academicYearId: promotionFilters.academicYearId,
-        passAssignments,
         failAssignments,
       })
+      const unresolvedCount = res.data.data.summary.unresolved || 0
 
       toast.success(`Hoàn tất xét lên lớp: ${res.data.data.summary.promoted} học sinh lên lớp, ${res.data.data.summary.archived} học sinh lưu trữ`)
+      if (unresolvedCount > 0) {
+        toast.error(`Còn ${unresolvedCount} hồ sơ chưa xử lý xong. Kiểm tra lý do trong kết quả hệ thống.`)
+      }
 
       const refreshed = await promotionApi.getYearEndResults({
         academicYearId: promotionFilters.academicYearId,
@@ -414,6 +412,27 @@ export default function ReportsPage() {
       setPromotionLoading(false)
     }
   }
+
+  const getAllowedFailClasses = (item: any) => {
+    const currentGrade = Number(item?.class?.grade?.level || 0)
+    const nextAcademicYearId = promotionResults?.nextAcademicYear?.id
+    return classes.filter((cls) => {
+      if (cls.id === item.classId) return false
+      if (nextAcademicYearId && cls.academicYearId !== nextAcademicYearId) return false
+      const targetGrade = Number(cls?.grade?.level || 0)
+      return targetGrade <= currentGrade
+    })
+  }
+
+  useEffect(() => {
+    if (!promotionFilters.academicYearId) {
+      setGraduationData(null)
+      return
+    }
+    reportApi.graduationSummary(promotionFilters.academicYearId)
+      .then((res) => setGraduationData(res.data.data))
+      .catch(() => setGraduationData(null))
+  }, [promotionFilters.academicYearId])
 
   const renderBoardMetrics = (key: ReportKey) => {
     const data = reportData[key]
@@ -765,7 +784,7 @@ export default function ReportsPage() {
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
             <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur-sm">
               <p className="text-xs uppercase tracking-[0.18em] text-slate-300">Board báo cáo</p>
-              <p className="mt-2 text-3xl font-bold">4</p>
+              <p className="mt-2 text-3xl font-bold">5</p>
               <p className="mt-1 text-sm text-slate-300">Tách theo mục tiêu sử dụng thực tế</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur-sm">
@@ -932,6 +951,28 @@ export default function ReportsPage() {
 
       <section>{renderActiveDetail()}</section>
 
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Dashboard tốt nghiệp</p>
+            <h3 className="mt-1 text-lg font-bold text-slate-900">
+              Năm học {formatAcademicYearLabel(years.find((year) => year.id === promotionFilters.academicYearId))}
+            </h3>
+          </div>
+          <SummaryStat label="Đã tốt nghiệp" value={String(graduationData?.summary?.totalGraduated ?? 0)} />
+        </div>
+        <div className="mt-4 space-y-2">
+          {(graduationData?.graduates || []).slice(0, 8).map((item: any) => (
+            <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              {item.student?.fullName} ({item.student?.studentCode}) · {item.sourceClass?.name}
+            </div>
+          ))}
+          {!graduationData?.graduates?.length ? (
+            <p className="text-sm text-slate-500">Chưa có dữ liệu tốt nghiệp cho năm học này.</p>
+          ) : null}
+        </div>
+      </section>
+
       <section id="promotion-section" className="overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-800 p-6 text-white">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -1038,7 +1079,7 @@ export default function ReportsPage() {
                     <CheckCircle2 className="h-5 w-5 text-emerald-600" />
                     <div>
                       <h3 className="font-semibold text-emerald-900">Nhóm đạt điều kiện lên lớp</h3>
-                      <p className="text-sm text-emerald-800">Chọn lớp đích cho từng học sinh hoặc để trống nếu chưa chốt.</p>
+                      <p className="text-sm text-emerald-800">Hệ thống tự động gán lớp đích theo quy tắc giữ nguyên ban lớp (ví dụ 10A1 → 11A1).</p>
                     </div>
                   </div>
 
@@ -1050,12 +1091,9 @@ export default function ReportsPage() {
                             <p className="font-medium text-slate-900">{item.student.fullName}</p>
                             <p className="text-sm text-slate-600">{item.class.name} · Điểm TB {formatAverage(item.average)}</p>
                           </div>
-                          <select className="input lg:max-w-[240px]" value={passAssign[item.studentId] || ''} onChange={(e) => setPassAssign((prev) => ({ ...prev, [item.studentId]: e.target.value }))}>
-                            <option value="">Chọn lớp đích</option>
-                            {classes.filter((cls) => cls.id !== item.classId).map((cls) => (
-                              <option key={cls.id} value={cls.id}>{cls.name}</option>
-                            ))}
-                          </select>
+                          <div className="rounded-xl border border-emerald-200 bg-emerald-100 px-3 py-2 text-sm font-semibold text-emerald-900 lg:min-w-[240px]">
+                            {item.autoTargetClassName || item.autoAssignmentReason || 'Chưa tự động gán được lớp đích'}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1081,7 +1119,7 @@ export default function ReportsPage() {
                           </div>
                           <select className="input lg:max-w-[240px]" value={failAssign[item.studentId] || ''} onChange={(e) => setFailAssign((prev) => ({ ...prev, [item.studentId]: e.target.value }))}>
                             <option value="">Chọn lớp đích</option>
-                            {classes.filter((cls) => cls.id !== item.classId).map((cls) => (
+                            {getAllowedFailClasses(item).map((cls) => (
                               <option key={cls.id} value={cls.id}>{cls.name}</option>
                             ))}
                           </select>

@@ -40,6 +40,26 @@ const ensureYearEndReady = (academicYear) => {
   }
 }
 
+const toAcademicYearLabel = (year) => `${year.startYear}-${year.endYear}`
+
+const parseClassSuffix = (className = '') => {
+  const trimmed = String(className).trim()
+  const match = trimmed.match(/^(\d+)([A-Za-z].*)$/)
+  if (!match) return null
+  return match[2].toUpperCase()
+}
+
+const findNextAcademicYear = async (tenantId, academicYear) => {
+  const next = await prisma.academicYear.findFirst({
+    where: {
+      tenantId,
+      startYear: academicYear.startYear + 1,
+      endYear: academicYear.endYear + 1
+    }
+  })
+  return next || null
+}
+
 const buildPromotionEvaluation = async (tenantId, academicYear, classId = null) => {
   const settings = await prisma.tenantSettings.findUnique({ where: { tenantId } })
   if (!settings) throw new AppError('Tenant settings not configured', 400, 'SETTINGS_NOT_FOUND')
@@ -205,6 +225,14 @@ router.get('/year-end/results', async (req, res, next) => {
     const finalSemester = academicYear.semesters[academicYear.semesters.length - 1]
     if (!finalSemester) throw new AppError('Academic year has no semesters', 400, 'NO_SEMESTERS')
 
+    const nextAcademicYear = await findNextAcademicYear(req.tenantId, academicYear)
+    const targetClasses = nextAcademicYear
+      ? await prisma.class.findMany({
+          where: { tenantId: req.tenantId, isActive: true, academicYearId: nextAcademicYear.id },
+          include: { grade: true }
+        })
+      : []
+
     const promotions = await prisma.promotion.findMany({
       where: {
         tenantId: req.tenantId,
@@ -218,10 +246,34 @@ router.get('/year-end/results', async (req, res, next) => {
       orderBy: [{ result: 'asc' }, { student: { fullName: 'asc' } }]
     })
 
+    const passStudents = promotions
+      .filter((item) => item.result === 'PASS')
+      .map((item) => {
+        const sourceGrade = item.class?.grade?.level || 0
+        const suffix = parseClassSuffix(item.class?.name || '')
+        const autoTargetClass = suffix
+          ? targetClasses.find((cls) => cls.grade?.level === sourceGrade + 1 && parseClassSuffix(cls.name) === suffix)
+          : null
+
+        return {
+          ...item,
+          autoTargetClassId: autoTargetClass?.id || null,
+          autoTargetClassName: autoTargetClass?.name || null,
+          autoAssignmentReason: autoTargetClass
+            ? null
+            : (!nextAcademicYear
+              ? 'Chưa có năm học kế tiếp để tự động lên lớp'
+              : `Không tìm thấy lớp đích cho quy tắc ${item.class?.name || ''} -> ${sourceGrade + 1}${suffix || ''}`)
+        }
+      })
+
     res.json({
       data: {
         semesterId: finalSemester.id,
-        passStudents: promotions.filter((item) => item.result === 'PASS'),
+        nextAcademicYear: nextAcademicYear
+          ? { id: nextAcademicYear.id, startYear: nextAcademicYear.startYear, endYear: nextAcademicYear.endYear }
+          : null,
+        passStudents,
         failStudents: promotions.filter((item) => item.result === 'FAIL')
       }
     })
@@ -233,7 +285,7 @@ router.get('/year-end/results', async (req, res, next) => {
 // POST /promotion/year-end/execute
 router.post('/year-end/execute', async (req, res, next) => {
   try {
-    const { academicYearId, passAssignments = [], failAssignments = [] } = req.body
+    const { academicYearId, failAssignments = [] } = req.body
     if (!academicYearId) throw new AppError('academicYearId is required', 400, 'MISSING_PARAMS')
 
     const academicYear = await getAcademicYearWithSemesters(req.tenantId, academicYearId)
@@ -256,15 +308,33 @@ router.post('/year-end/execute', async (req, res, next) => {
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
     const maxGrade = settings?.maxGradeLevel ?? 12
 
-    const passMap = new Map(passAssignments.map((item) => [item.studentId, item.toClassId]))
+    const nextAcademicYear = await findNextAcademicYear(req.tenantId, academicYear)
+    const nextYearLabel = nextAcademicYear ? toAcademicYearLabel(nextAcademicYear) : null
     const failMap = new Map(failAssignments.map((item) => [item.studentId, item.toClassId]))
 
-    const allTargetClassIds = [...new Set([...passMap.values(), ...failMap.values()].filter(Boolean))]
+    const passPromotions = promotions.filter((promotion) => promotion.result === 'PASS')
+    const autoPassTargetByStudentId = new Map()
+    if (nextAcademicYear) {
+      const nextYearClasses = await prisma.class.findMany({
+        where: { tenantId: req.tenantId, isActive: true, academicYearId: nextAcademicYear.id },
+        include: { grade: true }
+      })
+
+      for (const promotion of passPromotions) {
+        const sourceGrade = promotion.class?.grade?.level || 0
+        const suffix = parseClassSuffix(promotion.class?.name || '')
+        if (!suffix) continue
+        const targetClass = nextYearClasses.find((cls) => cls.grade?.level === sourceGrade + 1 && parseClassSuffix(cls.name) === suffix)
+        if (targetClass) autoPassTargetByStudentId.set(promotion.studentId, targetClass.id)
+      }
+    }
+
+    const allTargetClassIds = [...new Set([...autoPassTargetByStudentId.values(), ...failMap.values()].filter(Boolean))]
     const classes = await prisma.class.findMany({
       where: { tenantId: req.tenantId, id: { in: allTargetClassIds } },
-      include: { _count: { select: { students: true } } }
+      include: { grade: true, _count: { select: { students: true } } }
     })
-    const classCapacityMap = new Map(classes.map((item) => [item.id, { capacity: item.capacity, current: item._count.students }]))
+    const classStateMap = new Map(classes.map((item) => [item.id, { classInfo: item, capacity: item.capacity, current: item._count.students }]))
 
     const promoted = []
     const archived = []
@@ -310,16 +380,39 @@ router.post('/year-end/execute', async (req, res, next) => {
           continue
         }
 
-        const targetClassId = promotion.result === 'PASS' ? passMap.get(promotion.studentId) : failMap.get(promotion.studentId)
+        const targetClassId = promotion.result === 'PASS' ? autoPassTargetByStudentId.get(promotion.studentId) : failMap.get(promotion.studentId)
         if (!targetClassId) {
-          unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result })
+          unresolved.push({
+            studentId: promotion.studentId,
+            studentName: promotion.student.fullName,
+            result: promotion.result,
+            reason: promotion.result === 'PASS'
+              ? (!nextAcademicYear
+                ? 'Chưa có năm học kế tiếp để tự động lên lớp'
+                : 'Không tìm thấy lớp đích theo quy tắc tự động')
+              : 'Chưa chọn lớp đích cho học sinh chưa đạt'
+          })
           continue
         }
 
-        const capacityState = classCapacityMap.get(targetClassId)
+        const capacityState = classStateMap.get(targetClassId)
         if (!capacityState) {
           unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result, reason: 'Lá»›p Ä‘Ã­ch khÃ´ng tá»“n táº¡i' })
           continue
+        }
+        if (promotion.result === 'FAIL') {
+          const targetGrade = capacityState.classInfo?.grade?.level || 0
+          const sourceGrade = promotion.class?.grade?.level || 0
+          const isInNextYear = nextAcademicYear
+            && (capacityState.classInfo.academicYearId === nextAcademicYear.id || capacityState.classInfo.academicYear === nextYearLabel)
+          if (!isInNextYear) {
+            unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result, reason: 'Lớp đích phải thuộc năm học kế tiếp' })
+            continue
+          }
+          if (targetGrade > sourceGrade) {
+            unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result, reason: 'Học sinh chưa đạt không được xếp lên khối cao hơn' })
+            continue
+          }
         }
         if (capacityState.current >= capacityState.capacity) {
           unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result, reason: 'Lá»›p Ä‘Ã­ch Ä‘Ã£ Ä‘á»§ sÄ© sá»‘' })
