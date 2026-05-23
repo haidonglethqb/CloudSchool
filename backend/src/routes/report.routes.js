@@ -397,10 +397,19 @@ router.get('/graduation-summary', authorize('SUPER_ADMIN', 'STAFF'), async (req,
     const graduations = await prisma.graduationArchive.findMany({
       where: { tenantId: req.tenantId, academicYearId },
       include: {
-        student: { select: { id: true, fullName: true, studentCode: true } },
+        student: { select: { id: true, fullName: true, studentCode: true, admissionDate: true } },
         sourceClass: { select: { id: true, name: true } }
       },
       orderBy: { createdAt: 'desc' }
+    })
+
+    const graduates = graduations.map((item) => {
+      const admissionYear = item.student?.admissionDate ? new Date(item.student.admissionDate).getFullYear() : null
+      const startYear = Number.isFinite(admissionYear) ? admissionYear : (academicYear.endYear - 3)
+      return {
+        ...item,
+        courseLabel: `${startYear}-${academicYear.endYear}`
+      }
     })
 
     res.json({
@@ -410,9 +419,9 @@ router.get('/graduation-summary', authorize('SUPER_ADMIN', 'STAFF'), async (req,
           startYear: academicYear.startYear,
           endYear: academicYear.endYear
         },
-        graduates: graduations,
+        graduates,
         summary: {
-          totalGraduated: graduations.length
+          totalGraduated: graduates.length
         }
       }
     })

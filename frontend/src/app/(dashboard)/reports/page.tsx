@@ -961,15 +961,33 @@ export default function ReportsPage() {
           </div>
           <SummaryStat label="Đã tốt nghiệp" value={String(graduationData?.summary?.totalGraduated ?? 0)} />
         </div>
-        <div className="mt-4 space-y-2">
-          {(graduationData?.graduates || []).slice(0, 8).map((item: any) => (
-            <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-              {item.student?.fullName} ({item.student?.studentCode}) · {item.sourceClass?.name}
-            </div>
-          ))}
-          {!graduationData?.graduates?.length ? (
-            <p className="text-sm text-slate-500">Chưa có dữ liệu tốt nghiệp cho năm học này.</p>
-          ) : null}
+        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+          {graduationData?.graduates?.length ? (
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Mã HS</th>
+                  <th className="px-4 py-3">Học sinh</th>
+                  <th className="px-4 py-3">Lớp tốt nghiệp</th>
+                  <th className="px-4 py-3">Khóa học</th>
+                  <th className="px-4 py-3">Ngày lưu</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                {graduationData.graduates.map((item: any) => (
+                  <tr key={item.id}>
+                    <td className="px-4 py-3">{item.student?.studentCode || '--'}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{item.student?.fullName || '--'}</td>
+                    <td className="px-4 py-3">{item.sourceClass?.name || '--'}</td>
+                    <td className="px-4 py-3 font-semibold text-indigo-700">{item.courseLabel || '--'}</td>
+                    <td className="px-4 py-3">{formatDate(item.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="p-4 text-sm text-slate-500">Chưa có dữ liệu tốt nghiệp cho năm học này.</p>
+          )}
         </div>
       </section>
 

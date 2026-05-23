@@ -225,6 +225,8 @@ router.get('/year-end/results', async (req, res, next) => {
     const finalSemester = academicYear.semesters[academicYear.semesters.length - 1]
     if (!finalSemester) throw new AppError('Academic year has no semesters', 400, 'NO_SEMESTERS')
 
+    const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    const maxGrade = settings?.maxGradeLevel ?? 12
     const nextAcademicYear = await findNextAcademicYear(req.tenantId, academicYear)
     const targetClasses = nextAcademicYear
       ? await prisma.class.findMany({
@@ -250,6 +252,7 @@ router.get('/year-end/results', async (req, res, next) => {
       .filter((item) => item.result === 'PASS')
       .map((item) => {
         const sourceGrade = item.class?.grade?.level || 0
+        const isGraduating = sourceGrade >= maxGrade
         const suffix = parseClassSuffix(item.class?.name || '')
         const autoTargetClass = suffix
           ? targetClasses.find((cls) => cls.grade?.level === sourceGrade + 1 && parseClassSuffix(cls.name) === suffix)
@@ -257,13 +260,16 @@ router.get('/year-end/results', async (req, res, next) => {
 
         return {
           ...item,
-          autoTargetClassId: autoTargetClass?.id || null,
-          autoTargetClassName: autoTargetClass?.name || null,
-          autoAssignmentReason: autoTargetClass
+          isGraduating,
+          autoTargetClassId: isGraduating ? null : (autoTargetClass?.id || null),
+          autoTargetClassName: isGraduating ? 'Tốt nghiệp' : (autoTargetClass?.name || null),
+          autoAssignmentReason: isGraduating
+            ? 'Học sinh lớp cuối cấp, sẽ được lưu vào danh sách tốt nghiệp'
+            : (autoTargetClass
             ? null
             : (!nextAcademicYear
               ? 'Chưa có năm học kế tiếp để tự động lên lớp'
-              : `Không tìm thấy lớp đích cho quy tắc ${item.class?.name || ''} -> ${sourceGrade + 1}${suffix || ''}`)
+              : `Không tìm thấy lớp đích cho quy tắc ${item.class?.name || ''} -> ${sourceGrade + 1}${suffix || ''}`))
         }
       })
 
