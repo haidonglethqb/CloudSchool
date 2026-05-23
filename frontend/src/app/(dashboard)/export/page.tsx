@@ -17,6 +17,29 @@ type ToggleOption = {
   label: string
 }
 
+const targetMetadata: Record<ExportTarget, { label: string; description: string }> = {
+  students: {
+    label: 'Danh sách học sinh',
+    description: 'Xuất dữ liệu học sinh theo các cột và hạng mục bạn cần dùng.',
+  },
+  'subject-summary': {
+    label: 'Tỷ lệ học sinh đạt theo môn học',
+    description: 'Xuất báo cáo thống kê tỉ lệ học sinh đạt của một môn học trong một học kỳ.',
+  },
+  'class-promotion-summary': {
+    label: 'Tỷ lệ học sinh lên lớp theo lớp',
+    description: 'Xuất báo cáo thống kê tỉ lệ học sinh lên lớp của một lớp trong một học kỳ.',
+  },
+  'semester-promotion-summary': {
+    label: 'Tỷ lệ học sinh lên lớp theo học kỳ',
+    description: 'Xuất báo cáo tổng hợp tỉ lệ học sinh lên lớp của toàn trường trong một học kỳ.',
+  },
+  'year-promotion-summary': {
+    label: 'Tỷ lệ học sinh lên lớp theo năm học',
+    description: 'Xuất báo cáo tổng hợp tỉ lệ học sinh lên lớp của toàn trường trong cả năm học.',
+  },
+}
+
 const sectionConfig: Record<ExportTarget, ToggleOption[]> = {
   students: [
     { value: 'cover', label: 'Trang bìa' },
@@ -122,6 +145,7 @@ export default function ExportPage() {
 
   const sectionOptions = useMemo(() => sectionConfig[target], [target])
   const columnOptions = useMemo(() => columnConfig[target], [target])
+  const currentTargetMeta = useMemo(() => targetMetadata[target], [target])
 
   useEffect(() => {
     semesterIdRef.current = semesterId
@@ -259,7 +283,7 @@ export default function ExportPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Xuất dữ liệu</h1>
-        <p className="text-sm text-gray-600 mt-1">Tùy chọn hạng mục và cột dữ liệu trước khi xuất file</p>
+        <p className="text-sm text-gray-600 mt-1">Chọn đúng loại báo cáo và cấu hình nội dung file trước khi xuất</p>
       </div>
 
       <div className="card p-4 space-y-5">
@@ -267,11 +291,15 @@ export default function ExportPage() {
           <label className="label">Loại dữ liệu</label>
           <select className="input" value={target} onChange={(e) => setTarget(e.target.value as ExportTarget)}>
             <option value="students">Danh sách học sinh</option>
-            <option value="subject-summary">BM1 - Tổng kết môn học</option>
-            <option value="class-promotion-summary">BM2 - Tỷ lệ lên lớp theo lớp</option>
-            <option value="semester-promotion-summary">BM3 - Tỷ lệ lên lớp theo học kỳ</option>
-            <option value="year-promotion-summary">BM4 - Tỷ lệ lên lớp theo năm học</option>
+            <option value="subject-summary">Tỷ lệ học sinh đạt theo môn học</option>
+            <option value="class-promotion-summary">Tỷ lệ học sinh lên lớp theo lớp</option>
+            <option value="semester-promotion-summary">Tỷ lệ học sinh lên lớp theo học kỳ</option>
+            <option value="year-promotion-summary">Tỷ lệ học sinh lên lớp theo năm học</option>
           </select>
+          <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
+            <p className="text-sm font-semibold text-blue-900">{currentTargetMeta.label}</p>
+            <p className="mt-1 text-sm text-blue-700">{currentTargetMeta.description}</p>
+          </div>
         </div>
 
         {target === 'subject-summary' && (

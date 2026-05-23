@@ -191,6 +191,15 @@ Sau khi chạy `npm run db:seed`:
 | Parent 1 | parent1@demo.school.vn | parent123 |
 | Parent 2 | parent2@demo.school.vn | parent123 |
 
+### Seed dataset (fresh deploy)
+
+- 3 academic years: `2024-2025`, `2025-2026`, `2026-2027`
+- Each year has 2 semesters (HK1/HK2), with only one active semester at a time
+- For each academic year: 3 grades (10/11/12), each grade has 3 classes (`A1`, `A2`, `A3`)
+- Teacher assignments are seeded by subject for every class
+- Each class has exactly 1 homeroom assignment (`isHomeroom=true`)
+- Students, class enrollments, parent links, and score data are pre-seeded for report/promotion testing
+
 > **Lưu ý**: Đăng nhập cho trường cần nhập **Mã trường** (Tenant Code). Platform Admin toggle ở nút riêng trên form đăng nhập.
 
 ---
