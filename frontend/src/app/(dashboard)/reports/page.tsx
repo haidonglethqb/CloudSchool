@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { academicYearApi, classApi, promotionApi, reportApi, subjectApi } from '@/lib/api'
+import { formatDate, formatSemesterLabel, pickDefaultSemester } from '@/lib/utils'
 import {
   BarChart3,
   BookOpen,
@@ -138,6 +139,9 @@ export default function ReportsPage() {
   const [semesters, setSemesters] = useState<any[]>([])
   const [classes, setClasses] = useState<any[]>([])
   const [years, setYears] = useState<any[]>([])
+  const [dashboardScope, setDashboardScope] = useState<{ academicYearId: string; semesterId: string }>({ academicYearId: '', semesterId: '' })
+  const [dashboardData, setDashboardData] = useState<any>(null)
+  const [dashboardLoading, setDashboardLoading] = useState(false)
   const [reportFilters, setReportFilters] = useState<ReportFiltersState>(EMPTY_REPORT_FILTERS)
   const [reportData, setReportData] = useState<ReportDataState>(EMPTY_REPORT_DATA)
   const [reportLoading, setReportLoading] = useState<ReportLoadingState>(EMPTY_REPORT_LOADING)
@@ -157,11 +161,17 @@ export default function ReportsPage() {
   const refreshSemesters = useCallback(async (options?: { notifyIfSelectionMissing?: boolean }) => {
     const semesterRes = await subjectApi.getSemesters()
     const nextSemesters = semesterRes.data.data || []
-    const nextDefaultSemesterId = nextSemesters.find((semester: any) => semester.isActive)?.id || nextSemesters[0]?.id || ''
+    const nextDefaultSemesterId = pickDefaultSemester(nextSemesters)?.id || ''
     const validSemesterIds = new Set(nextSemesters.map((semester: any) => semester.id))
     let selectionWasCleared = false
 
     setSemesters(nextSemesters)
+    setDashboardScope((prev) => {
+      const nextSemesterId = (prev.semesterId && validSemesterIds.has(prev.semesterId))
+        ? prev.semesterId
+        : nextDefaultSemesterId
+      return { ...prev, semesterId: nextSemesterId || '' }
+    })
     setReportFilters((prev) => {
       const next = {
         subjectPass: { ...prev.subjectPass },
@@ -207,13 +217,20 @@ export default function ReportsPage() {
 
   useEffect(() => {
     Promise.all([subjectApi.list(), classApi.list(), academicYearApi.list(), refreshSemesters()])
-      .then(([subjectRes, classRes, yearRes]) => {
+      .then(([subjectRes, classRes, yearRes, sems]) => {
         const nextYears = yearRes.data.data || []
         const nextActiveYearId = nextYears.find((year: any) => year.isActive)?.id || nextYears[0]?.id || ''
+        const nextDefaultSemesterId = pickDefaultSemester(sems || [])?.id || ''
+        const semesterRef = (sems || []).find((semester: any) => semester.id === nextDefaultSemesterId)
+        const linkedYear = semesterRef?.academicYearId || nextActiveYearId
 
         setSubjects(subjectRes.data.data || [])
         setClasses(classRes.data.data || [])
         setYears(nextYears)
+        setDashboardScope({
+          academicYearId: linkedYear || nextActiveYearId,
+          semesterId: nextDefaultSemesterId,
+        })
         setReportFilters((prev) => ({
           ...prev,
           yearPromotion: {
@@ -228,6 +245,25 @@ export default function ReportsPage() {
       .catch(() => toast.error('Không thể tải dữ liệu báo cáo'))
       .finally(() => setLoading(false))
   }, [refreshSemesters])
+
+  useEffect(() => {
+    const loadDashboard = async () => {
+      if (!dashboardScope.academicYearId && !dashboardScope.semesterId) return
+      try {
+        setDashboardLoading(true)
+        const res = await reportApi.dashboardByScope({
+          academicYearId: dashboardScope.academicYearId || undefined,
+          semesterId: dashboardScope.semesterId || undefined,
+        })
+        setDashboardData(res.data.data)
+      } catch {
+        setDashboardData(null)
+      } finally {
+        setDashboardLoading(false)
+      }
+    }
+    loadDashboard()
+  }, [dashboardScope.academicYearId, dashboardScope.semesterId])
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -331,7 +367,15 @@ export default function ReportsPage() {
       if (err?.code === 'MISSING_SCORES') {
         setMissingDetails(err.details || [])
       }
-      toast.error(err?.message || 'Xét lên lớp thất bại')
+      if (err?.code === 'SEMESTER_NOT_FINISHED') {
+        const detail = err?.details?.[0]
+        const endDateText = detail?.endDate ? formatDate(detail.endDate) : null
+        toast.error(endDateText
+          ? `${detail?.reason || 'Chưa thể xét lên lớp.'} Ngày kết thúc: ${endDateText}`
+          : (detail?.reason || err?.message || 'Xét lên lớp thất bại'))
+      } else {
+        toast.error(err?.message || 'Xét lên lớp thất bại')
+      }
     } finally {
       setPromotionLoading(false)
     }
@@ -726,7 +770,12 @@ export default function ReportsPage() {
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur-sm">
               <p className="text-xs uppercase tracking-[0.18em] text-slate-300">Học kỳ đang ưu tiên</p>
-              <p className="mt-2 text-lg font-semibold">{semesters.find((semester) => semester.isActive)?.name || semesters[0]?.name || 'Chưa có học kỳ'}</p>
+              <p className="mt-2 text-lg font-semibold">
+                {(() => {
+                  const current = semesters.find((semester) => semester.id === dashboardScope.semesterId) || pickDefaultSemester(semesters)
+                  return current ? formatSemesterLabel(current) : 'Chưa có học kỳ'
+                })()}
+              </p>
               <p className="mt-1 text-sm text-slate-300">Tự đồng bộ khi quay lại tab</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur-sm">
@@ -735,6 +784,39 @@ export default function ReportsPage() {
               <p className="mt-1 text-sm text-slate-300">Dùng cho báo cáo năm và xét lên lớp</p>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="grid gap-3 md:grid-cols-4">
+          <div>
+            <label className="label">Năm học dashboard</label>
+            <select
+              className="input"
+              value={dashboardScope.academicYearId}
+              onChange={(e) => setDashboardScope((prev) => ({ ...prev, academicYearId: e.target.value }))}
+            >
+              <option value="">Chọn năm học</option>
+              {years.map((year) => (
+                <option key={year.id} value={year.id}>{year.startYear}-{year.endYear}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Học kỳ dashboard</label>
+            <select
+              className="input"
+              value={dashboardScope.semesterId}
+              onChange={(e) => setDashboardScope((prev) => ({ ...prev, semesterId: e.target.value }))}
+            >
+              <option value="">Chọn học kỳ</option>
+              {semesters.map((semester) => (
+                <option key={semester.id} value={semester.id}>{formatSemesterLabel(semester)}</option>
+              ))}
+            </select>
+          </div>
+          <SummaryStat label="Tổng học sinh" value={dashboardLoading ? '--' : String(dashboardData?.stats?.totalStudents ?? 0)} />
+          <SummaryStat label="Tổng lớp" value={dashboardLoading ? '--' : String(dashboardData?.stats?.totalClasses ?? 0)} />
         </div>
       </section>
 
@@ -775,7 +857,7 @@ export default function ReportsPage() {
                       <select className="input" value={reportFilters.subjectPass.semesterId} onChange={(e) => updateReportFilters('subjectPass', { semesterId: e.target.value })}>
                         <option value="">Chọn học kỳ</option>
                         {semesters.map((semester) => (
-                          <option key={semester.id} value={semester.id}>{semester.name}</option>
+                          <option key={semester.id} value={semester.id}>{formatSemesterLabel(semester)}</option>
                         ))}
                       </select>
                     </div>
@@ -798,7 +880,7 @@ export default function ReportsPage() {
                       <select className="input" value={reportFilters.classPromotion.semesterId} onChange={(e) => updateReportFilters('classPromotion', { semesterId: e.target.value })}>
                         <option value="">Chọn học kỳ</option>
                         {semesters.map((semester) => (
-                          <option key={semester.id} value={semester.id}>{semester.name}</option>
+                          <option key={semester.id} value={semester.id}>{formatSemesterLabel(semester)}</option>
                         ))}
                       </select>
                     </div>
@@ -811,7 +893,7 @@ export default function ReportsPage() {
                     <select className="input" value={reportFilters.semesterPromotion.semesterId} onChange={(e) => updateReportFilters('semesterPromotion', { semesterId: e.target.value })}>
                       <option value="">Chọn học kỳ</option>
                       {semesters.map((semester) => (
-                        <option key={semester.id} value={semester.id}>{semester.name}</option>
+                        <option key={semester.id} value={semester.id}>{formatSemesterLabel(semester)}</option>
                       ))}
                     </select>
                   </div>
@@ -933,6 +1015,12 @@ export default function ReportsPage() {
                   </p>
                 ))}
               </div>
+            </div>
+          ) : null}
+
+          {missingDetails.length === 0 && !promotionLoading && !promotionResults ? (
+            <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
+              Không thể xét lên lớp nếu học kỳ cuối năm chưa kết thúc hoặc dữ liệu năm học chưa đủ điều kiện.
             </div>
           ) : null}
 

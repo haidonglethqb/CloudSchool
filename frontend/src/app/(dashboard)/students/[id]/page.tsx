@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { studentApi, classApi, scoreApi, subjectApi, academicYearApi } from '@/lib/api'
-import { formatDate, getGenderLabel } from '@/lib/utils'
+import { formatDate, formatSemesterLabel, getGenderLabel, pickDefaultSemester } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
 import {
   ArrowLeft,
@@ -68,6 +68,8 @@ interface Semester {
   id: string
   name: string
   isActive: boolean
+  year?: string
+  semesterNum?: number
 }
 
 interface ScoreData {
@@ -121,8 +123,8 @@ export default function StudentDetailPage() {
         setTransferHistory(historyRes.data.data || [])
         const sems = semRes.data.data || []
         setSemesters(sems)
-        const active = sems.find((s: Semester) => s.isActive)
-        if (active) setSelectedSemester(active.id)
+        const defaultSemester = pickDefaultSemester(sems)
+        if (defaultSemester) setSelectedSemester(defaultSemester.id)
         const ays = ayRes.data.data || []
         setAcademicYears(ays)
         if (ays.length > 0) setSelectedYear(`${ays[0].startYear}-${ays[0].endYear}`)
@@ -497,10 +499,9 @@ export default function StudentDetailPage() {
                   value={selectedSemester}
                   onChange={e => setSelectedSemester(e.target.value)}
                 >
-                  <option value="">Tất cả học kỳ</option>
                   {semesters.map(s => (
                     <option key={s.id} value={s.id}>
-                      {s.name}{s.isActive ? ' (Hiện tại)' : ''}
+                      {formatSemesterLabel(s)}{s.isActive ? ' - Hiện tại' : ''}
                     </option>
                   ))}
                 </select>

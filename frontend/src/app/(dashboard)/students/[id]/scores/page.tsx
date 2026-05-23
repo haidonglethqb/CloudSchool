@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { studentApi, scoreApi, subjectApi, classApi, scoreComponentApi } from '@/lib/api'
+import { formatSemesterLabel, pickDefaultSemester } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
 import {
   ArrowLeft,
@@ -48,6 +49,8 @@ interface Semester {
   id: string
   name: string
   isActive: boolean
+  year?: string
+  semesterNum?: number
 }
 
 interface ScoreData {
@@ -113,7 +116,7 @@ export default function StudentScoreEditPage() {
         const semFromQuery = searchParams.get('semester')
         const targetSem = semFromQuery && sems.find((s: Semester) => s.id === semFromQuery)
           ? semFromQuery
-          : sems.find((s: Semester) => s.isActive)?.id
+          : pickDefaultSemester(sems)?.id
         if (targetSem) setSelectedSemester(targetSem)
 
         // Group score components by subject
@@ -347,7 +350,7 @@ export default function StudentScoreEditPage() {
             <option value="">-- Chọn học kỳ --</option>
             {semesters.map(s => (
               <option key={s.id} value={s.id}>
-                {s.name}{s.isActive ? ' (Hiện tại)' : ''}
+                {formatSemesterLabel(s)}{s.isActive ? ' - Hiện tại' : ''}
               </option>
             ))}
           </select>

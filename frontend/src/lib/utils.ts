@@ -75,6 +75,14 @@ type SemesterStatusSource = {
   endDate?: string | Date | null
 }
 
+export type SemesterDisplay = {
+  id: string
+  name: string
+  isActive?: boolean
+  year?: string | null
+  semesterNum?: number | null
+}
+
 export function getSemesterEntryStatus(semester: SemesterStatusSource) {
   return semester.isActive
     ? { label: 'Mở nhập điểm', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
@@ -101,4 +109,30 @@ export function getSemesterScheduleStatus(semester: SemesterStatusSource, refere
   }
 
   return { label: 'Đang trong thời gian học kỳ', className: 'bg-blue-50 text-blue-700 border-blue-200' }
+}
+
+export function formatSemesterLabel(semester: SemesterDisplay): string {
+  const yearSuffix = semester.year ? ` (${semester.year})` : ''
+  return `${semester.name}${yearSuffix}`
+}
+
+export function pickDefaultSemester<T extends SemesterDisplay>(semesters: T[]): T | null {
+  if (!Array.isArray(semesters) || semesters.length === 0) return null
+
+  const active = semesters.find((semester) => semester.isActive)
+  if (active) return active
+
+  const sorted = [...semesters].sort((left, right) => {
+    const yearLeft = Number(String(left.year || '').split('-')[0]) || 0
+    const yearRight = Number(String(right.year || '').split('-')[0]) || 0
+    if (yearLeft !== yearRight) return yearRight - yearLeft
+
+    const semLeft = Number(left.semesterNum || 0)
+    const semRight = Number(right.semesterNum || 0)
+    if (semLeft !== semRight) return semRight - semLeft
+
+    return String(right.id).localeCompare(String(left.id))
+  })
+
+  return sorted[0] || null
 }
