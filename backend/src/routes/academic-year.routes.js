@@ -65,7 +65,8 @@ const validateSemesterWindow = ({ semesterStart, semesterEnd, academicYear, exis
   }
 }
 
-// Shared read endpoint used by score/report/student views (does not require academic-calendar permission)
+// Shared read endpoint used by score/report/student views.
+// Must stay outside the /academic-calendar permission gate.
 router.get('/semesters', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
   try {
     const semesters = await prisma.semester.findMany({

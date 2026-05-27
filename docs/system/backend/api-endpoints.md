@@ -146,7 +146,7 @@
 | DELETE | `/parents/:id/students/:studentId` | Unlink student from parent |
 | GET | `/parents/my-children` | Parent's children list (PARENT role) |
 | GET | `/parents/my-children/:studentId/scores` | Child's scores (PARENT role) |
-| GET | `/parents/semesters` | List parent semesters; supports `studentId` and returns only semesters with score data for that child (includes `displayName`) |
+| GET | `/parents/semesters` | List parent semesters; supports `studentId` and returns only semesters with score data for that child (includes `displayName` with academic year, e.g. `Hoc ky 1 (2026-2027)`) |
 
 ## Settings
 
@@ -154,7 +154,7 @@
 |---|---|---|
 | GET | `/settings` | Get current tenant settings |
 | PUT | `/settings` | Update settings (validates ranges, invalidates cache) |
-| GET | `/settings/role-permissions` | Get role-based module permissions |
+| GET | `/settings/role-permissions` | Get role-based module permissions (read-only for `SUPER_ADMIN`,`STAFF`,`TEACHER`; not gated by `settings` module permission) |
 | PUT | `/settings/role-permissions` | Update role permissions |
 | GET | `/settings/grades` | List grades |
 | POST | `/settings/grades` | Create grade (level uniqueness, min/max validation) |

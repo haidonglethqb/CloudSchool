@@ -9,6 +9,30 @@ const { requireFeature, requireRolePermission } = require('../middleware/feature
 
 router.use(authenticate, requireFeature('parents'), requireRolePermission('parents'))
 
+const getAcademicYearLabel = (academicYear) => {
+  if (!academicYear) return ''
+  if (
+    Number.isInteger(academicYear.startYear) &&
+    Number.isInteger(academicYear.endYear)
+  ) {
+    return `${academicYear.startYear}-${academicYear.endYear}`
+  }
+  if (academicYear.startDate && academicYear.endDate) {
+    const startYear = new Date(academicYear.startDate).getFullYear()
+    const endYear = new Date(academicYear.endDate).getFullYear()
+    if (!Number.isNaN(startYear) && !Number.isNaN(endYear)) {
+      return `${startYear}-${endYear}`
+    }
+  }
+  return ''
+}
+
+const getSemesterDisplayName = (semester) => {
+  const fallbackYear = getAcademicYearLabel(semester.academicYear)
+  const yearLabel = semester.year || fallbackYear
+  return yearLabel ? `${semester.name} (${yearLabel})` : semester.name
+}
+
 // Helper: weighted average from scores with scoreComponent
 function calcWeightedAverage (scores) {
   let weightedSum = 0; let totalWeight = 0
@@ -45,12 +69,17 @@ router.get('/semesters', authorize('PARENT'), async (req, res, next) => {
 
     const semesters = await prisma.semester.findMany({
       where,
+      include: {
+        academicYear: {
+          select: { startYear: true, endYear: true, startDate: true, endDate: true }
+        }
+      },
       orderBy: [{ year: 'desc' }, { semesterNum: 'desc' }]
     })
     res.json({
       data: semesters.map((semester) => ({
         ...semester,
-        displayName: semester.year ? `${semester.name} (${semester.year})` : semester.name
+        displayName: getSemesterDisplayName(semester)
       }))
     })
   } catch (error) {
@@ -105,7 +134,17 @@ router.get('/my-children/:studentId/scores', authorize('PARENT'), async (req, re
 
     const scores = await prisma.score.findMany({
       where,
-      include: { subject: true, semester: true, scoreComponent: true },
+      include: {
+        subject: true,
+        semester: {
+          include: {
+            academicYear: {
+              select: { startYear: true, endYear: true, startDate: true, endDate: true }
+            }
+          }
+        },
+        scoreComponent: true
+      },
       orderBy: [{ semester: { year: 'desc' } }, { subject: { name: 'asc' } }]
     })
 
@@ -117,7 +156,12 @@ router.get('/my-children/:studentId/scores', authorize('PARENT'), async (req, re
       const key = `${score.semesterId}-${score.subjectId}`
       if (!grouped[key]) {
         grouped[key] = {
-          semester: { id: score.semester.id, name: score.semester.name, year: score.semester.year },
+          semester: {
+            id: score.semester.id,
+            name: score.semester.name,
+            year: score.semester.year,
+            displayName: getSemesterDisplayName(score.semester)
+          },
           subject: { id: score.subject.id, name: score.subject.name },
           scores: []
         }

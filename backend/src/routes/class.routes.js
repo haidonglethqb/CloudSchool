@@ -25,12 +25,7 @@ const buildAcademicYearClassFilter = async (tenantId, { academicYear, academicYe
   if (!activeYear) {
     return { academicYearId: '__no_active_year__' }
   }
-  return {
-    OR: [
-      { academicYearId: activeYear.id },
-      { academicYear: buildAcademicYearLabel(activeYear) }
-    ]
-  }
+  return { academicYearId: activeYear.id }
 }
 
 const getActiveSemesterWithAcademicYear = async (tenantId, tx) => {

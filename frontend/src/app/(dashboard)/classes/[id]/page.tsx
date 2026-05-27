@@ -60,16 +60,24 @@ export default function ClassDetailPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [classRes, settingsRes] = await Promise.all([
-          classApi.get(id as string),
-          settingsApi.get(),
-        ])
+        const classRes = await classApi.get(id as string)
         const data = classRes.data.data
         setClassData(data)
         setFormData({
           name: data.name || '',
         })
-        setMaxClassSize(settingsRes.data.data.maxClassSize || 40)
+
+        if (isTeacher) {
+          setMaxClassSize(data.capacity || 40)
+          return
+        }
+
+        try {
+          const settingsRes = await settingsApi.get()
+          setMaxClassSize(settingsRes.data.data.maxClassSize || data.capacity || 40)
+        } catch {
+          setMaxClassSize(data.capacity || 40)
+        }
       } catch (error: any) {
         console.error('Failed to fetch class:', error)
         if (error.response?.status === 404) {
@@ -88,7 +96,7 @@ export default function ClassDetailPage() {
       }
     }
     if (id) fetchData()
-  }, [id, router])
+  }, [id, router, isTeacher])
 
   const handleSave = async () => {
     if (!formData.name.trim()) {

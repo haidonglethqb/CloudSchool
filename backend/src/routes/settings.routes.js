@@ -7,7 +7,9 @@ const { AppError } = require('../middleware/errorHandler')
 const { MODULE_KEYS } = require('../constants/module-registry')
 const { requireFeature, requireRolePermission, DEFAULT_ROLE_PERMISSIONS, normalizeRolePermissions } = require('../middleware/feature-flags')
 
-// GET /settings/role-permissions — accessible by school roles so sidebar can filter
+// GET /settings/role-permissions
+// Read-only endpoint for sidebar/menu filtering.
+// Must stay outside the /settings module permission gate.
 router.get('/role-permissions', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
   try {
     const settings = await prisma.tenantSettings.findUnique({
