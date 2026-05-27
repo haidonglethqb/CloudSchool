@@ -13,7 +13,14 @@ interface ScoreEntry {
 }
 
 interface SubjectScore {
-  semester: { id: string; name: string }
+  semester: {
+    id: string
+    name: string
+    year?: string | null
+    displayName?: string
+    startDate?: string | null
+    endDate?: string | null
+  }
   subject: { id: string; name: string }
   scores: ScoreEntry[]
   average: number | null
@@ -26,6 +33,27 @@ interface StudentInfo {
   studentCode: string
   class: string
   grade: string
+}
+
+const getSemesterLabel = (semester?: {
+  name?: string
+  year?: string | null
+  displayName?: string
+  startDate?: string | null
+  endDate?: string | null
+}) => {
+  if (!semester) return ''
+  if (semester.displayName) return semester.displayName
+  if (semester.year && semester.name) return `${semester.name} (${semester.year})`
+  if (semester.startDate && semester.endDate && semester.name) {
+    const startYear = new Date(semester.startDate).getFullYear()
+    const endYear = new Date(semester.endDate).getFullYear()
+    if (!Number.isNaN(startYear) && !Number.isNaN(endYear)) {
+      const schoolYear = startYear === endYear ? `${startYear}` : `${startYear}-${endYear}`
+      return `${semester.name} (${schoolYear})`
+    }
+  }
+  return semester.name || ''
 }
 
 export default function ChildScoresPage() {
@@ -99,7 +127,11 @@ export default function ChildScoresPage() {
         <label className="label">Học kỳ:</label>
         <select value={selectedSemester} onChange={e => setSelectedSemester(e.target.value)} className="input max-w-xs">
           <option value="">Tất cả</option>
-          {semesters.map((s: any) => <option key={s.id} value={s.id}>{s.displayName || s.name}</option>)}
+          {semesters.map((s: any) => (
+            <option key={s.id} value={s.id}>
+              {getSemesterLabel(s)}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -126,7 +158,7 @@ export default function ChildScoresPage() {
               ) : (
                 subjects.map((item, idx) => (
                   <tr key={idx} className="hover:bg-gray-50">
-                    <td className="table-cell">{item.semester.name}</td>
+                    <td className="table-cell">{getSemesterLabel(item.semester)}</td>
                     <td className="table-cell font-medium">{item.subject.name}</td>
                     <td className="table-cell">
                       <div className="flex flex-wrap gap-2 justify-center">

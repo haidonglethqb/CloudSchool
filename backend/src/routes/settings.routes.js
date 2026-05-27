@@ -7,6 +7,22 @@ const { AppError } = require('../middleware/errorHandler')
 const { MODULE_KEYS } = require('../constants/module-registry')
 const { requireFeature, requireRolePermission, DEFAULT_ROLE_PERMISSIONS, normalizeRolePermissions } = require('../middleware/feature-flags')
 
+// GET /settings/role-permissions — accessible by school roles so sidebar can filter
+router.get('/role-permissions', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
+  try {
+    const settings = await prisma.tenantSettings.findUnique({
+      where: { tenantId: req.tenantId }
+    })
+    if (!settings) throw new AppError('Settings not found', 404, 'NOT_FOUND')
+
+    const permissions = normalizeRolePermissions(settings.rolePermissions)
+
+    res.json({ data: permissions })
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.use(authenticate, requireFeature('settings'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('settings'))
 
 // GET /settings - Current settings
@@ -102,22 +118,6 @@ router.put('/', authorize('SUPER_ADMIN'), [
 })
 
 // ==================== ROLE PERMISSIONS ====================
-
-// GET /settings/role-permissions — accessible by all authenticated users so sidebar can filter
-router.get('/role-permissions', async (req, res, next) => {
-  try {
-    const settings = await prisma.tenantSettings.findUnique({
-      where: { tenantId: req.tenantId }
-    })
-    if (!settings) throw new AppError('Settings not found', 404, 'NOT_FOUND')
-
-    const permissions = normalizeRolePermissions(settings.rolePermissions)
-
-    res.json({ data: permissions })
-  } catch (error) {
-    next(error)
-  }
-})
 
 // PUT /settings/role-permissions
 router.put('/role-permissions', authorize('SUPER_ADMIN'), [
