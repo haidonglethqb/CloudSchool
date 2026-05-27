@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { classApi, subjectApi, scoreApi, scoreComponentApi, settingsApi, exportApi, downloadBlob } from '@/lib/api'
 import { formatDateTime, getPassStatus, getSemesterEntryStatus, getSemesterScheduleStatus } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
@@ -63,6 +64,7 @@ interface ScoreHistoryEntry {
 }
 
 export default function ScoresPage() {
+  const searchParams = useSearchParams()
   const [classes, setClasses] = useState<Class[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [semesters, setSemesters] = useState<Semester[]>([])
@@ -126,20 +128,41 @@ export default function ScoresPage() {
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        const [classesRes, subjectsRes, settingsRes] = await Promise.all([
-          classApi.list(), subjectApi.list(), settingsApi.get(),
+        const [classesRes, subjectsRes] = await Promise.all([
+          classApi.list(), subjectApi.list(),
         ])
-        setClasses(classesRes.data.data)
-        setSubjects(subjectsRes.data.data)
-        setPassScore(settingsRes.data.data?.passScore ?? 5)
+        const classRows = classesRes.data.data || []
+        const subjectRows = subjectsRes.data.data || []
+        setClasses(classRows)
+        setSubjects(subjectRows)
 
-        await refreshSemesters()
+        try {
+          const settingsRes = await settingsApi.get()
+          setPassScore(settingsRes.data.data?.passScore ?? 5)
+        } catch {
+          setPassScore(5)
+        }
+
+        const semesterRows = await refreshSemesters()
+        const queryClassId = searchParams.get('classId')
+        const querySubjectId = searchParams.get('subjectId')
+        const querySemesterId = searchParams.get('semesterId')
+
+        if (queryClassId && classRows.some((row: Class) => row.id === queryClassId)) {
+          setSelectedClass(queryClassId)
+        }
+        if (querySubjectId && subjectRows.some((row: Subject) => row.id === querySubjectId)) {
+          setSelectedSubject(querySubjectId)
+        }
+        if (querySemesterId && (semesterRows || []).some((row: Semester) => row.id === querySemesterId)) {
+          setSelectedSemester(querySemesterId)
+        }
       } catch {
         toast.error('Không thể tải dữ liệu ban đầu')
       } finally { setLoading(false) }
     }
     fetchInitialData()
-  }, [refreshSemesters])
+  }, [refreshSemesters, searchParams])
 
   useEffect(() => {
     const handleVisibilityChange = () => {

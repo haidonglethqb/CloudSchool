@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { classApi, settingsApi } from '@/lib/api'
+import { useAuthStore } from '@/store/auth'
 import {
   Users,
   Plus,
@@ -12,6 +13,8 @@ import {
   Trash2,
   Loader2,
   FolderOpen,
+  BookOpen,
+  ClipboardEdit,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -25,6 +28,13 @@ interface Grade {
 interface Class {
   id: string
   name: string
+  grade?: { name: string }
+  teacherAssignments?: Array<{
+    id: string
+    isHomeroom?: boolean
+    subject?: { id: string; name: string } | null
+    teacher?: { id: string; fullName: string } | null
+  }>
   _count: { students: number }
 }
 
@@ -33,7 +43,10 @@ interface Settings {
 }
 
 export default function ClassesPage() {
+  const user = useAuthStore((state) => state.user)
+  const isTeacher = user?.role === 'TEACHER'
   const [grades, setGrades] = useState<Grade[]>([])
+  const [teacherClasses, setTeacherClasses] = useState<Class[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
   const [loading, setLoading] = useState(true)
   const [expandedGrades, setExpandedGrades] = useState<Set<string>>(new Set())
@@ -44,14 +57,23 @@ export default function ClassesPage() {
 
   const fetchData = async () => {
     try {
+      const classesRes = await classApi.list()
+      setTeacherClasses(classesRes.data.data || [])
+
+      if (isTeacher) {
+        setGrades([])
+        setSettings(null)
+        return
+      }
+
       const [gradesRes, settingsRes] = await Promise.all([
         classApi.getGrades(),
         settingsApi.get(),
       ])
-      setGrades(gradesRes.data.data)
+      setGrades(gradesRes.data.data || [])
       setSettings(settingsRes.data.data)
       // Expand all grades by default
-      setExpandedGrades(new Set(gradesRes.data.data.map((g: Grade) => g.id)))
+      setExpandedGrades(new Set((gradesRes.data.data || []).map((g: Grade) => g.id)))
     } catch (error) {
       console.error('Failed to fetch data:', error)
       toast.error('Không thể tải dữ liệu')
@@ -62,7 +84,7 @@ export default function ClassesPage() {
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [isTeacher])
 
   const toggleGrade = (gradeId: string) => {
     const newExpanded = new Set(expandedGrades)
@@ -124,6 +146,72 @@ export default function ClassesPage() {
     return (
       <div className="flex items-center justify-center h-[60vh]">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  if (isTeacher) {
+    const cards = teacherClasses.map((item) => {
+      const assignments = (item.teacherAssignments || []).filter((entry) => entry.teacher?.id === user?.id)
+      const homeroom = assignments.find((entry) => entry.isHomeroom)
+      const subject = homeroom?.subject || assignments[0]?.subject || null
+      return {
+        id: item.id,
+        name: item.name,
+        gradeName: item.grade?.name || '',
+        studentCount: item._count?.students || 0,
+        subject,
+        isHomeroom: Boolean(homeroom),
+      }
+    })
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Lớp của tôi</h1>
+          <p className="text-gray-600 text-sm mt-1">Danh sách lớp giáo viên đang phụ trách trong năm học hiện tại</p>
+        </div>
+
+        {cards.length === 0 ? (
+          <div className="card p-12 text-center">
+            <FolderOpen className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Chưa có lớp được phân công</h3>
+            <p className="text-gray-500">Vui lòng liên hệ quản trị viên để được cấp phân công.</p>
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {cards.map((item) => (
+              <div key={item.id} className="card p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">{item.name}</h3>
+                    <p className="text-sm text-gray-500">{item.gradeName}</p>
+                  </div>
+                  {item.isHomeroom ? (
+                    <span className="inline-flex rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-700">Chá»§ nhiá»‡m</span>
+                  ) : null}
+                </div>
+                <div className="mt-4 space-y-1 text-sm text-gray-600">
+                  <p>{item.studentCount} há»c sinh</p>
+                  <p>{item.subject ? `Môn phụ trách: ${item.subject.name}` : 'Môn phụ trách: Đang cập nhật'}</p>
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <Link href={`/classes/${item.id}`} className="btn-outline flex-1 justify-center">
+                    <BookOpen className="w-4 h-4 mr-1" />
+                    Xem lá»›p
+                  </Link>
+                  <Link
+                    href={`/scores?classId=${item.id}${item.subject?.id ? `&subjectId=${item.subject.id}` : ''}`}
+                    className="btn-primary flex-1 justify-center"
+                  >
+                    <ClipboardEdit className="w-4 h-4 mr-1" />
+                    Nháº­p Ä‘iá»ƒm
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     )
   }

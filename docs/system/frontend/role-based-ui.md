@@ -87,6 +87,15 @@ flowchart TD
 | STUDENT | Read-only | "Xem điểm" (My Scores) only |
 | PARENT | Read-only | "Con em của tôi" (My Children) + fees |
 
+## 2026 UI Updates
+
+- Teacher dashboard now shows compact basic cards + shortcuts only.
+- Teacher `/classes` is treated as **Lớp của tôi** (assigned classes only, card view, quick links to class detail and score entry).
+- Class detail for teacher now hides class-management actions (edit class, add/edit student) and handles `403/404` by toast + redirect/fallback instead of blank screen.
+- `/scores` supports deep-link query prefill (`classId`, `subjectId`, `semesterId`) for teacher quick navigation.
+- SUPER_ADMIN sidebar now has a dedicated `/promotion` entry; promotion workflow moved out of `/reports`.
+- `/reports`, `/settings`, and `/settings/permissions` were compacted to reduce empty space and improve operator readability.
+
 ## Related
 
 - [./state-management.md](./state-management.md) — `User` type and `UserRole` definition

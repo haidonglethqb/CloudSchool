@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { userApi, classApi, subjectApi } from '@/lib/api'
+import { isValidVietnamPhone } from '@/lib/phone'
 import { getRoleLabel } from '@/lib/utils'
 import toast from 'react-hot-toast'
 import {
@@ -158,6 +159,10 @@ export default function UsersPage() {
     e.preventDefault()
     if (!form.email || !form.fullName || !form.role) {
       toast.error('Vui lòng điền đủ thông tin')
+      return
+    }
+    if (form.phone && !isValidVietnamPhone(form.phone)) {
+      toast.error('Số điện thoại phải có dạng 0 + 9 hoặc 10 chữ số')
       return
     }
     setSaving(true)

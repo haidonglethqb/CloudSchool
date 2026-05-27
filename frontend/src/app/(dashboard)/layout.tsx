@@ -58,6 +58,7 @@ const superAdminMenu: MenuItem[] = [
   { href: '/subjects', icon: BookOpen, label: 'Môn học', module: 'subjects' },
   { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm', module: 'scores' },
   { href: '/reports', icon: BarChart3, label: 'Báo cáo', module: 'reports' },
+  { href: '/promotion', icon: GraduationCap, label: 'Xét lên lớp', module: 'reports' },
   { href: '/parents', icon: UserCheck, label: 'Quản lý Phụ huynh', module: 'parents' },
   { href: '/fees', icon: CreditCard, label: 'Quản lý học phí', module: 'fees' },
   { href: '/export', icon: Download, label: 'Xuất dữ liệu', module: 'export' },

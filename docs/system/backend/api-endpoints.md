@@ -24,9 +24,9 @@
 |---|---|---|
 | GET | `/admin/dashboard` | System-wide dashboard stats + growth charts |
 | GET | `/admin/schools` | List schools (paginated, search, status filter) |
-| POST | `/admin/schools` | Create school + admin user + grades |
+| POST | `/admin/schools` | Create school + admin user + grades (validates VN phone when `phone` is provided) |
 | GET | `/admin/schools/:id` | School detail + users by role breakdown |
-| PUT | `/admin/schools/:id` | Update school info |
+| PUT | `/admin/schools/:id` | Update school info (validates VN phone when `phone` is provided) |
 | PATCH | `/admin/schools/:id/suspend` | Suspend school |
 | PATCH | `/admin/schools/:id/activate` | Activate school |
 | DELETE | `/admin/schools/:id` | Delete school |
@@ -46,8 +46,8 @@
 |---|---|---|
 | GET | `/users` | List users (paginated, role/status filter) |
 | GET | `/users/:id` | User detail + teacher assignments |
-| POST | `/users` | Create user (SUPER_ADMIN) |
-| PUT | `/users/:id` | Update user (email duplicate check, self-disable guard) |
+| POST | `/users` | Create user (SUPER_ADMIN, validates VN phone when `phone` is provided) |
+| PUT | `/users/:id` | Update user (email duplicate check, self-disable guard, validates VN phone when `phone` is provided) |
 | PATCH | `/users/:id/disable` | Disable user |
 | PUT | `/users/:id/assignments` | Set teacher class/subject assignments |
 | DELETE | `/users/:id` | Delete user (self-delete guard) |
@@ -68,8 +68,8 @@
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/classes` | List classes (gradeId, academicYear filter; teacher-scoped) |
-| GET | `/classes/grades` | Grades with nested classes + student counts |
+| GET | `/classes` | List classes (`gradeId`, `academicYear`, `academicYearId`); defaults to active academic year; teacher is assignment-scoped and deduped by class |
+| GET | `/classes/grades` | Grades with nested classes + student counts; defaults to active academic year and teacher assignment scope |
 | GET | `/classes/:id` | Class detail + students + teacher assignments |
 | POST | `/classes` | Create class (capacity from settings) |
 | PUT | `/classes/:id` | Update class (capacity ≥ current students) |
@@ -146,7 +146,7 @@
 | DELETE | `/parents/:id/students/:studentId` | Unlink student from parent |
 | GET | `/parents/my-children` | Parent's children list (PARENT role) |
 | GET | `/parents/my-children/:studentId/scores` | Child's scores (PARENT role) |
-| GET | `/parents/semesters` | List semesters (PARENT role) |
+| GET | `/parents/semesters` | List parent semesters; supports `studentId` and returns only semesters with score data for that child (includes `displayName`) |
 
 ## Settings
 
@@ -200,7 +200,7 @@ Export note:
 | Method | Path | Description |
 |---|---|---|
 | GET | `/academic-years` | List academic years + semesters |
-| GET | `/academic-years/semesters` | List all semesters for tenant (calendar scope) |
+| GET | `/academic-years/semesters` | Shared read endpoint for score/report views (`SUPER_ADMIN`,`STAFF`,`TEACHER`), not gated by `academic-calendar` permission |
 | GET | `/academic-years/:id` | Academic year detail |
 | POST | `/academic-years` | Create academic year (overlap check, startYear < endYear) |
 | PUT | `/academic-years/:id` | Update academic year |

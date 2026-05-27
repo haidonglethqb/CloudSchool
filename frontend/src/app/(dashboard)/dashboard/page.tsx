@@ -322,6 +322,70 @@ function TeacherDashboard() {
 }
 
 /* ======================= Loading Spinner ======================= */
+function TeacherDashboardCompact() {
+  const { user } = useAuthStore()
+  const [classes, setClasses] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    classApi.list()
+      .then((res) => setClasses(res.data.data || []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <LoadingSpinner />
+
+  const subjectIds = new Set<string>()
+  let homeroomCount = 0
+  for (const item of classes) {
+    const teacherAssignments = (item.teacherAssignments || []).filter((entry: any) => entry.teacher?.id === user?.id)
+    if (teacherAssignments.some((entry: any) => entry.isHomeroom)) homeroomCount += 1
+    for (const assignment of teacherAssignments) {
+      if (assignment.subject?.id) subjectIds.add(assignment.subject.id)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Xin chào, {user?.fullName}!</h1>
+        <p className="text-gray-600 mt-1">Tổng quan giáo viên</p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="card p-5">
+          <p className="text-sm text-gray-500">Lớp được phân công</p>
+          <p className="mt-2 text-3xl font-bold text-gray-900">{classes.length}</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-sm text-gray-500">Môn đang phụ trách</p>
+          <p className="mt-2 text-3xl font-bold text-gray-900">{subjectIds.size}</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-sm text-gray-500">Lá»›p chá»§ nhiá»‡m</p>
+          <p className="mt-2 text-3xl font-bold text-gray-900">{homeroomCount}</p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Link href="/classes" className="card p-5 hover:shadow-md transition-shadow">
+          <h3 className="font-semibold text-gray-900">Lớp của tôi</h3>
+          <p className="mt-1 text-sm text-gray-600">Xem chi tiết và mở từng lớp</p>
+        </Link>
+        <Link href="/scores" className="card p-5 hover:shadow-md transition-shadow">
+          <h3 className="font-semibold text-gray-900">Nháº­p Ä‘iá»ƒm</h3>
+          <p className="mt-1 text-sm text-gray-600">Nhập điểm theo lớp, môn và học kỳ</p>
+        </Link>
+        <Link href="/reports" className="card p-5 hover:shadow-md transition-shadow">
+          <h3 className="font-semibold text-gray-900">Báo cáo</h3>
+          <p className="mt-1 text-sm text-gray-600">Xem thống kê học vụ cơ bản</p>
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 function LoadingSpinner() {
   return (
     <div className="flex items-center justify-center h-[60vh]">
@@ -363,7 +427,7 @@ export default function DashboardPage() {
   if (role === 'PLATFORM_ADMIN') return <PlatformAdminDashboard />
   if (role === 'PARENT') return <ParentDashboard />
   if (role === 'STUDENT') return <StudentDashboard />
-  if (role === 'TEACHER') return <TeacherDashboard />
+  if (role === 'TEACHER') return <TeacherDashboardCompact />
 
   if (loading) return <LoadingSpinner />
 

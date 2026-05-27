@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { adminApi } from '@/lib/api'
+import { isValidVietnamPhone } from '@/lib/phone'
 import { formatDate, getRoleLabel } from '@/lib/utils'
 import toast from 'react-hot-toast'
 import {
@@ -100,6 +101,10 @@ export default function SchoolDetailPage() {
   }, [activeTab, id, users.length, stats, activity.length, allModules.length])
 
   const handleUpdate = async () => {
+    if (editForm.phone && !isValidVietnamPhone(editForm.phone)) {
+      toast.error('Số điện thoại phải có dạng 0 + 9 hoặc 10 chữ số')
+      return
+    }
     try {
       await adminApi.updateSchool(id, editForm)
       toast.success('Đã cập nhật')

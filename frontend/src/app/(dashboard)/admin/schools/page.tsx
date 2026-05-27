@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { adminApi, exportApi, downloadBlob } from '@/lib/api'
+import { isValidVietnamPhone } from '@/lib/phone'
 import toast from 'react-hot-toast'
 import {
   Search, Plus, Building2, Loader2, MoreVertical,
@@ -72,6 +73,10 @@ export default function SchoolsPage() {
     }
     if (form.adminPassword.length < 6) {
       toast.error('Mật khẩu admin tối thiểu 6 ký tự')
+      return
+    }
+    if (form.phone && !isValidVietnamPhone(form.phone)) {
+      toast.error('Số điện thoại phải có dạng 0 + 9 hoặc 10 chữ số')
       return
     }
     setCreating(true)

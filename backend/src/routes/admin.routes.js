@@ -6,9 +6,12 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
 const { MODULE_KEYS, DEFAULT_ENABLED_MODULES } = require('../constants/module-registry')
+const { isValidVietnamPhone, normalizeVietnamPhone } = require('../utils/phone')
 
 // All routes require PLATFORM_ADMIN
 router.use(authenticate, authorize('PLATFORM_ADMIN'))
+
+const PHONE_VALIDATION_MESSAGE = 'Phone must be a valid Vietnam phone number (0 + 9 or 10 digits)'
 
 const generateUniqueTenantCode = async (schoolName) => {
   const normalized = schoolName.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'SCHOOL'
@@ -149,7 +152,10 @@ router.post('/schools', [
   body('adminEmail').notEmpty().withMessage('adminEmail is required').bail().isEmail(),
   body('adminName').notEmpty().withMessage('adminName is required').bail().isString().isLength({ min: 1, max: 100 }),
   body('adminPassword').notEmpty().withMessage('adminPassword is required').bail().isString().isLength({ min: 6 }).withMessage('adminPassword must be at least 6 characters'),
-  body('phone').optional(),
+  body('phone').optional({ values: 'falsy' }).custom((value) => {
+    if (!isValidVietnamPhone(value)) throw new Error(PHONE_VALIDATION_MESSAGE)
+    return true
+  }),
   body('address').optional(),
   body('planId').optional()
 ], async (req, res, next) => {
@@ -164,7 +170,8 @@ router.post('/schools', [
       throw new AppError('School name is required', 400, 'VALIDATION_ERROR')
     }
 
-    const { phone, address, planId, adminEmail, adminName, adminPassword } = req.body
+    const normalizedPhone = normalizeVietnamPhone(req.body.phone)
+    const { address, planId, adminEmail, adminName, adminPassword } = req.body
     if (!adminEmail || !adminName || !adminPassword) {
       throw new AppError('adminEmail, adminName and adminPassword are required', 400, 'VALIDATION_ERROR')
     }
@@ -177,7 +184,7 @@ router.post('/schools', [
         name: schoolName,
         code,
         email: req.body.email || adminEmail,
-        phone,
+        phone: normalizedPhone,
         address,
         planId: planId || undefined,
         settings: {
@@ -314,16 +321,28 @@ router.put('/schools/:id/features', [
 })
 
 // PUT /admin/schools/:id
-router.put('/schools/:id', async (req, res, next) => {
+router.put('/schools/:id', [
+  body('email').optional().isEmail(),
+  body('phone').optional({ values: 'falsy' }).custom((value) => {
+    if (!isValidVietnamPhone(value)) throw new Error(PHONE_VALIDATION_MESSAGE)
+    return true
+  }),
+], async (req, res, next) => {
   try {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: { code: 'VALIDATION_ERROR', details: errors.array() } })
+    }
+
     const { name, email, phone, address, planId, status } = req.body
+    const normalizedPhone = normalizeVietnamPhone(phone)
 
     const tenant = await prisma.tenant.update({
       where: { id: req.params.id },
       data: {
         ...(name && { name }),
         ...(email && { email }),
-        ...(phone !== undefined && { phone }),
+        ...(phone !== undefined && { phone: normalizedPhone }),
         ...(address !== undefined && { address }),
         ...(planId !== undefined && { planId }),
         ...(status && { status })

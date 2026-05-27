@@ -34,6 +34,42 @@ interface Grade {
   level: number
 }
 
+function Field({
+  label,
+  value,
+  onChange,
+  type = 'number',
+  disabled,
+  min,
+  max,
+  step,
+}: {
+  label: string
+  value: number | string | undefined
+  onChange: (nextValue: string) => void
+  type?: string
+  disabled?: boolean
+  min?: number
+  max?: number
+  step?: string
+}) {
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <input
+        type={type}
+        className="input"
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        min={min}
+        max={max}
+        step={step}
+      />
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   const { user } = useAuthStore()
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -41,10 +77,11 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<'general' | 'grades'>('general')
-
   const [editedSettings, setEditedSettings] = useState<Partial<Settings>>({})
   const [showAddGrade, setShowAddGrade] = useState(false)
   const [newGrade, setNewGrade] = useState({ name: '', level: 10 })
+
+  const isAdmin = user?.role === 'SUPER_ADMIN'
 
   const fetchData = async () => {
     try {
@@ -54,13 +91,17 @@ export default function SettingsPage() {
       ])
       setSettings(settingsRes.data.data)
       setEditedSettings(settingsRes.data.data)
-      setGrades(gradesRes.data.data)
+      setGrades(gradesRes.data.data || [])
     } catch {
-      toast.error('Không thể tải dữ liệu')
-    } finally { setLoading(false) }
+      toast.error('Khong the tai du lieu')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => {
+    fetchData()
+  }, [])
 
   const handleSaveSettings = async () => {
     try {
@@ -77,232 +118,176 @@ export default function SettingsPage() {
         maxScore: editedSettings.maxScore,
         maxSemesters: editedSettings.maxSemesters,
       })
-      toast.success('Lưu cài đặt thành công')
+      toast.success('Luu cai dat thanh cong')
       fetchData()
-    } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Lưu cài đặt thất bại')
-    } finally { setSaving(false) }
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Luu cai dat that bai')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleAddGrade = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
       await settingsApi.createGrade(newGrade)
-      toast.success('Thêm khối thành công')
+      toast.success('Them khoi thanh cong')
       setShowAddGrade(false)
       setNewGrade({ name: '', level: 10 })
       fetchData()
-    } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Thêm khối thất bại')
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Them khoi that bai')
     }
   }
 
   const handleDeleteGrade = async (id: string) => {
-    if (!confirm('Bạn có chắc muốn xóa khối này?')) return
+    if (!confirm('Ban co chac muon xoa khoi nay?')) return
     try {
       await settingsApi.deleteGrade(id)
-      toast.success('Xóa khối thành công')
+      toast.success('Xoa khoi thanh cong')
       fetchData()
-    } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Xóa khối thất bại')
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Xoa khoi that bai')
     }
   }
 
-  const isAdmin = user?.role === 'SUPER_ADMIN'
-
   if (loading) {
-    return <div className="flex items-center justify-center h-[60vh]"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Thay đổi quy định</h1>
-        <p className="text-gray-600 text-sm mt-1">Quản lý các quy định và cài đặt của trường</p>
+        <h1 className="text-2xl font-bold text-gray-900">Thay doi quy dinh</h1>
+        <p className="text-gray-600 text-sm mt-1">Bo tri gon 2 cot de de thao tac va de quan sat hon.</p>
       </div>
 
       <div className="card">
         <div className="flex border-b border-gray-100">
           {[
-            { key: 'general', label: 'Quy định chung', icon: SettingsIcon },
-            { key: 'grades', label: 'Khối lớp', icon: Users },
+            { key: 'general', label: 'Quy dinh chung', icon: SettingsIcon },
+            { key: 'grades', label: 'Khoi lop', icon: Users },
           ].map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key as any)}
+              onClick={() => setActiveTab(tab.key as 'general' | 'grades')}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
                 activeTab === tab.key ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              <tab.icon className="w-4 h-4" />
+              <tab.icon className="h-4 w-4" />
               {tab.label}
             </button>
           ))}
         </div>
 
         <div className="p-6">
-          {activeTab === 'general' && (
-            <div className="space-y-6">
-              {/* Age Rules */}
-              <div className="space-y-4">
-                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                  <Users className="w-5 h-5 text-primary" />
-                  Quy định độ tuổi học sinh
-                </h3>
-                <div className="grid grid-cols-2 gap-4 max-w-md">
-                  <div>
-                    <label className="label">Tuổi tối thiểu</label>
-                    <input type="number" className="input" value={editedSettings.minAge || ''} onChange={e => setEditedSettings({ ...editedSettings, minAge: parseInt(e.target.value) })} disabled={!isAdmin} />
+          {activeTab === 'general' ? (
+            <div className="space-y-4">
+              <div className="grid gap-4 xl:grid-cols-2">
+                <section className="rounded-lg border border-gray-200 p-4 space-y-3">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2"><Users className="h-4 w-4 text-primary" /> Do tuoi hoc sinh</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Tuoi toi thieu" value={editedSettings.minAge} onChange={(v) => setEditedSettings((prev) => ({ ...prev, minAge: parseInt(v || '0', 10) }))} disabled={!isAdmin} />
+                    <Field label="Tuoi toi da" value={editedSettings.maxAge} onChange={(v) => setEditedSettings((prev) => ({ ...prev, maxAge: parseInt(v || '0', 10) }))} disabled={!isAdmin} />
                   </div>
-                  <div>
-                    <label className="label">Tuổi tối đa</label>
-                    <input type="number" className="input" value={editedSettings.maxAge || ''} onChange={e => setEditedSettings({ ...editedSettings, maxAge: parseInt(e.target.value) })} disabled={!isAdmin} />
+                </section>
+
+                <section className="rounded-lg border border-gray-200 p-4 space-y-3">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2"><Users className="h-4 w-4 text-primary" /> Si so toi da moi lop</h3>
+                  <Field label="So hoc sinh/lop" value={editedSettings.maxClassSize} onChange={(v) => setEditedSettings((prev) => ({ ...prev, maxClassSize: parseInt(v || '0', 10) }))} disabled={!isAdmin} />
+                </section>
+
+                <section className="rounded-lg border border-gray-200 p-4 space-y-3">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2"><Award className="h-4 w-4 text-primary" /> Diem dat</h3>
+                  <Field label="Diem trung binh dat" value={editedSettings.passScore} onChange={(v) => setEditedSettings((prev) => ({ ...prev, passScore: parseFloat(v || '0') }))} step="0.1" disabled={!isAdmin} />
+                </section>
+
+                <section className="rounded-lg border border-gray-200 p-4 space-y-3">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2"><Users className="h-4 w-4 text-primary" /> Quy dinh khoi lop</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Khoi toi thieu" value={editedSettings.minGradeLevel} onChange={(v) => setEditedSettings((prev) => ({ ...prev, minGradeLevel: parseInt(v || '0', 10) }))} disabled={!isAdmin} />
+                    <Field label="Khoi toi da" value={editedSettings.maxGradeLevel} onChange={(v) => setEditedSettings((prev) => ({ ...prev, maxGradeLevel: parseInt(v || '0', 10) }))} disabled={!isAdmin} />
                   </div>
-                </div>
+                </section>
+
+                <section className="rounded-lg border border-gray-200 p-4 space-y-3">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2"><Award className="h-4 w-4 text-primary" /> So mon hoc toi da</h3>
+                  <Field label="So mon/khoi" value={editedSettings.maxSubjects} onChange={(v) => setEditedSettings((prev) => ({ ...prev, maxSubjects: parseInt(v || '0', 10) }))} disabled={!isAdmin} />
+                </section>
+
+                <section className="rounded-lg border border-gray-200 p-4 space-y-3">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2"><Award className="h-4 w-4 text-primary" /> Thang diem</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Diem toi thieu" value={editedSettings.minScore} onChange={(v) => setEditedSettings((prev) => ({ ...prev, minScore: parseFloat(v || '0') }))} step="0.1" disabled={!isAdmin} />
+                    <Field label="Diem toi da" value={editedSettings.maxScore} onChange={(v) => setEditedSettings((prev) => ({ ...prev, maxScore: parseFloat(v || '0') }))} step="0.1" disabled={!isAdmin} />
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-gray-200 p-4 space-y-3">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2"><Award className="h-4 w-4 text-primary" /> Hoc ky</h3>
+                  <Field label="So hoc ky toi da" value={editedSettings.maxSemesters} onChange={(v) => setEditedSettings((prev) => ({ ...prev, maxSemesters: parseInt(v || '0', 10) }))} disabled={!isAdmin} />
+                </section>
               </div>
 
-              {/* Class Size */}
-              <div className="space-y-4 pt-4 border-t border-gray-100">
-                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                  <Users className="w-5 h-5 text-primary" />
-                  Sĩ số tối đa mỗi lớp
-                </h3>
-                <div className="max-w-xs">
-                  <label className="label">Số học sinh/lớp</label>
-                  <input type="number" className="input" value={editedSettings.maxClassSize || ''} onChange={e => setEditedSettings({ ...editedSettings, maxClassSize: parseInt(e.target.value) })} disabled={!isAdmin} />
-                </div>
-              </div>
-
-              {/* Pass Score */}
-              <div className="space-y-4 pt-4 border-t border-gray-100">
-                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                  <Award className="w-5 h-5 text-primary" />
-                  Điểm đạt
-                </h3>
-                <div className="max-w-xs">
-                  <label className="label">Điểm trung bình đạt</label>
-                  <input type="number" step="0.1" min="0" max="10" className="input" value={editedSettings.passScore || ''} onChange={e => setEditedSettings({ ...editedSettings, passScore: parseFloat(e.target.value) })} disabled={!isAdmin} />
-                </div>
-              </div>
-
-              {/* Grade Level */}
-              <div className="space-y-4 pt-4 border-t border-gray-100">
-                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                  <Users className="w-5 h-5 text-primary" />
-                  Quy định khối lớp
-                </h3>
-                <div className="grid grid-cols-2 gap-4 max-w-md">
-                  <div>
-                    <label className="label">Khối tối thiểu</label>
-                    <input type="number" className="input" value={editedSettings.minGradeLevel || ''} onChange={e => setEditedSettings({ ...editedSettings, minGradeLevel: parseInt(e.target.value) })} disabled={!isAdmin} />
-                  </div>
-                  <div>
-                    <label className="label">Khối tối đa</label>
-                    <input type="number" className="input" value={editedSettings.maxGradeLevel || ''} onChange={e => setEditedSettings({ ...editedSettings, maxGradeLevel: parseInt(e.target.value) })} disabled={!isAdmin} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Max Subjects */}
-              <div className="space-y-4 pt-4 border-t border-gray-100">
-                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                  <Award className="w-5 h-5 text-primary" />
-                  Số môn học tối đa
-                </h3>
-                <div className="max-w-xs">
-                  <label className="label">Số môn/khối</label>
-                  <input type="number" className="input" value={editedSettings.maxSubjects || ''} onChange={e => setEditedSettings({ ...editedSettings, maxSubjects: parseInt(e.target.value) })} disabled={!isAdmin} />
-                </div>
-              </div>
-
-              {/* Score Range */}
-              <div className="space-y-4 pt-4 border-t border-gray-100">
-                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                  <Award className="w-5 h-5 text-primary" />
-                  Thang điểm
-                </h3>
-                <div className="grid grid-cols-2 gap-4 max-w-md">
-                  <div>
-                    <label className="label">Điểm tối thiểu</label>
-                    <input type="number" step="0.1" className="input" value={editedSettings.minScore ?? ''} onChange={e => setEditedSettings({ ...editedSettings, minScore: parseFloat(e.target.value) })} disabled={!isAdmin} />
-                  </div>
-                  <div>
-                    <label className="label">Điểm tối đa</label>
-                    <input type="number" step="0.1" className="input" value={editedSettings.maxScore || ''} onChange={e => setEditedSettings({ ...editedSettings, maxScore: parseFloat(e.target.value) })} disabled={!isAdmin} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Max Semesters */}
-              <div className="space-y-4 pt-4 border-t border-gray-100">
-                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                  <Award className="w-5 h-5 text-primary" />
-                  Học kỳ
-                </h3>
-                <div className="max-w-xs">
-                  <div>
-                    <label className="label">Số học kỳ tối đa</label>
-                    <input type="number" className="input" value={editedSettings.maxSemesters || ''} onChange={e => setEditedSettings({ ...editedSettings, maxSemesters: parseInt(e.target.value) })} disabled={!isAdmin} />
-                  </div>
-                </div>
-              </div>
-
-              {isAdmin && (
-                <div className="pt-4 border-t border-gray-100">
+              {isAdmin ? (
+                <div className="pt-2">
                   <button onClick={handleSaveSettings} disabled={saving} className="btn-primary">
-                    {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                    Lưu thay đổi
+                    {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                    Luu thay doi
                   </button>
                 </div>
-              )}
+              ) : null}
             </div>
-          )}
-
-          {activeTab === 'grades' && (
+          ) : (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-gray-900">Danh sách khối</h3>
-                {isAdmin && (
+                <h3 className="font-semibold text-gray-900">Danh sach khoi</h3>
+                {isAdmin ? (
                   <button onClick={() => setShowAddGrade(true)} className="btn-primary text-sm">
-                    <Plus className="w-4 h-4 mr-1" /> Thêm khối
+                    <Plus className="h-4 w-4 mr-1" /> Them khoi
                   </button>
-                )}
+                ) : null}
               </div>
 
-              {showAddGrade && (
+              {showAddGrade ? (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                   <div className="card p-6 w-full max-w-md">
-                    <h2 className="text-lg font-semibold mb-4">Thêm khối</h2>
+                    <h2 className="text-lg font-semibold mb-4">Them khoi</h2>
                     <form onSubmit={handleAddGrade} className="space-y-4">
                       <div>
-                        <label className="label">Tên khối</label>
-                        <input type="text" className="input" placeholder="VD: Khối 10" value={newGrade.name} onChange={e => setNewGrade({ ...newGrade, name: e.target.value })} required />
+                        <label className="label">Ten khoi</label>
+                        <input type="text" className="input" value={newGrade.name} onChange={(e) => setNewGrade((prev) => ({ ...prev, name: e.target.value }))} required />
                       </div>
                       <div>
-                        <label className="label">Cấp lớp</label>
-                        <input type="number" className="input" value={newGrade.level} onChange={e => setNewGrade({ ...newGrade, level: parseInt(e.target.value) })} required />
+                        <label className="label">Cap lop</label>
+                        <input type="number" className="input" value={newGrade.level} onChange={(e) => setNewGrade((prev) => ({ ...prev, level: parseInt(e.target.value || '0', 10) }))} required />
                       </div>
                       <div className="flex gap-3 pt-2">
-                        <button type="button" onClick={() => setShowAddGrade(false)} className="btn-outline flex-1">Hủy</button>
-                        <button type="submit" className="btn-primary flex-1">Thêm</button>
+                        <button type="button" onClick={() => setShowAddGrade(false)} className="btn-outline flex-1">Huy</button>
+                        <button type="submit" className="btn-primary flex-1">Them</button>
                       </div>
                     </form>
                   </div>
                 </div>
-              )}
+              ) : null}
 
               <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg">
-                {grades.map(grade => (
+                {grades.map((grade) => (
                   <div key={grade.id} className="flex items-center justify-between px-4 py-3">
                     <div>
                       <p className="font-medium text-gray-900">{grade.name}</p>
-                      <p className="text-sm text-gray-500">Cấp {grade.level}</p>
+                      <p className="text-sm text-gray-500">Cap {grade.level}</p>
                     </div>
-                    {isAdmin && (
+                    {isAdmin ? (
                       <button onClick={() => handleDeleteGrade(grade.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="h-4 w-4" />
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -311,11 +296,11 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {!isAdmin && (
+      {!isAdmin ? (
         <div className="card p-4 bg-amber-50 border-amber-200">
-          <p className="text-sm text-amber-800">Chỉ SUPER_ADMIN mới có thể thay đổi quy định.</p>
+          <p className="text-sm text-amber-800">Chi SUPER_ADMIN moi co the thay doi quy dinh.</p>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

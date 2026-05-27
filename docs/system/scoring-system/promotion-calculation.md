@@ -1,6 +1,6 @@
 # Promotion Calculation
 
-Year-end promotion is now **synchronous**, **school-admin only**, and executed from summary reports.
+Year-end promotion is now **synchronous**, **school-admin only**, and executed from the dedicated `/promotion` workflow (sidebar).
 
 ## Endpoints
 
@@ -28,6 +28,11 @@ Year-end promotion is now **synchronous**, **school-admin only**, and executed f
      - FAIL students are assigned manually, but destination must belong to next academic year and grade level must be `<=` current grade.
      - Grade-12 PASS students are archived in `graduation_archives` and removed from active class.
      - Transfer history records are written.
+
+## UI Placement
+
+- Promotion actions (evaluate, fail-class assignment, execute) are handled on `/promotion`.
+- `/reports` is read-only reporting surface and no longer contains promotion execution controls.
 
 ## Key Rule Changes
 

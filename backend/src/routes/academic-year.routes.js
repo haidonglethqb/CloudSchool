@@ -65,10 +65,8 @@ const validateSemesterWindow = ({ semesterStart, semesterEnd, academicYear, exis
   }
 }
 
-router.use(authenticate, requireFeature('academic-calendar'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('academic-calendar'))
-
-// GET /academic-years/semesters
-router.get('/semesters', async (req, res, next) => {
+// Shared read endpoint used by score/report/student views (does not require academic-calendar permission)
+router.get('/semesters', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
   try {
     const semesters = await prisma.semester.findMany({
       where: { tenantId: req.tenantId },
@@ -79,6 +77,8 @@ router.get('/semesters', async (req, res, next) => {
     next(error)
   }
 })
+
+router.use(authenticate, requireFeature('academic-calendar'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('academic-calendar'))
 
 // GET /academic-years
 router.get('/', async (req, res, next) => {

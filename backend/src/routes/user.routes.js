@@ -6,6 +6,7 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize, invalidateUserCache } = require('../middleware/auth')
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
+const { isValidVietnamPhone, normalizeVietnamPhone } = require('../utils/phone')
 
 router.use(authenticate, requireFeature('users'))
 
@@ -75,7 +76,11 @@ router.post('/', authorize('SUPER_ADMIN'), [
   body('fullName').notEmpty().withMessage('Name is required'),
   body('email').isEmail().withMessage('Invalid email'),
   body('password').isLength({ min: 6 }).withMessage('Password min 6 chars'),
-  body('role').isIn(['SUPER_ADMIN', 'STAFF', 'TEACHER']).withMessage('Invalid role')
+  body('role').isIn(['SUPER_ADMIN', 'STAFF', 'TEACHER']).withMessage('Invalid role'),
+  body('phone').optional({ values: 'falsy' }).custom((value) => {
+    if (!isValidVietnamPhone(value)) throw new Error('Phone must be a valid Vietnam phone number (0 + 9 or 10 digits)')
+    return true
+  })
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req)
@@ -83,7 +88,8 @@ router.post('/', authorize('SUPER_ADMIN'), [
       return res.status(400).json({ error: { code: 'VALIDATION_ERROR', details: errors.array() } })
     }
 
-    const { fullName, email, password, role, department, phone } = req.body
+    const { fullName, email, password, role, department } = req.body
+    const phone = normalizeVietnamPhone(req.body.phone)
     const hashedPassword = await bcrypt.hash(password, 10)
 
     const user = await prisma.user.create({
@@ -106,9 +112,21 @@ router.post('/', authorize('SUPER_ADMIN'), [
 })
 
 // PUT /users/:id
-router.put('/:id', authorize('SUPER_ADMIN'), async (req, res, next) => {
+router.put('/:id', authorize('SUPER_ADMIN'), [
+  body('email').optional().isEmail().withMessage('Invalid email'),
+  body('phone').optional({ values: 'falsy' }).custom((value) => {
+    if (!isValidVietnamPhone(value)) throw new Error('Phone must be a valid Vietnam phone number (0 + 9 or 10 digits)')
+    return true
+  })
+], async (req, res, next) => {
   try {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: { code: 'VALIDATION_ERROR', details: errors.array() } })
+    }
+
     const { fullName, email, role, department, phone, isActive, password } = req.body
+    const normalizedPhone = normalizeVietnamPhone(phone)
 
     const ALLOWED_TENANT_ROLES = ['SUPER_ADMIN', 'STAFF', 'TEACHER']
     if (role && !ALLOWED_TENANT_ROLES.includes(role)) {
@@ -120,7 +138,7 @@ router.put('/:id', authorize('SUPER_ADMIN'), async (req, res, next) => {
     if (email) updateData.email = email
     if (role) updateData.role = role
     if (department !== undefined) updateData.department = department
-    if (phone !== undefined) updateData.phone = phone
+    if (phone !== undefined) updateData.phone = normalizedPhone
     if (isActive !== undefined) updateData.isActive = isActive
     if (password) updateData.password = await bcrypt.hash(password, 10)
 

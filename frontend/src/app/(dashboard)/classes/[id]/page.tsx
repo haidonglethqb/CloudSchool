@@ -4,13 +4,13 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { classApi, settingsApi, exportApi, downloadBlob } from '@/lib/api'
+import { useAuthStore } from '@/store/auth'
 import { formatDate, getGenderLabel } from '@/lib/utils'
 import {
   ArrowLeft,
   Save,
   Loader2,
   Users,
-  Trash2,
   Edit2,
   Eye,
   UserPlus,
@@ -45,11 +45,14 @@ interface ClassDetail {
 export default function ClassDetailPage() {
   const { id } = useParams()
   const router = useRouter()
+  const user = useAuthStore((state) => state.user)
+  const isTeacher = user?.role === 'TEACHER'
   const [classData, setClassData] = useState<ClassDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [maxClassSize, setMaxClassSize] = useState(40)
+  const [loadError, setLoadError] = useState('')
   const [formData, setFormData] = useState({
     name: '',
   })
@@ -72,7 +75,14 @@ export default function ClassDetailPage() {
         if (error.response?.status === 404) {
           toast.error('Không tìm thấy lớp')
           router.push('/classes')
+          return
         }
+        if (error.response?.status === 403) {
+          toast.error('Bạn không có quyền truy cập lớp này')
+          router.push('/classes')
+          return
+        }
+        setLoadError('Không thể tải dữ liệu lớp. Vui lòng thử lại.')
       } finally {
         setLoading(false)
       }
@@ -110,7 +120,17 @@ export default function ClassDetailPage() {
     )
   }
 
-  if (!classData) return null
+  if (!classData) {
+    return (
+      <div className="card p-8 text-center">
+        <p className="text-gray-700">{loadError || 'Không có dữ liệu lớp để hiển thị.'}</p>
+        <Link href="/classes" className="btn-outline mt-4 inline-flex">
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Quay lại danh sách lớp
+        </Link>
+      </div>
+    )
+  }
 
   const studentCount = classData.students?.length || classData._count?.students || 0
   const capacityPercent = Math.min((studentCount / maxClassSize) * 100, 100)
@@ -158,7 +178,7 @@ export default function ClassDetailPage() {
             )}
           </div>
         </div>
-        {!editing && (
+        {!editing && !isTeacher && (
           <div className="flex gap-2">
             <button
               onClick={async () => {
@@ -232,10 +252,12 @@ export default function ClassDetailPage() {
           <div className="p-12 text-center">
             <Users className="w-12 h-12 mx-auto text-gray-300 mb-3" />
             <p className="text-gray-500">Chưa có học sinh trong lớp này</p>
-            <Link href="/students/new" className="inline-block mt-4 btn-primary">
-              <UserPlus className="w-4 h-4 mr-2" />
-              Thêm học sinh
-            </Link>
+            {!isTeacher ? (
+              <Link href="/students/new" className="inline-block mt-4 btn-primary">
+                <UserPlus className="w-4 h-4 mr-2" />
+                Thêm học sinh
+              </Link>
+            ) : null}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -269,13 +291,15 @@ export default function ClassDetailPage() {
                         >
                           <Eye className="w-4 h-4" />
                         </Link>
-                        <Link
-                          href={`/students/${student.id}/edit`}
-                          className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary-50 rounded"
-                          title="Chỉnh sửa"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </Link>
+                        {!isTeacher ? (
+                          <Link
+                            href={`/students/${student.id}/edit`}
+                            className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary-50 rounded"
+                            title="Chỉnh sửa"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Link>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -294,3 +318,6 @@ export default function ClassDetailPage() {
     </div>
   )
 }
+
+
+

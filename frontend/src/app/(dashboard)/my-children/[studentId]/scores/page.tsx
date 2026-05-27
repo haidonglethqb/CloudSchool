@@ -37,14 +37,15 @@ export default function ChildScoresPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    parentApi.getSemesters()
+    if (!studentId) return
+    parentApi.getSemesters(studentId as string)
       .then(res => {
         setSemesters(res.data?.data || [])
         const active = res.data?.data?.find((s: any) => s.isActive)
         if (active) setSelectedSemester(active.id)
       })
       .catch(() => {})
-  }, [])
+  }, [studentId])
 
   useEffect(() => {
     if (!studentId) return
@@ -98,7 +99,7 @@ export default function ChildScoresPage() {
         <label className="label">Học kỳ:</label>
         <select value={selectedSemester} onChange={e => setSelectedSemester(e.target.value)} className="input max-w-xs">
           <option value="">Tất cả</option>
-          {semesters.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          {semesters.map((s: any) => <option key={s.id} value={s.id}>{s.displayName || s.name}</option>)}
         </select>
       </div>
 

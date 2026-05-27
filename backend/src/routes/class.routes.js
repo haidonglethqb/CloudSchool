@@ -10,6 +10,29 @@ router.use(authenticate, requireFeature('classes'), authorize('SUPER_ADMIN', 'ST
 
 const buildAcademicYearLabel = (academicYear) => `${academicYear.startYear}-${academicYear.endYear}`
 
+const getActiveAcademicYear = async (tenantId) => {
+  return prisma.academicYear.findFirst({
+    where: { tenantId, isActive: true },
+    select: { id: true, startYear: true, endYear: true }
+  })
+}
+
+const buildAcademicYearClassFilter = async (tenantId, { academicYear, academicYearId }) => {
+  if (academicYearId) return { academicYearId }
+  if (academicYear) return { academicYear }
+
+  const activeYear = await getActiveAcademicYear(tenantId)
+  if (!activeYear) {
+    return { academicYearId: '__no_active_year__' }
+  }
+  return {
+    OR: [
+      { academicYearId: activeYear.id },
+      { academicYear: buildAcademicYearLabel(activeYear) }
+    ]
+  }
+}
+
 const getActiveSemesterWithAcademicYear = async (tenantId, tx) => {
   const client = tx || prisma
   const activeSemester = await client.semester.findFirst({
@@ -37,11 +60,30 @@ const ensureTeacherClassAccess = async (req, classId) => {
 // GET /classes/grades - Get grades with classes
 router.get('/grades', tenantGuard, async (req, res, next) => {
   try {
+    const yearFilter = await buildAcademicYearClassFilter(req.tenantId, {
+      academicYear: req.query.academicYear,
+      academicYearId: req.query.academicYearId
+    })
+    let teacherClassFilter = {}
+    if (req.user.role === 'TEACHER') {
+      const assignments = await prisma.teacherAssignment.findMany({
+        where: { teacherId: req.user.id, tenantId: req.tenantId },
+        select: { classId: true }
+      })
+      const classIds = [...new Set(assignments.map((item) => item.classId))]
+      teacherClassFilter = { id: { in: classIds } }
+    }
+
     const grades = await prisma.grade.findMany({
       where: { tenantId: req.tenantId },
       include: {
         classes: {
-          where: { isActive: true },
+          where: {
+            tenantId: req.tenantId,
+            isActive: true,
+            ...yearFilter,
+            ...teacherClassFilter
+          },
           include: { _count: { select: { students: true } } },
           orderBy: { name: 'asc' }
         }
@@ -57,13 +99,14 @@ router.get('/grades', tenantGuard, async (req, res, next) => {
 // GET /classes
 router.get('/', async (req, res, next) => {
   try {
-    const { gradeId, academicYear } = req.query
+    const { gradeId, academicYear, academicYearId } = req.query
+    const yearFilter = await buildAcademicYearClassFilter(req.tenantId, { academicYear, academicYearId })
 
-    let where = {
+    const where = {
       tenantId: req.tenantId,
       isActive: true,
       ...(gradeId && { gradeId }),
-      ...(academicYear && { academicYear })
+      ...yearFilter
     }
 
     // Teacher only sees assigned classes
@@ -72,7 +115,8 @@ router.get('/', async (req, res, next) => {
         where: { teacherId: req.user.id, tenantId: req.tenantId },
         select: { classId: true }
       })
-      where.id = { in: assignments.map(a => a.classId) }
+      const classIds = [...new Set(assignments.map((item) => item.classId))]
+      where.id = { in: classIds }
     }
 
     const classes = await prisma.class.findMany({

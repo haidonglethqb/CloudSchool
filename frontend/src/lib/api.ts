@@ -129,7 +129,7 @@ export const studentApi = {
 
 // ==================== Classes ====================
 export const classApi = {
-  list: (params?: { gradeId?: string; academicYear?: string }) =>
+  list: (params?: { gradeId?: string; academicYear?: string; academicYearId?: string }) =>
     api.get('/classes', { params }),
   get: (id: string) => api.get(`/classes/${id}`),
   create: (data: { name: string; gradeId: string; academicYear?: string }) =>
@@ -269,7 +269,7 @@ export const parentApi = {
   getMyChildren: () => api.get('/parents/my-children'),
   getChildScores: (studentId: string, semesterId?: string) =>
     api.get(`/parents/my-children/${studentId}/scores`, { params: { semesterId } }),
-  getSemesters: () => api.get('/parents/semesters'),
+  getSemesters: (studentId?: string) => api.get('/parents/semesters', { params: { studentId } }),
 }
 
 // ==================== Export ====================

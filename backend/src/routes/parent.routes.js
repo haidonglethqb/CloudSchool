@@ -26,11 +26,33 @@ function calcWeightedAverage (scores) {
 // GET /parents/semesters
 router.get('/semesters', authorize('PARENT'), async (req, res, next) => {
   try {
+    const { studentId } = req.query
+    const where = { tenantId: req.user.tenantId }
+
+    if (studentId) {
+      const link = await prisma.parentStudent.findUnique({
+        where: { parentId_studentId: { parentId: req.user.id, studentId } }
+      })
+      if (!link) throw new AppError('Access denied', 403, 'FORBIDDEN')
+
+      const semesterRows = await prisma.score.findMany({
+        where: { tenantId: req.user.tenantId, studentId },
+        distinct: ['semesterId'],
+        select: { semesterId: true }
+      })
+      where.id = { in: semesterRows.map((item) => item.semesterId) }
+    }
+
     const semesters = await prisma.semester.findMany({
-      where: { tenantId: req.user.tenantId },
+      where,
       orderBy: [{ year: 'desc' }, { semesterNum: 'desc' }]
     })
-    res.json({ data: semesters })
+    res.json({
+      data: semesters.map((semester) => ({
+        ...semester,
+        displayName: semester.year ? `${semester.name} (${semester.year})` : semester.name
+      }))
+    })
   } catch (error) {
     next(error)
   }
@@ -109,7 +131,7 @@ router.get('/my-children/:studentId/scores', authorize('PARENT'), async (req, re
         ...item,
         scores: item.scores.map(s => ({
           id: s.id,
-          component: s.scoreComponent?.name,
+          componentName: s.scoreComponent?.name,
           weight: s.scoreComponent?.weight,
           value: s.value
         })),
