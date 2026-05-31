@@ -3,15 +3,18 @@ import { createAuthContext } from '../helpers/api-client';
 
 let superAdminCtx: APIRequestContext;
 let staffCtx: APIRequestContext;
+let teacherCtx: APIRequestContext;
 
 test.beforeAll(async () => {
   superAdminCtx = await createAuthContext('SUPER_ADMIN');
   staffCtx = await createAuthContext('STAFF');
+  teacherCtx = await createAuthContext('TEACHER');
 });
 
 test.afterAll(async () => {
   await superAdminCtx.dispose();
   await staffCtx.dispose();
+  await teacherCtx.dispose();
 });
 
 test.describe('Reports', () => {
@@ -22,6 +25,14 @@ test.describe('Reports', () => {
 
       const body = await response.json();
       expect(body).toBeTruthy();
+    });
+
+    test('teacher can read report dashboard without academic-calendar permission', async () => {
+      const response = await teacherCtx.get('/api/reports/dashboard?allYears=true');
+      expect(response.status()).toBe(200);
+
+      const body = await response.json();
+      expect(Array.isArray(body.data?.academicYears)).toBeTruthy();
     });
   });
 
@@ -43,6 +54,23 @@ test.describe('Reports', () => {
 
       if (subjectId && semesterId) {
         const response = await superAdminCtx.get(
+          `/api/reports/subject-summary?subjectId=${subjectId}&semesterId=${semesterId}`
+        );
+        expect(response.status()).toBe(200);
+      }
+    });
+
+    test('teacher can read assigned subject summary', async () => {
+      const subjectsRes = await teacherCtx.get('/api/subjects');
+      const subjectsBody = await subjectsRes.json();
+      const subjectId = subjectsBody.data?.[0]?.id;
+
+      const semesterRes = await teacherCtx.get('/api/academic-years/semesters');
+      const semesterBody = await semesterRes.json();
+      const semesterId = semesterBody.data?.[0]?.id;
+
+      if (subjectId && semesterId) {
+        const response = await teacherCtx.get(
           `/api/reports/subject-summary?subjectId=${subjectId}&semesterId=${semesterId}`
         );
         expect(response.status()).toBe(200);

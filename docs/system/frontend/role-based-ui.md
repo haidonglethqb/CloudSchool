@@ -95,6 +95,7 @@ flowchart TD
 - `/scores` supports deep-link query prefill (`classId`, `subjectId`, `semesterId`) for teacher quick navigation.
 - SUPER_ADMIN sidebar now has a dedicated `/promotion` entry; promotion workflow moved out of `/reports`.
 - `/reports`, `/settings`, and `/settings/permissions` were compacted to reduce empty space and improve operator readability.
+- `/reports` now uses Vietnamese labels, global year/semester filters, year-scoped semester options, lightweight CSS/SVG charts, and report-scoped API calls so TEACHER users do not need academic-calendar permission.
 
 ## Related
 

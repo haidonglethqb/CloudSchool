@@ -218,7 +218,7 @@ export const reportApi = {
   yearPromotionSummary: (academicYearId: string) =>
     api.get('/reports/year-promotion-summary', { params: { academicYearId } }),
   dashboard: () => api.get('/reports/dashboard'),
-  dashboardByScope: (params?: { academicYearId?: string; semesterId?: string }) =>
+  dashboardByScope: (params?: { academicYearId?: string; semesterId?: string; allYears?: string }) =>
     api.get('/reports/dashboard', { params }),
   transferReport: (params?: { semesterId?: string }) =>
     api.get('/reports/transfer-report', { params }),

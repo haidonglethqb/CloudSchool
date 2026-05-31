@@ -127,11 +127,11 @@
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/reports/subject-summary` | Pass rates + averages per class for a subject |
-| GET | `/reports/class-promotion-summary` | BM2 pass-rate by class (`PASS` only) |
-| GET | `/reports/semester-promotion-summary` | BM3 pass-rate by semester (`PASS` only) |
-| GET | `/reports/year-promotion-summary` | BM4 pass-rate by academic year (`PASS` only) |
-| GET | `/reports/dashboard` | School dashboard stats |
+| GET | `/reports/subject-summary` | Pass rates + averages per class for a subject; teacher is scoped to assigned classes/subject |
+| GET | `/reports/class-promotion-summary` | BM2 pass-rate by class with PASS/FAIL/RETAKE counts; teacher requires class assignment |
+| GET | `/reports/semester-promotion-summary` | BM3 pass-rate by semester with class breakdown; teacher scoped to assigned classes |
+| GET | `/reports/year-promotion-summary` | BM4 pass-rate by academic year with grade breakdown; teacher scoped to assigned classes |
+| GET | `/reports/dashboard` | School dashboard stats; supports `allYears=true` for report filters |
 | GET | `/reports/transfer-report` | Class transfer history report |
 
 ## Parents

@@ -31,49 +31,49 @@ const ACADEMIC_YEARS = [
 ]
 
 const GRADE_CONFIG = [
-  { level: 10, name: 'Khoi 10' },
-  { level: 11, name: 'Khoi 11' },
-  { level: 12, name: 'Khoi 12' }
+  { level: 10, name: 'Khối 10' },
+  { level: 11, name: 'Khối 11' },
+  { level: 12, name: 'Khối 12' }
 ]
 
 const SUBJECT_CONFIG = [
-  { name: 'Toan', code: 'MATH', description: 'Mon Toan hoc' },
-  { name: 'Ngu van', code: 'LITERATURE', description: 'Mon Ngu van' },
-  { name: 'Tieng Anh', code: 'ENGLISH', description: 'Mon Tieng Anh' },
-  { name: 'Vat ly', code: 'PHYSICS', description: 'Mon Vat ly' },
-  { name: 'Hoa hoc', code: 'CHEMISTRY', description: 'Mon Hoa hoc' },
-  { name: 'Sinh hoc', code: 'BIOLOGY', description: 'Mon Sinh hoc' },
-  { name: 'Lich su', code: 'HISTORY', description: 'Mon Lich su' },
-  { name: 'Dia ly', code: 'GEOGRAPHY', description: 'Mon Dia ly' }
+  { name: 'Toán', code: 'MATH', description: 'Môn Toán học' },
+  { name: 'Ngữ văn', code: 'LITERATURE', description: 'Môn Ngữ văn' },
+  { name: 'Tiếng Anh', code: 'ENGLISH', description: 'Môn Tiếng Anh' },
+  { name: 'Vật lý', code: 'PHYSICS', description: 'Môn Vật lý' },
+  { name: 'Hóa học', code: 'CHEMISTRY', description: 'Môn Hóa học' },
+  { name: 'Sinh học', code: 'BIOLOGY', description: 'Môn Sinh học' },
+  { name: 'Lịch sử', code: 'HISTORY', description: 'Môn Lịch sử' },
+  { name: 'Địa lý', code: 'GEOGRAPHY', description: 'Môn Địa lý' }
 ]
 
 const SCORE_COMPONENT_CONFIG = [
-  { name: 'Kiem tra mieng', weight: 10 },
-  { name: 'Kiem tra 15 phut', weight: 20 },
-  { name: 'Kiem tra 1 tiet', weight: 30 },
-  { name: 'Thi cuoi ky', weight: 40 }
+  { name: 'Kiểm tra miệng', weight: 10 },
+  { name: 'Kiểm tra 15 phút', weight: 20 },
+  { name: 'Kiểm tra 1 tiết', weight: 30 },
+  { name: 'Thi cuối kỳ', weight: 40 }
 ]
 
 const TEACHER_CONFIG = [
-  { email: 'teacher@demo.school.vn', password: 'teacher123', fullName: 'Nguyen Van Thay', department: 'Toan', subjectCode: 'MATH' },
-  { email: 'teacher.literature@demo.school.vn', password: 'teacher123', fullName: 'Tran Thi Van', department: 'Ngu van', subjectCode: 'LITERATURE' },
-  { email: 'teacher.english@demo.school.vn', password: 'teacher123', fullName: 'Le Hoang Anh', department: 'Tieng Anh', subjectCode: 'ENGLISH' },
-  { email: 'teacher.physics@demo.school.vn', password: 'teacher123', fullName: 'Pham Quoc Ly', department: 'Vat ly', subjectCode: 'PHYSICS' },
-  { email: 'teacher.chemistry@demo.school.vn', password: 'teacher123', fullName: 'Do Thanh Hoa', department: 'Hoa hoc', subjectCode: 'CHEMISTRY' },
-  { email: 'teacher.biology@demo.school.vn', password: 'teacher123', fullName: 'Bui Minh Sinh', department: 'Sinh hoc', subjectCode: 'BIOLOGY' },
-  { email: 'teacher.history@demo.school.vn', password: 'teacher123', fullName: 'Nguyen Thi Su', department: 'Lich su', subjectCode: 'HISTORY' },
-  { email: 'teacher.geography@demo.school.vn', password: 'teacher123', fullName: 'Dang Thanh Dia', department: 'Dia ly', subjectCode: 'GEOGRAPHY' }
+  { email: 'teacher@demo.school.vn', password: 'teacher123', fullName: 'Nguyễn Văn Thầy', department: 'Toán', subjectCode: 'MATH' },
+  { email: 'teacher.literature@demo.school.vn', password: 'teacher123', fullName: 'Trần Thị Vân', department: 'Ngữ văn', subjectCode: 'LITERATURE' },
+  { email: 'teacher.english@demo.school.vn', password: 'teacher123', fullName: 'Lê Hoàng Anh', department: 'Tiếng Anh', subjectCode: 'ENGLISH' },
+  { email: 'teacher.physics@demo.school.vn', password: 'teacher123', fullName: 'Phạm Quốc Lý', department: 'Vật lý', subjectCode: 'PHYSICS' },
+  { email: 'teacher.chemistry@demo.school.vn', password: 'teacher123', fullName: 'Đỗ Thanh Hóa', department: 'Hóa học', subjectCode: 'CHEMISTRY' },
+  { email: 'teacher.biology@demo.school.vn', password: 'teacher123', fullName: 'Bùi Minh Sinh', department: 'Sinh học', subjectCode: 'BIOLOGY' },
+  { email: 'teacher.history@demo.school.vn', password: 'teacher123', fullName: 'Nguyễn Thị Sử', department: 'Lịch sử', subjectCode: 'HISTORY' },
+  { email: 'teacher.geography@demo.school.vn', password: 'teacher123', fullName: 'Đặng Thanh Địa', department: 'Địa lý', subjectCode: 'GEOGRAPHY' }
 ]
 
-const LAST_NAMES = ['Nguyen', 'Tran', 'Le', 'Pham', 'Hoang', 'Vo', 'Dang', 'Bui', 'Do', 'Ly']
-const MIDDLE_NAMES = ['Van', 'Thi', 'Huu', 'Minh', 'Quoc', 'Thanh', 'Ngoc', 'Gia']
-const FIRST_NAMES = ['An', 'Binh', 'Cuong', 'Dung', 'Em', 'Giang', 'Hanh', 'Khanh', 'Long', 'My', 'Nam', 'Oanh']
+const LAST_NAMES = ['Nguyễn', 'Trần', 'Lê', 'Phạm', 'Hoàng', 'Võ', 'Đặng', 'Bùi', 'Đỗ', 'Lý']
+const MIDDLE_NAMES = ['Văn', 'Thị', 'Hữu', 'Minh', 'Quốc', 'Thanh', 'Ngọc', 'Gia']
+const FIRST_NAMES = ['An', 'Bình', 'Cường', 'Dung', 'Em', 'Giang', 'Hạnh', 'Khanh', 'Long', 'My', 'Nam', 'Oanh']
 const ADDRESS_POOL = [
-  '123 Tran Hung Dao, Quan 1, HCM',
-  '45 Nguyen Trai, Quan 5, HCM',
-  '88 Vo Van Tan, Quan 3, HCM',
-  '22 Le Van Sy, Quan Phu Nhuan, HCM',
-  '300 Phan Xich Long, Quan Phu Nhuan, HCM'
+  '123 Trần Hưng Đạo, Quận 1, TP.HCM',
+  '45 Nguyễn Trãi, Quận 5, TP.HCM',
+  '88 Võ Văn Tần, Quận 3, TP.HCM',
+  '22 Lê Văn Sỹ, Quận Phú Nhuận, TP.HCM',
+  '300 Phan Xích Long, Quận Phú Nhuận, TP.HCM'
 ]
 
 const getYearLabel = (startYear, endYear) => `${startYear}-${endYear}`
@@ -93,16 +93,16 @@ const getSemesterWindows = (yearRange) => {
   return [
     {
       semesterNum: 1,
-      name: 'Hoc ky 1',
+      name: 'Học kỳ 1',
       startDate: new Date(`${yearRange.startYear}-09-01`),
-      endDate: new Date(`${yearRange.endYear}-01-15`),
+      endDate: new Date(`${yearRange.endYear}-01-31`),
       year: label
     },
     {
       semesterNum: 2,
-      name: 'Hoc ky 2',
-      startDate: new Date(`${yearRange.endYear}-01-16`),
-      endDate: new Date(`${yearRange.endYear}-05-31`),
+      name: 'Học kỳ 2',
+      startDate: new Date(`${yearRange.endYear}-02-01`),
+      endDate: new Date(`${yearRange.endYear}-06-30`),
       year: label
     }
   ]
@@ -110,9 +110,14 @@ const getSemesterWindows = (yearRange) => {
 
 const buildDeterministicScore = ({ studentOrdinal, subjectIndex, semesterNum, componentIndex }) => {
   const seed = (studentOrdinal * 13) + (subjectIndex * 7) + (semesterNum * 5) + (componentIndex * 3)
-  const isLowGroup = studentOrdinal % 5 === 0
-  if (isLowGroup) {
-    return round2(3.2 + ((seed % 19) / 10))
+  if (studentOrdinal % 11 === 0) {
+    return round2(4.6 + ((seed % 8) / 10))
+  }
+  if (studentOrdinal % 5 === 0) {
+    return round2(3.2 + ((seed % 17) / 10))
+  }
+  if (studentOrdinal % 7 === 0) {
+    return round2(5.0 + ((seed % 16) / 10))
   }
   return round2(6 + ((seed % 35) / 10))
 }
@@ -777,7 +782,7 @@ async function main () {
 
   const scoreComponentRows = await prisma.scoreComponent.findMany({
     where: { tenantId: tenant.id },
-    select: { id: true, subjectId: true, name: true }
+    select: { id: true, subjectId: true, name: true, weight: true }
   })
 
   const componentBySubjectId = {}
@@ -831,6 +836,194 @@ async function main () {
     })
   }
   console.log('Scores ready:', scoreRows.length)
+
+  for (const classContext of classContexts) {
+    const classStudents = studentsByClassId[classContext.class.id] || []
+    const semesters = [
+      semesterByKey[`${classContext.academicYearLabel}-1`],
+      semesterByKey[`${classContext.academicYearLabel}-2`]
+    ].filter(Boolean)
+
+    for (const semester of semesters) {
+      for (const student of classStudents) {
+        const baseAverage = student.ordinal % 5 === 0
+          ? 4.2
+          : student.ordinal % 11 === 0
+            ? 4.8
+            : round2(5.6 + ((student.ordinal + semester.semesterNum + classContext.classIndex) % 34) / 10)
+        const result = baseAverage >= 5 ? 'PASS' : baseAverage >= 4.5 ? 'RETAKE' : 'FAIL'
+
+        await prisma.promotion.upsert({
+          where: {
+            studentId_classId_semesterId: {
+              studentId: student.id,
+              classId: classContext.class.id,
+              semesterId: semester.id
+            }
+          },
+          update: {
+            tenantId: tenant.id,
+            average: baseAverage,
+            result,
+            note: result === 'PASS' ? 'Đủ điều kiện lên lớp' : result === 'RETAKE' ? 'Cần thi lại để xét lên lớp' : 'Chưa đủ điều kiện lên lớp'
+          },
+          create: {
+            tenantId: tenant.id,
+            studentId: student.id,
+            classId: classContext.class.id,
+            semesterId: semester.id,
+            average: baseAverage,
+            result,
+            note: result === 'PASS' ? 'Đủ điều kiện lên lớp' : result === 'RETAKE' ? 'Cần thi lại để xét lên lớp' : 'Chưa đủ điều kiện lên lớp'
+          }
+        })
+      }
+    }
+  }
+  console.log('Promotion scenarios ready')
+
+  const ensureFee = async (data) => {
+    const existing = await prisma.fee.findFirst({
+      where: { tenantId: tenant.id, name: data.name }
+    })
+    if (existing) {
+      return prisma.fee.update({
+        where: { id: existing.id },
+        data
+      })
+    }
+    return prisma.fee.create({ data: { tenantId: tenant.id, ...data } })
+  }
+
+  const activeSemester = semesterByKey[`${ACTIVE_YEAR_LABEL}-${ACTIVE_SEMESTER_NUM}`]
+  const activeClass10A1 = classContexts.find((context) => context.academicYearLabel === ACTIVE_YEAR_LABEL && context.class.name === '10A1')?.class
+  const feeRows = await Promise.all([
+    ensureFee({
+      name: 'Học phí học kỳ 2',
+      description: 'Khoản học phí bắt buộc của học kỳ 2',
+      amount: 1800000,
+      category: 'TUITION',
+      isRequired: true,
+      dueDate: new Date(`${ACTIVE_YEAR_LABEL.split('-')[1]}-04-15`),
+      semesterId: activeSemester?.id,
+      isActive: true
+    }),
+    ensureFee({
+      name: 'Phí hoạt động ngoại khóa',
+      description: 'Dùng để kiểm thử trạng thái thanh toán một phần và miễn giảm',
+      amount: 350000,
+      category: 'ACTIVITY',
+      isRequired: false,
+      dueDate: new Date(`${ACTIVE_YEAR_LABEL.split('-')[1]}-05-10`),
+      classId: activeClass10A1?.id,
+      semesterId: activeSemester?.id,
+      isActive: true
+    })
+  ])
+
+  for (const [feeIndex, fee] of feeRows.entries()) {
+    for (const [index, student] of activeYearStudents.entries()) {
+      const statusCycle = ['PENDING', 'PAID', 'PARTIAL', 'OVERDUE', 'EXEMPT']
+      const status = statusCycle[(index + feeIndex) % statusCycle.length]
+      const paidAmount = status === 'PAID'
+        ? fee.amount
+        : status === 'PARTIAL'
+          ? Math.round(fee.amount / 2)
+          : status === 'EXEMPT'
+            ? 0
+            : 0
+
+      await prisma.studentFee.upsert({
+        where: {
+          feeId_studentId: {
+            feeId: fee.id,
+            studentId: student.id
+          }
+        },
+        update: {
+          tenantId: tenant.id,
+          amount: fee.amount,
+          paidAmount,
+          status,
+          paidAt: status === 'PAID' ? new Date() : null,
+          note: status === 'EXEMPT' ? 'Miễn giảm theo diện chính sách' : null
+        },
+        create: {
+          tenantId: tenant.id,
+          feeId: fee.id,
+          studentId: student.id,
+          amount: fee.amount,
+          paidAmount,
+          status,
+          paidAt: status === 'PAID' ? new Date() : null,
+          note: status === 'EXEMPT' ? 'Miễn giảm theo diện chính sách' : null
+        }
+      })
+    }
+  }
+  console.log('Fee scenarios ready')
+
+  await prisma.transferHistory.deleteMany({
+    where: {
+      tenantId: tenant.id,
+      reason: { startsWith: '[seed]' }
+    }
+  })
+
+  const transferPairs = [
+    { from: '10A1', to: '10A2', studentIndex: 0, reason: '[seed] Chuyển lớp theo nguyện vọng gia đình' },
+    { from: '11A2', to: '11A3', studentIndex: 1, reason: '[seed] Điều chỉnh sĩ số giữa các lớp' }
+  ]
+  for (const item of transferPairs) {
+    const fromClass = classContexts.find((context) => context.academicYearLabel === ACTIVE_YEAR_LABEL && context.class.name === item.from)
+    const toClass = classContexts.find((context) => context.academicYearLabel === ACTIVE_YEAR_LABEL && context.class.name === item.to)
+    const student = fromClass ? studentsByClassId[fromClass.class.id]?.[item.studentIndex] : null
+    if (!fromClass || !toClass || !student || !activeSemester) continue
+    await prisma.transferHistory.create({
+      data: {
+        tenantId: tenant.id,
+        studentId: student.id,
+        fromClassId: fromClass.class.id,
+        toClassId: toClass.class.id,
+        semesterId: activeSemester.id,
+        reason: item.reason,
+        transferredBy: 'seed'
+      }
+    })
+  }
+  console.log('Transfer scenarios ready')
+
+  const graduationYear = academicYearByLabel['2024-2025']
+  const graduationStudents = classContexts
+    .filter((context) => context.academicYearLabel === '2024-2025' && context.gradeLevel === 12)
+    .flatMap((context) => (studentsByClassId[context.class.id] || []).map((student) => ({ student, classItem: context.class })))
+    .slice(0, 6)
+
+  for (const item of graduationStudents) {
+    await prisma.graduationArchive.upsert({
+      where: {
+        tenantId_studentId_academicYearId: {
+          tenantId: tenant.id,
+          studentId: item.student.id,
+          academicYearId: graduationYear.id
+        }
+      },
+      update: {
+        sourceClassId: item.classItem.id,
+        note: 'Tốt nghiệp trong dữ liệu mẫu',
+        createdBy: 'seed'
+      },
+      create: {
+        tenantId: tenant.id,
+        studentId: item.student.id,
+        sourceClassId: item.classItem.id,
+        academicYearId: graduationYear.id,
+        note: 'Tốt nghiệp trong dữ liệu mẫu',
+        createdBy: 'seed'
+      }
+    })
+  }
+  console.log('Graduation archive scenarios ready')
 
   console.log('\nDatabase seed completed.')
   console.log('\nLogin credentials:')

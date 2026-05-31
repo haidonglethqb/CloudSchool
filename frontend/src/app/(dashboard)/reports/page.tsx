@@ -4,63 +4,261 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { classApi, reportApi, subjectApi } from '@/lib/api'
 import { formatSemesterLabel, pickDefaultSemester } from '@/lib/utils'
-import { BarChart3, BookOpen, Loader2, School, CalendarRange, GraduationCap } from 'lucide-react'
+import { useAuthStore } from '@/store/auth'
+import {
+  BarChart3,
+  BookOpen,
+  CalendarRange,
+  GraduationCap,
+  Layers,
+  Loader2,
+  School,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 
 type ReportKey = 'subjectPass' | 'classPromotion' | 'semesterPromotion' | 'yearPromotion'
 
-type ReportFilters = {
-  subjectPass: { subjectId: string; semesterId: string }
-  classPromotion: { classId: string; semesterId: string }
-  semesterPromotion: { semesterId: string }
-  yearPromotion: { academicYearId: string }
+type SemesterRow = {
+  id: string
+  name: string
+  year?: string | null
+  semesterNum?: number | null
+  academicYearId?: string | null
+  isActive?: boolean
 }
 
-const EMPTY_FILTERS: ReportFilters = {
-  subjectPass: { subjectId: '', semesterId: '' },
-  classPromotion: { classId: '', semesterId: '' },
-  semesterPromotion: { semesterId: '' },
-  yearPromotion: { academicYearId: '' },
+type YearRow = {
+  id: string
+  startYear: number
+  endYear: number
+  isActive?: boolean
 }
 
-const REPORT_TITLE: Record<ReportKey, string> = {
-  subjectPass: 'Ty le dat theo mon hoc',
-  classPromotion: 'Ty le len lop theo lop',
-  semesterPromotion: 'Ty le len lop theo hoc ky',
-  yearPromotion: 'Ty le len lop theo nam hoc',
+type ReportState = {
+  subjectId: string
+  classId: string
 }
+
+const REPORTS: Array<{
+  key: ReportKey
+  title: string
+  description: string
+  icon: typeof BookOpen
+}> = [
+  {
+    key: 'subjectPass',
+    title: 'Tỷ lệ đạt theo môn học',
+    description: 'Theo dõi mức đạt chuẩn của từng lớp trong một môn học.',
+    icon: BookOpen,
+  },
+  {
+    key: 'classPromotion',
+    title: 'Tỷ lệ lên lớp theo lớp',
+    description: 'Xem kết quả đạt, chưa đạt và thi lại của một lớp.',
+    icon: School,
+  },
+  {
+    key: 'semesterPromotion',
+    title: 'Tỷ lệ lên lớp theo học kỳ',
+    description: 'So sánh kết quả lên lớp giữa các lớp trong học kỳ.',
+    icon: CalendarRange,
+  },
+  {
+    key: 'yearPromotion',
+    title: 'Tỷ lệ lên lớp theo năm học',
+    description: 'Tổng hợp kết quả cuối năm theo từng khối.',
+    icon: GraduationCap,
+  },
+]
 
 function formatPercent(value?: number | null) {
   if (typeof value !== 'number' || Number.isNaN(value)) return '0%'
-  return `${value.toFixed(2).replace(/\\.00$/, '')}%`
+  return `${value.toFixed(2).replace(/\.00$/, '')}%`
+}
+
+function yearLabel(year?: YearRow | null) {
+  return year ? `${year.startYear}-${year.endYear}` : ''
+}
+
+function getSummaryValue(summary: any, key: 'pass' | 'fail' | 'retake') {
+  if (!summary) return 0
+  if (key === 'pass') return summary.passStudents ?? summary.totalPassed ?? 0
+  if (key === 'retake') return summary.retakeStudents ?? 0
+  return summary.failStudents ?? Math.max((summary.totalStudents ?? 0) - (summary.passStudents ?? summary.totalPassed ?? 0) - (summary.retakeStudents ?? 0), 0)
+}
+
+function StatBox({ label, value, tone = 'default' }: { label: string; value: string | number; tone?: 'default' | 'green' | 'red' | 'amber' | 'blue' }) {
+  const toneClass = {
+    default: 'text-gray-950',
+    green: 'text-emerald-700',
+    red: 'text-rose-700',
+    amber: 'text-amber-700',
+    blue: 'text-primary',
+  }[tone]
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</p>
+      <p className={`mt-1 text-2xl font-bold ${toneClass}`}>{value}</p>
+    </div>
+  )
+}
+
+function DonutChart({ passRate }: { passRate: number }) {
+  const safeRate = Math.max(0, Math.min(passRate || 0, 100))
+  return (
+    <div className="flex items-center gap-5">
+      <div
+        className="grid h-28 w-28 place-items-center rounded-full"
+        style={{
+          background: `conic-gradient(#059669 ${safeRate}%, #e11d48 ${safeRate}% 100%)`,
+        }}
+      >
+        <div className="grid h-20 w-20 place-items-center rounded-full bg-white">
+          <span className="text-xl font-bold text-gray-950">{formatPercent(safeRate)}</span>
+        </div>
+      </div>
+      <div className="space-y-2 text-sm">
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-full bg-emerald-600" />
+          <span className="text-gray-700">Đạt</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-full bg-rose-600" />
+          <span className="text-gray-700">Chưa đạt / thi lại</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BarList({ rows }: { rows: Array<{ label: string; value: number; meta?: string }> }) {
+  const sorted = [...rows].sort((a, b) => b.value - a.value).slice(0, 8)
+  if (sorted.length === 0) {
+    return <p className="text-sm text-gray-500">Chưa có dữ liệu để vẽ biểu đồ.</p>
+  }
+
+  return (
+    <div className="space-y-3">
+      {sorted.map((item) => (
+        <div key={item.label}>
+          <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+            <span className="font-medium text-gray-800">{item.label}</span>
+            <span className="text-gray-500">{item.meta || formatPercent(item.value)}</span>
+          </div>
+          <div className="h-2 rounded-full bg-gray-100">
+            <div
+              className="h-2 rounded-full bg-primary"
+              style={{ width: `${Math.max(3, Math.min(item.value, 100))}%` }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ResultPanel({ activeKey, data }: { activeKey: ReportKey; data: any }) {
+  const summary = data?.summary
+  if (!summary) {
+    return (
+      <section className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
+        <BarChart3 className="mx-auto h-10 w-10 text-gray-300" />
+        <p className="mt-3 font-medium text-gray-700">Chọn bộ lọc rồi bấm “Xem báo cáo” để hiển thị dữ liệu.</p>
+      </section>
+    )
+  }
+
+  const passRate = summary.passRate ?? 0
+  const rows =
+    activeKey === 'subjectPass'
+      ? (data.classes || []).map((item: any) => ({ label: item.class?.name || '-', value: item.passRate || 0 }))
+      : activeKey === 'yearPromotion'
+        ? (data.grades || []).map((item: any) => ({ label: item.grade?.name || '-', value: item.passRate || 0 }))
+        : (data.classes || []).map((item: any) => ({ label: item.class?.name || '-', value: item.passRate || 0 }))
+
+  return (
+    <section className="rounded-lg border border-gray-200 bg-white p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-950">{REPORTS.find((item) => item.key === activeKey)?.title}</h2>
+          <p className="mt-1 text-sm text-gray-600">Kết quả được tính theo bộ lọc hiện tại.</p>
+        </div>
+        <DonutChart passRate={passRate} />
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-5">
+        <StatBox label="Tổng xét" value={summary.totalStudents ?? 0} />
+        <StatBox label="Đạt" value={getSummaryValue(summary, 'pass')} tone="green" />
+        <StatBox label="Chưa đạt" value={getSummaryValue(summary, 'fail')} tone="red" />
+        <StatBox label="Thi lại" value={getSummaryValue(summary, 'retake')} tone="amber" />
+        <StatBox label="Tỷ lệ đạt" value={formatPercent(passRate)} tone="blue" />
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
+        <div className="rounded-lg border border-gray-200 p-4">
+          <h3 className="mb-4 font-semibold text-gray-900">Biểu đồ tỷ lệ</h3>
+          <BarList rows={rows} />
+        </div>
+        <div className="overflow-hidden rounded-lg border border-gray-200">
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className="table-header">Nhóm</th>
+                <th className="table-header text-right">Tổng</th>
+                <th className="table-header text-right">Đạt</th>
+                <th className="table-header text-right">Tỷ lệ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-500">Chưa có dữ liệu chi tiết.</td>
+                </tr>
+              ) : (
+                (activeKey === 'yearPromotion' ? data.grades || [] : data.classes || []).map((item: any, index: number) => (
+                  <tr key={item.class?.id || item.grade?.id || index}>
+                    <td className="table-cell font-medium">{item.class?.name || item.grade?.name || '-'}</td>
+                    <td className="table-cell text-right">{item.totalStudents ?? 0}</td>
+                    <td className="table-cell text-right text-emerald-700">{item.passStudents ?? item.passedStudents ?? 0}</td>
+                    <td className="table-cell text-right font-semibold">{formatPercent(item.passRate)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  )
 }
 
 export default function ReportsPage() {
+  const user = useAuthStore((state) => state.user)
+  const isTeacher = user?.role === 'TEACHER'
   const [loading, setLoading] = useState(true)
   const [subjects, setSubjects] = useState<any[]>([])
   const [classes, setClasses] = useState<any[]>([])
-  const [semesters, setSemesters] = useState<any[]>([])
-  const [years, setYears] = useState<any[]>([])
-  const [dashboardScope, setDashboardScope] = useState({ academicYearId: '', semesterId: '' })
+  const [semesters, setSemesters] = useState<SemesterRow[]>([])
+  const [years, setYears] = useState<YearRow[]>([])
+  const [selectedYearId, setSelectedYearId] = useState('')
+  const [selectedSemesterId, setSelectedSemesterId] = useState('')
+  const [reportState, setReportState] = useState<ReportState>({ subjectId: '', classId: '' })
   const [dashboardData, setDashboardData] = useState<any>(null)
   const [dashboardLoading, setDashboardLoading] = useState(false)
-  const [filters, setFilters] = useState<ReportFilters>(EMPTY_FILTERS)
   const [activeReport, setActiveReport] = useState<ReportKey>('subjectPass')
-  const [reportLoading, setReportLoading] = useState<Record<ReportKey, boolean>>({
-    subjectPass: false,
-    classPromotion: false,
-    semesterPromotion: false,
-    yearPromotion: false,
-  })
-  const [reportData, setReportData] = useState<Record<ReportKey, any | null>>({
-    subjectPass: null,
-    classPromotion: null,
-    semesterPromotion: null,
-    yearPromotion: null,
-  })
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportData, setReportData] = useState<any | null>(null)
+
+  const selectedYear = years.find((item) => item.id === selectedYearId) || null
+  const filteredSemesters = useMemo(() => {
+    if (!selectedYearId) return semesters
+    const label = yearLabel(selectedYear)
+    return semesters.filter((item) => item.academicYearId === selectedYearId || item.year === label)
+  }, [selectedYearId, selectedYear, semesters])
 
   useEffect(() => {
-    Promise.all([subjectApi.list(), classApi.list(), subjectApi.getSemesters(), reportApi.dashboard()])
+    Promise.all([subjectApi.list(), classApi.list(), subjectApi.getSemesters(), reportApi.dashboardByScope({ allYears: 'true' })])
       .then(([subjectRes, classRes, semesterRes, dashboardRes]) => {
         const subjectRows = subjectRes.data.data || []
         const classRows = classRes.data.data || []
@@ -73,100 +271,88 @@ export default function ReportsPage() {
           isActive: item.isActive,
         }))
 
-        const defaultSemester = pickDefaultSemester(semesterRows)
-        const defaultYear = yearRows.find((item: any) => item.isActive)
-          || yearRows.find((item: any) => item.id === dashboard.selectedAcademicYear?.id)
-          || yearRows[0]
-
         setSubjects(subjectRows)
         setClasses(classRows)
         setSemesters(semesterRows)
         setYears(yearRows)
         setDashboardData(dashboard)
-        setDashboardScope({
-          academicYearId: defaultYear?.id || '',
-          semesterId: dashboard.selectedSemester?.id || defaultSemester?.id || '',
-        })
-        setFilters({
-          subjectPass: { subjectId: subjectRows[0]?.id || '', semesterId: defaultSemester?.id || '' },
-          classPromotion: { classId: classRows[0]?.id || '', semesterId: defaultSemester?.id || '' },
-          semesterPromotion: { semesterId: defaultSemester?.id || '' },
-          yearPromotion: { academicYearId: defaultYear?.id || '' },
+        setReportState({
+          subjectId: subjectRows[0]?.id || '',
+          classId: classRows[0]?.id || '',
         })
       })
-      .catch(() => toast.error('Khong the tai du lieu bao cao'))
+      .catch(() => toast.error('Không thể tải dữ liệu báo cáo'))
       .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
-    if (!dashboardScope.academicYearId && !dashboardScope.semesterId) return
+    if (selectedSemesterId && !filteredSemesters.some((item) => item.id === selectedSemesterId)) {
+      setSelectedSemesterId('')
+    }
+  }, [filteredSemesters, selectedSemesterId])
+
+  useEffect(() => {
     setDashboardLoading(true)
     reportApi.dashboardByScope({
-      academicYearId: dashboardScope.academicYearId || undefined,
-      semesterId: dashboardScope.semesterId || undefined,
+      academicYearId: selectedYearId || undefined,
+      semesterId: selectedSemesterId || undefined,
+      allYears: !selectedYearId && !selectedSemesterId ? 'true' : undefined,
     })
       .then((res) => setDashboardData(res.data.data))
       .catch(() => setDashboardData(null))
       .finally(() => setDashboardLoading(false))
-  }, [dashboardScope.academicYearId, dashboardScope.semesterId])
+  }, [selectedYearId, selectedSemesterId])
+
+  const effectiveSemester = selectedSemesterId || pickDefaultSemester(filteredSemesters)?.id || ''
 
   const loadReport = async (key: ReportKey) => {
     try {
       setActiveReport(key)
-      setReportLoading((prev) => ({ ...prev, [key]: true }))
+      setReportLoading(true)
+      setReportData(null)
+
+      if (key !== 'yearPromotion' && !effectiveSemester) {
+        toast.error('Vui lòng chọn học kỳ')
+        return
+      }
 
       if (key === 'subjectPass') {
-        const { subjectId, semesterId } = filters.subjectPass
-        if (!subjectId || !semesterId) {
-          toast.error('Chon mon hoc va hoc ky')
+        if (!reportState.subjectId) {
+          toast.error('Vui lòng chọn môn học')
           return
         }
-        const res = await reportApi.subjectSummary(subjectId, semesterId)
-        setReportData((prev) => ({ ...prev, subjectPass: res.data.data }))
+        const res = await reportApi.subjectSummary(reportState.subjectId, effectiveSemester)
+        setReportData(res.data.data)
       }
 
       if (key === 'classPromotion') {
-        const { classId, semesterId } = filters.classPromotion
-        if (!classId || !semesterId) {
-          toast.error('Chon lop va hoc ky')
+        if (!reportState.classId) {
+          toast.error('Vui lòng chọn lớp')
           return
         }
-        const res = await reportApi.classPromotionSummary(classId, semesterId)
-        setReportData((prev) => ({ ...prev, classPromotion: res.data.data }))
+        const res = await reportApi.classPromotionSummary(reportState.classId, effectiveSemester)
+        setReportData(res.data.data)
       }
 
       if (key === 'semesterPromotion') {
-        const { semesterId } = filters.semesterPromotion
-        if (!semesterId) {
-          toast.error('Chon hoc ky')
-          return
-        }
-        const res = await reportApi.semesterPromotionSummary(semesterId)
-        setReportData((prev) => ({ ...prev, semesterPromotion: res.data.data }))
+        const res = await reportApi.semesterPromotionSummary(effectiveSemester)
+        setReportData(res.data.data)
       }
 
       if (key === 'yearPromotion') {
-        const { academicYearId } = filters.yearPromotion
-        if (!academicYearId) {
-          toast.error('Chon nam hoc')
+        if (!selectedYearId) {
+          toast.error('Vui lòng chọn năm học để xem báo cáo năm')
           return
         }
-        const res = await reportApi.yearPromotionSummary(academicYearId)
-        setReportData((prev) => ({ ...prev, yearPromotion: res.data.data }))
+        const res = await reportApi.yearPromotionSummary(selectedYearId)
+        setReportData(res.data.data)
       }
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Khong the tai bao cao')
+      toast.error(error.response?.data?.error?.message || 'Không thể tải báo cáo')
     } finally {
-      setReportLoading((prev) => ({ ...prev, [key]: false }))
+      setReportLoading(false)
     }
   }
-
-  const cards = useMemo(() => ([
-    { key: 'subjectPass' as const, icon: BookOpen },
-    { key: 'classPromotion' as const, icon: School },
-    { key: 'semesterPromotion' as const, icon: CalendarRange },
-    { key: 'yearPromotion' as const, icon: GraduationCap },
-  ]), [])
 
   if (loading) {
     return (
@@ -176,155 +362,119 @@ export default function ReportsPage() {
     )
   }
 
-  const active = reportData[activeReport]
-
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Bao cao hoc vu</h1>
-          <p className="text-sm text-gray-600 mt-1">Trang nay chi de xem bao cao. Nghiep vu xet len lop da tach sang trang rieng.</p>
+          <h1 className="text-2xl font-bold text-gray-950">Báo cáo học vụ</h1>
+          <p className="mt-1 text-sm text-gray-600">Theo dõi kết quả học tập, tỷ lệ đạt và tình hình lên lớp.</p>
         </div>
-        <Link href="/promotion" className="btn-outline">
-          <GraduationCap className="mr-2 h-4 w-4" />
-          Sang trang xet len lop
-        </Link>
+        {!isTeacher ? (
+          <Link href="/promotion" className="btn-outline">
+            <GraduationCap className="mr-2 h-4 w-4" />
+            Xét lên lớp
+          </Link>
+        ) : null}
       </div>
 
-      <section className="card p-5">
-        <div className="grid gap-4 md:grid-cols-4">
+      <section className="rounded-lg border border-gray-200 bg-white p-5">
+        <div className="grid gap-4 lg:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_repeat(3,minmax(120px,0.7fr))]">
           <div>
-            <label className="label">Nam hoc dashboard</label>
+            <label className="label">Năm học</label>
             <select
               className="input"
-              value={dashboardScope.academicYearId}
-              onChange={(e) => setDashboardScope((prev) => ({ ...prev, academicYearId: e.target.value }))}
+              value={selectedYearId}
+              onChange={(e) => {
+                setSelectedYearId(e.target.value)
+                setReportData(null)
+              }}
             >
-              <option value="">Chon nam hoc</option>
+              <option value="">Tất cả năm học</option>
               {years.map((item) => (
-                <option key={item.id} value={item.id}>{item.startYear}-{item.endYear}</option>
+                <option key={item.id} value={item.id}>{yearLabel(item)}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className="label">Hoc ky dashboard</label>
+            <label className="label">Học kỳ</label>
             <select
               className="input"
-              value={dashboardScope.semesterId}
-              onChange={(e) => setDashboardScope((prev) => ({ ...prev, semesterId: e.target.value }))}
+              value={selectedSemesterId}
+              onChange={(e) => {
+                setSelectedSemesterId(e.target.value)
+                setReportData(null)
+              }}
             >
-              <option value="">Chon hoc ky</option>
-              {semesters.map((item) => (
+              <option value="">Tất cả học kỳ</option>
+              {filteredSemesters.map((item) => (
                 <option key={item.id} value={item.id}>{formatSemesterLabel(item)}</option>
               ))}
             </select>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <p className="text-xs font-semibold uppercase text-gray-500">Tong hoc sinh</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">{dashboardLoading ? '--' : (dashboardData?.stats?.totalStudents ?? 0)}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <p className="text-xs font-semibold uppercase text-gray-500">Tong lop</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">{dashboardLoading ? '--' : (dashboardData?.stats?.totalClasses ?? 0)}</p>
-          </div>
+          <StatBox label="Tổng học sinh" value={dashboardLoading ? '--' : (dashboardData?.stats?.totalStudents ?? 0)} />
+          <StatBox label="Tổng lớp" value={dashboardLoading ? '--' : (dashboardData?.stats?.totalClasses ?? 0)} />
+          <StatBox label="Tổng môn" value={dashboardLoading ? '--' : (dashboardData?.stats?.totalSubjects ?? 0)} />
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        {cards.map(({ key, icon: Icon }) => (
-          <article key={key} className="card p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">{REPORT_TITLE[key]}</h2>
-                <p className="text-sm text-gray-600 mt-1">Bo loc rieng cho tung bao cao.</p>
-              </div>
-              <Icon className="h-5 w-5 text-primary" />
-            </div>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {key === 'subjectPass' ? (
-                <>
-                  <select className="input" value={filters.subjectPass.subjectId} onChange={(e) => setFilters((prev) => ({ ...prev, subjectPass: { ...prev.subjectPass, subjectId: e.target.value } }))}>
-                    <option value="">Chon mon</option>
-                    {subjects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </select>
-                  <select className="input" value={filters.subjectPass.semesterId} onChange={(e) => setFilters((prev) => ({ ...prev, subjectPass: { ...prev.subjectPass, semesterId: e.target.value } }))}>
-                    <option value="">Chon hoc ky</option>
-                    {semesters.map((item) => <option key={item.id} value={item.id}>{formatSemesterLabel(item)}</option>)}
-                  </select>
-                </>
-              ) : null}
-
-              {key === 'classPromotion' ? (
-                <>
-                  <select className="input" value={filters.classPromotion.classId} onChange={(e) => setFilters((prev) => ({ ...prev, classPromotion: { ...prev.classPromotion, classId: e.target.value } }))}>
-                    <option value="">Chon lop</option>
-                    {classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </select>
-                  <select className="input" value={filters.classPromotion.semesterId} onChange={(e) => setFilters((prev) => ({ ...prev, classPromotion: { ...prev.classPromotion, semesterId: e.target.value } }))}>
-                    <option value="">Chon hoc ky</option>
-                    {semesters.map((item) => <option key={item.id} value={item.id}>{formatSemesterLabel(item)}</option>)}
-                  </select>
-                </>
-              ) : null}
-
-              {key === 'semesterPromotion' ? (
-                <select className="input md:col-span-2" value={filters.semesterPromotion.semesterId} onChange={(e) => setFilters((prev) => ({ ...prev, semesterPromotion: { semesterId: e.target.value } }))}>
-                  <option value="">Chon hoc ky</option>
-                  {semesters.map((item) => <option key={item.id} value={item.id}>{formatSemesterLabel(item)}</option>)}
-                </select>
-              ) : null}
-
-              {key === 'yearPromotion' ? (
-                <select className="input md:col-span-2" value={filters.yearPromotion.academicYearId} onChange={(e) => setFilters((prev) => ({ ...prev, yearPromotion: { academicYearId: e.target.value } }))}>
-                  <option value="">Chon nam hoc</option>
-                  {years.map((item) => <option key={item.id} value={item.id}>{item.startYear}-{item.endYear}</option>)}
-                </select>
-              ) : null}
-            </div>
-
-            <div className="mt-4 flex items-center justify-between">
-              <div className="text-sm text-gray-600">
-                {reportData[key]?.summary
-                  ? `Ty le hien tai: ${formatPercent(reportData[key].summary.passRate)}`
-                  : 'Chua tai bao cao'}
-              </div>
-              <button onClick={() => loadReport(key)} className="btn-primary" disabled={reportLoading[key]}>
-                {reportLoading[key] ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BarChart3 className="mr-2 h-4 w-4" />}
-                Xem bao cao
-              </button>
-            </div>
-          </article>
+      <section className="grid gap-4 xl:grid-cols-4">
+        {REPORTS.map(({ key, icon: Icon, title, description }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => {
+              setActiveReport(key)
+              setReportData(null)
+            }}
+            className={`rounded-lg border bg-white p-4 text-left transition ${
+              activeReport === key ? 'border-primary shadow-sm ring-2 ring-primary/10' : 'border-gray-200 hover:border-primary/40'
+            }`}
+          >
+            <Icon className="h-5 w-5 text-primary" />
+            <h2 className="mt-3 font-semibold text-gray-950">{title}</h2>
+            <p className="mt-1 text-sm text-gray-600">{description}</p>
+          </button>
         ))}
       </section>
 
-      <section className="card p-5">
-        <h2 className="text-lg font-semibold text-gray-900">{REPORT_TITLE[activeReport]}</h2>
-        {!active?.summary ? (
-          <p className="mt-2 text-sm text-gray-600">Chon bo loc va bam "Xem bao cao" de hien thi du lieu.</p>
-        ) : (
-          <div className="mt-4 space-y-3">
-            <div className="grid gap-3 md:grid-cols-4">
-              <div className="rounded-lg border border-gray-200 p-3">
-                <p className="text-xs font-semibold uppercase text-gray-500">Tong xet</p>
-                <p className="mt-1 text-xl font-bold text-gray-900">{active.summary.totalStudents ?? 0}</p>
+      <section className="rounded-lg border border-gray-200 bg-white p-5">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <div className="grid gap-4 md:grid-cols-3">
+            {activeReport === 'subjectPass' ? (
+              <div>
+                <label className="label">Môn học</label>
+                <select className="input" value={reportState.subjectId} onChange={(e) => setReportState((prev) => ({ ...prev, subjectId: e.target.value }))}>
+                  {subjects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
               </div>
-              <div className="rounded-lg border border-gray-200 p-3">
-                <p className="text-xs font-semibold uppercase text-gray-500">Dat</p>
-                <p className="mt-1 text-xl font-bold text-green-700">{active.summary.passStudents ?? active.summary.totalPassed ?? 0}</p>
+            ) : null}
+            {activeReport === 'classPromotion' ? (
+              <div>
+                <label className="label">Lớp</label>
+                <select className="input" value={reportState.classId} onChange={(e) => setReportState((prev) => ({ ...prev, classId: e.target.value }))}>
+                  {classes.map((item) => <option key={item.id} value={item.id}>{item.name} {item.grade?.name ? `- ${item.grade.name}` : ''}</option>)}
+                </select>
               </div>
-              <div className="rounded-lg border border-gray-200 p-3">
-                <p className="text-xs font-semibold uppercase text-gray-500">Chua dat</p>
-                <p className="mt-1 text-xl font-bold text-rose-700">{active.summary.failStudents ?? ((active.summary.totalStudents ?? 0) - (active.summary.passStudents ?? active.summary.totalPassed ?? 0))}</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 p-3">
-                <p className="text-xs font-semibold uppercase text-gray-500">Ty le</p>
-                <p className="mt-1 text-xl font-bold text-gray-900">{formatPercent(active.summary.passRate)}</p>
+            ) : null}
+            <div>
+              <label className="label">{activeReport === 'yearPromotion' ? 'Năm đang xét' : 'Học kỳ đang xét'}</label>
+              <div className="flex h-[38px] items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-700">
+                {activeReport === 'yearPromotion'
+                  ? selectedYear ? yearLabel(selectedYear) : 'Chọn năm học ở bộ lọc phía trên'
+                  : selectedSemesterId
+                    ? formatSemesterLabel(filteredSemesters.find((item) => item.id === selectedSemesterId) || ({} as SemesterRow))
+                    : 'Tự chọn học kỳ phù hợp nhất'}
               </div>
             </div>
           </div>
-        )}
+          <button onClick={() => loadReport(activeReport)} className="btn-primary" disabled={reportLoading}>
+            {reportLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Layers className="mr-2 h-4 w-4" />}
+            Xem báo cáo
+          </button>
+        </div>
       </section>
+
+      <ResultPanel activeKey={activeReport} data={reportData} />
     </div>
   )
 }

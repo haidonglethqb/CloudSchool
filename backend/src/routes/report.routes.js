@@ -16,7 +16,44 @@ function calcWeightedAverage(scores) {
   return totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) / 100 : null
 }
 
-const getCalendarContext = async (tenantId, selectedAcademicYearId = null, selectedSemesterId = null) => {
+const buildAcademicYearLabel = (academicYear) => `${academicYear.startYear}-${academicYear.endYear}`
+
+const getTeacherClassIds = async (req, subjectId = null) => {
+  if (req.user.role !== 'TEACHER') return null
+  const assignments = await prisma.teacherAssignment.findMany({
+    where: {
+      tenantId: req.tenantId,
+      teacherId: req.user.id,
+      ...(subjectId ? { subjectId } : {})
+    },
+    select: { classId: true }
+  })
+  return [...new Set(assignments.map((item) => item.classId))]
+}
+
+const ensureTeacherClassAccess = async (req, classId) => {
+  if (req.user.role !== 'TEACHER') return
+  const assignment = await prisma.teacherAssignment.findFirst({
+    where: { tenantId: req.tenantId, teacherId: req.user.id, classId },
+    select: { id: true }
+  })
+  if (!assignment) throw new AppError('Not assigned to this class', 403, 'FORBIDDEN')
+}
+
+const getSemesterClassFilter = async (tenantId, semesterId) => {
+  if (!semesterId) return {}
+  const semester = await prisma.semester.findFirst({
+    where: { tenantId, id: semesterId },
+    include: { academicYear: true }
+  })
+  if (!semester) throw new AppError('Semester not found', 404, 'NOT_FOUND')
+  if (semester.academicYearId) return { academicYearId: semester.academicYearId }
+  if (semester.academicYear) return { academicYear: buildAcademicYearLabel(semester.academicYear) }
+  if (semester.year) return { academicYear: semester.year }
+  return {}
+}
+
+const getCalendarContext = async (tenantId, selectedAcademicYearId = null, selectedSemesterId = null, options = {}) => {
   const academicYears = await prisma.academicYear.findMany({
     where: { tenantId },
     include: { semesters: { orderBy: { semesterNum: 'asc' } } },
@@ -26,14 +63,19 @@ const getCalendarContext = async (tenantId, selectedAcademicYearId = null, selec
 
   let selectedAcademicYear = selectedAcademicYearId
     ? academicYears.find((year) => year.id === selectedAcademicYearId)
-    : academicYears.find((year) => year.isActive) || academicYears[0]
-  if (!selectedAcademicYear) selectedAcademicYear = academicYears[0]
+    : options.defaultToAllYears
+      ? null
+      : academicYears.find((year) => year.isActive) || academicYears[0]
 
   let selectedSemester = null
   if (selectedSemesterId) {
-    selectedSemester = selectedAcademicYear.semesters.find((semester) => semester.id === selectedSemesterId) || null
+    selectedSemester = academicYears.flatMap((year) => year.semesters).find((semester) => semester.id === selectedSemesterId) || null
+    if (selectedSemester?.academicYearId) {
+      selectedAcademicYear = academicYears.find((year) => year.id === selectedSemester.academicYearId) || null
+    }
   }
-  if (!selectedSemester) {
+
+  if (!options.defaultToAllYears && selectedAcademicYear && !selectedSemester) {
     selectedSemester = selectedAcademicYear.semesters.find((semester) => semester.isActive) || selectedAcademicYear.semesters[selectedAcademicYear.semesters.length - 1] || null
   }
 
@@ -51,8 +93,15 @@ router.get('/subject-summary', async (req, res, next) => {
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
     if (!settings) throw new AppError('Tenant settings not configured', 400, 'SETTINGS_NOT_FOUND')
 
+    const yearFilter = await getSemesterClassFilter(req.tenantId, semesterId)
+    const teacherClassIds = await getTeacherClassIds(req, subjectId)
     const classes = await prisma.class.findMany({
-      where: { tenantId: req.tenantId, isActive: true },
+      where: {
+        tenantId: req.tenantId,
+        isActive: true,
+        ...yearFilter,
+        ...(teacherClassIds ? { id: { in: teacherClassIds } } : {})
+      },
       include: { grade: true, students: { where: { isActive: true } } },
       orderBy: { name: 'asc' }
     })
@@ -129,6 +178,8 @@ router.get('/class-promotion-summary', async (req, res, next) => {
     const { classId, semesterId } = req.query
     if (!classId || !semesterId) throw new AppError('classId and semesterId are required', 400, 'MISSING_PARAMS')
 
+    await ensureTeacherClassAccess(req, classId)
+
     const classInfo = await prisma.class.findFirst({
       where: { id: classId, tenantId: req.tenantId },
       include: { grade: true }
@@ -143,7 +194,8 @@ router.get('/class-promotion-summary', async (req, res, next) => {
 
     const totalStudents = promotions.length
     const passStudents = promotions.filter((item) => item.result === 'PASS')
-    const failStudents = promotions.filter((item) => item.result !== 'PASS')
+    const failStudents = promotions.filter((item) => item.result === 'FAIL')
+    const retakeStudents = promotions.filter((item) => item.result === 'RETAKE')
 
     res.json({
       data: {
@@ -154,6 +206,7 @@ router.get('/class-promotion-summary', async (req, res, next) => {
           totalStudents,
           passStudents: passStudents.length,
           failStudents: failStudents.length,
+          retakeStudents: retakeStudents.length,
           passRate: totalStudents > 0 ? Math.round((passStudents.length / totalStudents) * 10000) / 100 : 0
         }
       }
@@ -172,8 +225,13 @@ router.get('/semester-promotion-summary', async (req, res, next) => {
     const semester = await prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId } })
     if (!semester) throw new AppError('Semester not found', 404, 'NOT_FOUND')
 
+    const teacherClassIds = await getTeacherClassIds(req)
     const promotions = await prisma.promotion.findMany({
-      where: { tenantId: req.tenantId, semesterId },
+      where: {
+        tenantId: req.tenantId,
+        semesterId,
+        ...(teacherClassIds ? { classId: { in: teacherClassIds } } : {})
+      },
       include: { class: { include: { grade: true } } }
     })
 
@@ -184,24 +242,28 @@ router.get('/semester-promotion-summary', async (req, res, next) => {
         classMap.set(key, {
           class: promotion.class,
           totalStudents: 0,
-          passStudents: 0
+          passStudents: 0,
+          retakeStudents: 0
         })
       }
       const bucket = classMap.get(key)
       bucket.totalStudents += 1
       if (promotion.result === 'PASS') bucket.passStudents += 1
+      if (promotion.result === 'RETAKE') bucket.retakeStudents += 1
     }
 
     const classes = [...classMap.values()].map((item) => ({
       class: item.class,
       totalStudents: item.totalStudents,
       passStudents: item.passStudents,
-      failStudents: item.totalStudents - item.passStudents,
+      retakeStudents: item.retakeStudents,
+      failStudents: item.totalStudents - item.passStudents - item.retakeStudents,
       passRate: item.totalStudents > 0 ? Math.round((item.passStudents / item.totalStudents) * 10000) / 100 : 0
     }))
 
     const totalStudents = classes.reduce((sum, item) => sum + item.totalStudents, 0)
     const passStudents = classes.reduce((sum, item) => sum + item.passStudents, 0)
+    const retakeStudents = classes.reduce((sum, item) => sum + item.retakeStudents, 0)
 
     res.json({
       data: {
@@ -210,7 +272,8 @@ router.get('/semester-promotion-summary', async (req, res, next) => {
         summary: {
           totalStudents,
           passStudents,
-          failStudents: totalStudents - passStudents,
+          retakeStudents,
+          failStudents: totalStudents - passStudents - retakeStudents,
           passRate: totalStudents > 0 ? Math.round((passStudents / totalStudents) * 10000) / 100 : 0
         }
       }
@@ -234,8 +297,13 @@ router.get('/year-promotion-summary', async (req, res, next) => {
     if (year.semesters.length === 0) throw new AppError('Academic year has no semesters', 400, 'NO_SEMESTERS')
 
     const finalSemester = year.semesters[year.semesters.length - 1]
+    const teacherClassIds = await getTeacherClassIds(req)
     const promotions = await prisma.promotion.findMany({
-      where: { tenantId: req.tenantId, semesterId: finalSemester.id },
+      where: {
+        tenantId: req.tenantId,
+        semesterId: finalSemester.id,
+        ...(teacherClassIds ? { classId: { in: teacherClassIds } } : {})
+      },
       include: { class: { include: { grade: true } } }
     })
 
@@ -246,12 +314,14 @@ router.get('/year-promotion-summary', async (req, res, next) => {
         gradeMap.set(key, {
           grade: promotion.class.grade,
           totalStudents: 0,
-          passStudents: 0
+          passStudents: 0,
+          retakeStudents: 0
         })
       }
       const bucket = gradeMap.get(key)
       bucket.totalStudents += 1
       if (promotion.result === 'PASS') bucket.passStudents += 1
+      if (promotion.result === 'RETAKE') bucket.retakeStudents += 1
     }
 
     const grades = [...gradeMap.values()]
@@ -260,12 +330,14 @@ router.get('/year-promotion-summary', async (req, res, next) => {
         grade: item.grade,
         totalStudents: item.totalStudents,
         passStudents: item.passStudents,
-        failStudents: item.totalStudents - item.passStudents,
+        retakeStudents: item.retakeStudents,
+        failStudents: item.totalStudents - item.passStudents - item.retakeStudents,
         passRate: item.totalStudents > 0 ? Math.round((item.passStudents / item.totalStudents) * 10000) / 100 : 0
       }))
 
     const totalStudents = grades.reduce((sum, item) => sum + item.totalStudents, 0)
     const passStudents = grades.reduce((sum, item) => sum + item.passStudents, 0)
+    const retakeStudents = grades.reduce((sum, item) => sum + item.retakeStudents, 0)
 
     res.json({
       data: {
@@ -275,7 +347,8 @@ router.get('/year-promotion-summary', async (req, res, next) => {
         summary: {
           totalStudents,
           passStudents,
-          failStudents: totalStudents - passStudents,
+          retakeStudents,
+          failStudents: totalStudents - passStudents - retakeStudents,
           passRate: totalStudents > 0 ? Math.round((passStudents / totalStudents) * 10000) / 100 : 0
         }
       }
@@ -288,21 +361,29 @@ router.get('/year-promotion-summary', async (req, res, next) => {
 // GET /reports/dashboard
 router.get('/dashboard', async (req, res, next) => {
   try {
-    const { academicYearId, semesterId } = req.query
+    const { academicYearId, semesterId, allYears } = req.query
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
     if (!settings) throw new AppError('Tenant settings not configured', 400, 'SETTINGS_NOT_FOUND')
 
-    const { academicYears, selectedAcademicYear, selectedSemester } = await getCalendarContext(req.tenantId, academicYearId, semesterId)
+    const { academicYears, selectedAcademicYear, selectedSemester } = await getCalendarContext(req.tenantId, academicYearId, semesterId, {
+      defaultToAllYears: allYears === 'true' && !academicYearId && !semesterId
+    })
 
     const classWhere = { tenantId: req.tenantId, isActive: true }
     const studentWhere = { tenantId: req.tenantId, isActive: true }
 
     if (selectedAcademicYear) {
-      const yearLabel = `${selectedAcademicYear.startYear}-${selectedAcademicYear.endYear}`
+      const yearLabel = buildAcademicYearLabel(selectedAcademicYear)
       classWhere.OR = [{ academicYearId: selectedAcademicYear.id }, { academicYear: yearLabel }]
       studentWhere.class = {
         OR: [{ academicYearId: selectedAcademicYear.id }, { academicYear: yearLabel }]
       }
+    }
+
+    if (req.user.role === 'TEACHER') {
+      const teacherClassIds = await getTeacherClassIds(req)
+      classWhere.id = { in: teacherClassIds }
+      studentWhere.classId = { in: teacherClassIds }
     }
 
     const [totalStudents, totalClasses, totalSubjects, recentStudents, gradeDistribution] = await Promise.all([
@@ -348,7 +429,9 @@ router.get('/dashboard', async (req, res, next) => {
           semesters: year.semesters.map((semester) => ({
             id: semester.id,
             name: semester.name,
+            year: semester.year,
             semesterNum: semester.semesterNum,
+            academicYearId: semester.academicYearId,
             startDate: semester.startDate,
             endDate: semester.endDate,
             isActive: semester.isActive

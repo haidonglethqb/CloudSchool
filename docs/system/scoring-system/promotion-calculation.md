@@ -40,6 +40,7 @@ Year-end promotion is now **synchronous**, **school-admin only**, and executed f
 - No `maxRetentions` deactivation flow in promotion.
 - `RETAKE` is not used in final promotion summary rates.
 - BM2/BM3/BM4 promotion reports count only `PromotionResult.PASS` as promoted.
+- Seed data includes PASS/FAIL/RETAKE promotion rows for report smoke testing; học kỳ 2 in seed ends on `30/06`.
 
 ## Related
 
