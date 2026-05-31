@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { academicYearApi, classApi, reportApi, subjectApi } from '@/lib/api'
+import { classApi, reportApi, subjectApi } from '@/lib/api'
 import { formatSemesterLabel, pickDefaultSemester } from '@/lib/utils'
 import { BarChart3, BookOpen, Loader2, School, CalendarRange, GraduationCap } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -60,22 +60,32 @@ export default function ReportsPage() {
   })
 
   useEffect(() => {
-    Promise.all([subjectApi.list(), classApi.list(), subjectApi.getSemesters(), academicYearApi.list()])
-      .then(([subjectRes, classRes, semesterRes, yearRes]) => {
+    Promise.all([subjectApi.list(), classApi.list(), subjectApi.getSemesters(), reportApi.dashboard()])
+      .then(([subjectRes, classRes, semesterRes, dashboardRes]) => {
         const subjectRows = subjectRes.data.data || []
         const classRows = classRes.data.data || []
         const semesterRows = semesterRes.data.data || []
-        const yearRows = yearRes.data.data || []
+        const dashboard = dashboardRes.data.data || {}
+        const yearRows = (dashboard.academicYears || []).map((item: any) => ({
+          id: item.id,
+          startYear: item.startYear,
+          endYear: item.endYear,
+          isActive: item.isActive,
+        }))
+
         const defaultSemester = pickDefaultSemester(semesterRows)
-        const defaultYear = yearRows.find((item: any) => item.isActive) || yearRows[0]
+        const defaultYear = yearRows.find((item: any) => item.isActive)
+          || yearRows.find((item: any) => item.id === dashboard.selectedAcademicYear?.id)
+          || yearRows[0]
 
         setSubjects(subjectRows)
         setClasses(classRows)
         setSemesters(semesterRows)
         setYears(yearRows)
+        setDashboardData(dashboard)
         setDashboardScope({
           academicYearId: defaultYear?.id || '',
-          semesterId: defaultSemester?.id || '',
+          semesterId: dashboard.selectedSemester?.id || defaultSemester?.id || '',
         })
         setFilters({
           subjectPass: { subjectId: subjectRows[0]?.id || '', semesterId: defaultSemester?.id || '' },
