@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run check:vi-text && next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check:vi-text": "node scripts/check-vi-text.mjs",
+    "check": "npm run lint && npm run check:vi-text"
   },
   "dependencies": {
     "next": "14.2.7",

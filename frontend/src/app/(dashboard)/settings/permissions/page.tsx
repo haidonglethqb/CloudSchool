@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { settingsApi } from '@/lib/api'
+import { getUiModuleLabel, getUiRoleLabel } from '@/lib/ui-copy'
+import { resolveUiErrorMessage } from '@/lib/ui-error'
 import { useAuthStore } from '@/store/auth'
 import { useRouter } from 'next/navigation'
 import { Shield, Save, Loader2, ArrowLeft } from 'lucide-react'
@@ -9,23 +11,23 @@ import toast from 'react-hot-toast'
 import Link from 'next/link'
 
 const ROLES = [
-  { key: 'STAFF', label: 'Nhan vien giao vu' },
-  { key: 'TEACHER', label: 'Giao vien' },
+  { key: 'STAFF', label: getUiRoleLabel('STAFF') },
+  { key: 'TEACHER', label: getUiRoleLabel('TEACHER') },
 ]
 
 const MODULES = [
-  { key: 'student-admission', label: 'Tiep nhan hoc sinh' },
-  { key: 'student-lookup', label: 'Tra cuu hoc sinh' },
-  { key: 'classes', label: 'Lop hoc' },
-  { key: 'class-transfer', label: 'Chuyen lop' },
-  { key: 'subjects', label: 'Mon hoc' },
-  { key: 'scores', label: 'Diem so' },
-  { key: 'reports', label: 'Bao cao' },
-  { key: 'parents', label: 'Phu huynh' },
-  { key: 'academic-calendar', label: 'Nam hoc & hoc ky' },
-  { key: 'fees', label: 'Hoc phi' },
-  { key: 'export', label: 'Xuat du lieu' },
-  { key: 'settings', label: 'Cai dat' },
+  { key: 'student-admission', label: getUiModuleLabel('student-admission') },
+  { key: 'student-lookup', label: getUiModuleLabel('student-lookup') },
+  { key: 'classes', label: getUiModuleLabel('classes') },
+  { key: 'class-transfer', label: getUiModuleLabel('class-transfer') },
+  { key: 'subjects', label: getUiModuleLabel('subjects') },
+  { key: 'scores', label: getUiModuleLabel('scores') },
+  { key: 'reports', label: getUiModuleLabel('reports') },
+  { key: 'parents', label: getUiModuleLabel('parents') },
+  { key: 'academic-calendar', label: getUiModuleLabel('academic-calendar') },
+  { key: 'fees', label: getUiModuleLabel('fees') },
+  { key: 'export', label: getUiModuleLabel('export') },
+  { key: 'settings', label: getUiModuleLabel('settings') },
 ]
 
 type Permissions = Record<string, string[]>
@@ -44,7 +46,7 @@ export default function PermissionsPage() {
     }
     settingsApi.getRolePermissions()
       .then((res) => setPermissions(res.data.data || {}))
-      .catch(() => toast.error('Khong the tai phan quyen'))
+      .catch(() => toast.error('Không thể tải phân quyền.'))
       .finally(() => setLoading(false))
   }, [user, router])
 
@@ -70,9 +72,9 @@ export default function PermissionsPage() {
     try {
       setSaving(true)
       await settingsApi.updateRolePermissions(permissions)
-      toast.success('Luu phan quyen thanh cong')
+      toast.success('Lưu phân quyền thành công.')
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Luu phan quyen that bai')
+      toast.error(resolveUiErrorMessage(error, 'Lưu phân quyền thất bại.'))
     } finally {
       setSaving(false)
     }
@@ -93,8 +95,8 @@ export default function PermissionsPage() {
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Phan quyen vai tro</h1>
-          <p className="text-sm text-gray-600 mt-1">Bo tri quyen theo vai tro, giao dien gon va de quan sat hon.</p>
+          <h1 className="text-2xl font-bold text-gray-900">Phân quyền vai trò</h1>
+          <p className="text-sm text-gray-600 mt-1">Bố trí quyền theo vai trò, giao diện gọn và dễ quan sát hơn.</p>
         </div>
       </div>
 
@@ -136,11 +138,11 @@ export default function PermissionsPage() {
 
       <div className="card p-4 bg-gray-50 flex items-center justify-between gap-4">
         <p className="text-xs text-gray-500">
-          SUPER_ADMIN luon co toan quyen. Menu sidebar cua STAFF/TEACHER se doi theo cau hinh nay.
+          SUPER_ADMIN luôn có toàn quyền. Menu sidebar của STAFF/TEACHER sẽ đổi theo cấu hình này.
         </p>
         <button onClick={handleSave} disabled={saving} className="btn-primary shrink-0">
           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          Luu phan quyen
+          Lưu phân quyền
         </button>
       </div>
     </div>

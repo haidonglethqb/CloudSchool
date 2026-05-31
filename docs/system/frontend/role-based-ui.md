@@ -97,6 +97,14 @@ flowchart TD
 - `/reports`, `/settings`, and `/settings/permissions` were compacted to reduce empty space and improve operator readability.
 - `/reports` now uses Vietnamese labels, global year/semester filters, year-scoped semester options, lightweight CSS/SVG charts, and report-scoped API calls so TEACHER users do not need academic-calendar permission.
 
+## Quy ước copy tiếng Việt
+
+- Toàn bộ text hiển thị UI phải dùng tiếng Việt có dấu đầy đủ.
+- Thuật ngữ chuẩn cần thống nhất: Học kỳ, Năm học, Báo cáo, Quy định, Phân quyền, Xét lên lớp.
+- Không dùng biến thể không dấu như Hoc ky, Nam hoc, Bao cao, Quy dinh, Phan quyen.
+- Chuỗi lỗi hiển thị cho người dùng cần ưu tiên map theo `error.code` tại frontend, không phụ thuộc hoàn toàn vào message thô từ backend.
+- Không đổi khóa kỹ thuật (module key, role key, route/API params); chỉ chuẩn hóa lớp hiển thị.
+
 ## Related
 
 - [./state-management.md](./state-management.md) — `User` type and `UserRole` definition

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { academicYearApi, classApi, promotionApi, reportApi } from '@/lib/api'
+import { getApiError, resolveUiErrorMessage } from '@/lib/ui-error'
 import { formatDate } from '@/lib/utils'
 import { Loader2, CheckCircle2, AlertTriangle, GraduationCap } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -33,7 +34,7 @@ export default function PromotionPage() {
         setYears(yearRows)
         setFilters((prev) => ({ ...prev, academicYearId: prev.academicYearId || activeYearId }))
       })
-      .catch(() => toast.error('Khong the tai du lieu xet len lop'))
+      .catch(() => toast.error('Không thể tải dữ liệu xét lên lớp.'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -62,7 +63,7 @@ export default function PromotionPage() {
 
   const runEvaluation = async () => {
     if (!filters.academicYearId) {
-      toast.error('Vui long chon nam hoc')
+      toast.error('Vui lòng chọn năm học.')
       return
     }
 
@@ -81,18 +82,19 @@ export default function PromotionPage() {
         classId: filters.classId || undefined,
       })
       setResults(resultRes.data.data)
-      toast.success('Da chay xet len lop')
+      toast.success('Đã chạy xét lên lớp.')
     } catch (error: any) {
-      const err = error.response?.data?.error
-      if (err?.code === 'MISSING_SCORES') {
-        setMissingDetails(err.details || [])
+      const apiError = getApiError(error)
+      if (apiError.code === 'MISSING_SCORES') {
+        setMissingDetails(apiError.details || [])
       }
-      if (err?.code === 'SEMESTER_NOT_FINISHED') {
-        const detail = err?.details?.[0]
+      if (apiError.code === 'SEMESTER_NOT_FINISHED') {
+        const detail = apiError?.details?.[0] as { endDate?: string | Date; reason?: string } | undefined
         const dateText = detail?.endDate ? formatDate(detail.endDate) : null
-        toast.error(dateText ? `${detail?.reason || err.message} (ket thuc: ${dateText})` : (err?.message || 'Khong the xet len lop'))
+        const message = resolveUiErrorMessage(error, 'Không thể xét lên lớp.')
+        toast.error(dateText ? `${detail?.reason || message} (kết thúc: ${dateText})` : message)
       } else {
-        toast.error(err?.message || 'Xet len lop that bai')
+        toast.error(resolveUiErrorMessage(error, 'Xét lên lớp thất bại.'))
       }
     } finally {
       setRunning(false)
@@ -111,7 +113,7 @@ export default function PromotionPage() {
         academicYearId: filters.academicYearId,
         failAssignments: failRows,
       })
-      toast.success(`Da thuc thi: ${res.data.data.summary.promoted} len lop, ${res.data.data.summary.archived} luu tru`)
+      toast.success(`Đã thực thi: ${res.data.data.summary.promoted} lên lớp, ${res.data.data.summary.archived} lưu trữ`)
 
       const refreshRes = await promotionApi.getYearEndResults({
         academicYearId: filters.academicYearId,
@@ -119,7 +121,7 @@ export default function PromotionPage() {
       })
       setResults(refreshRes.data.data)
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Thuc thi xet len lop that bai')
+      toast.error(resolveUiErrorMessage(error, 'Thực thi xét lên lớp thất bại.'))
     } finally {
       setRunning(false)
     }
@@ -136,33 +138,33 @@ export default function PromotionPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Xet len lop</h1>
-        <p className="mt-1 text-sm text-gray-600">Thao tac xet len lop da tach rieng khoi trang Bao cao.</p>
+        <h1 className="text-2xl font-bold text-gray-900">Xét lên lớp</h1>
+        <p className="mt-1 text-sm text-gray-600">Thao tác xét lên lớp đã tách riêng khỏi trang Báo cáo.</p>
       </div>
 
       <section className="card p-5">
         <div className="grid gap-4 md:grid-cols-3">
           <div>
-            <label className="label">Nam hoc</label>
+            <label className="label">Năm học</label>
             <select
               className="input"
               value={filters.academicYearId}
               onChange={(e) => setFilters((prev) => ({ ...prev, academicYearId: e.target.value }))}
             >
-              <option value="">Chon nam hoc</option>
+              <option value="">Chọn năm học</option>
               {years.map((year) => (
                 <option key={year.id} value={year.id}>{year.startYear}-{year.endYear}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className="label">Loc theo lop</label>
+            <label className="label">Lọc theo lớp</label>
             <select
               className="input"
               value={filters.classId}
               onChange={(e) => setFilters((prev) => ({ ...prev, classId: e.target.value }))}
             >
-              <option value="">Tat ca lop</option>
+              <option value="">Tất cả lớp</option>
               {classes.map((item) => (
                 <option key={item.id} value={item.id}>{item.name}</option>
               ))}
@@ -171,12 +173,12 @@ export default function PromotionPage() {
           <div className="flex items-end gap-2">
             <button onClick={runEvaluation} disabled={running} className="btn-primary">
               {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GraduationCap className="mr-2 h-4 w-4" />}
-              Chay xet
+              Chạy xét
             </button>
             {results ? (
               <button onClick={executePromotion} disabled={running} className="btn-outline">
                 {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Thuc thi
+                Thực thi
               </button>
             ) : null}
           </div>
@@ -187,17 +189,17 @@ export default function PromotionPage() {
         <section className="card p-5">
           <div className="mb-3 flex items-center gap-2 text-amber-700">
             <AlertTriangle className="h-5 w-5" />
-            <h2 className="font-semibold">Con thieu diem, chua the xet</h2>
+            <h2 className="font-semibold">Còn thiếu điểm, chưa thể xét</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-gray-100">
                 <tr>
-                  <th className="table-header">Hoc sinh</th>
-                  <th className="table-header">Lop</th>
-                  <th className="table-header">Mon</th>
-                  <th className="table-header">Hoc ky</th>
-                  <th className="table-header">Cot diem thieu</th>
+                  <th className="table-header">Học sinh</th>
+                  <th className="table-header">Lớp</th>
+                  <th className="table-header">Môn</th>
+                  <th className="table-header">Học kỳ</th>
+                  <th className="table-header">Cột điểm thiếu</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -220,17 +222,17 @@ export default function PromotionPage() {
         <>
           <section className="grid gap-4 md:grid-cols-3">
             <div className="card p-4">
-              <p className="text-sm text-gray-500">Hoc sinh len lop</p>
+              <p className="text-sm text-gray-500">Học sinh lên lớp</p>
               <p className="mt-2 text-2xl font-bold text-green-700">{results.passStudents.length}</p>
             </div>
             <div className="card p-4">
-              <p className="text-sm text-gray-500">Hoc sinh chua dat</p>
+              <p className="text-sm text-gray-500">Học sinh chưa đạt</p>
               <p className="mt-2 text-2xl font-bold text-rose-700">{results.failStudents.length}</p>
             </div>
             <div className="card p-4">
-              <p className="text-sm text-gray-500">Nam hoc dich</p>
+              <p className="text-sm text-gray-500">Năm học đích</p>
               <p className="mt-2 text-lg font-semibold text-gray-900">
-                {results.nextAcademicYear ? `${results.nextAcademicYear.startYear}-${results.nextAcademicYear.endYear}` : 'Chua co'}
+                {results.nextAcademicYear ? `${results.nextAcademicYear.startYear}-${results.nextAcademicYear.endYear}` : 'Chưa có'}
               </p>
             </div>
           </section>
@@ -239,16 +241,16 @@ export default function PromotionPage() {
             <div className="card p-5">
               <div className="mb-3 flex items-center gap-2 text-green-700">
                 <CheckCircle2 className="h-5 w-5" />
-                <h2 className="font-semibold">Danh sach len lop</h2>
+                <h2 className="font-semibold">Danh sách lên lớp</h2>
               </div>
               <div className="max-h-[420px] overflow-auto">
                 <table className="w-full text-sm">
                   <thead className="border-b border-gray-100">
                     <tr>
-                      <th className="table-header">Ma HS</th>
-                      <th className="table-header">Ho ten</th>
-                      <th className="table-header">Lop hien tai</th>
-                      <th className="table-header">Lop dich</th>
+                      <th className="table-header">Mã HS</th>
+                      <th className="table-header">Họ tên</th>
+                      <th className="table-header">Lớp hiện tại</th>
+                      <th className="table-header">Lớp đích</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -258,7 +260,7 @@ export default function PromotionPage() {
                         <td className="table-cell">{item.student.fullName}</td>
                         <td className="table-cell">{item.class?.name}</td>
                         <td className="table-cell">
-                          {item.isGraduating ? 'Tot nghiep' : (item.autoTargetClassName || 'Can bo tri thu cong')}
+                          {item.isGraduating ? 'Tốt nghiệp' : (item.autoTargetClassName || 'Cần bố trí thủ công')}
                         </td>
                       </tr>
                     ))}
@@ -270,7 +272,7 @@ export default function PromotionPage() {
             <div className="card p-5">
               <div className="mb-3 flex items-center gap-2 text-rose-700">
                 <AlertTriangle className="h-5 w-5" />
-                <h2 className="font-semibold">Danh sach chua dat</h2>
+                <h2 className="font-semibold">Danh sách chưa đạt</h2>
               </div>
               <div className="max-h-[420px] overflow-auto space-y-3">
                 {results.failStudents.map((item: any) => (
@@ -282,7 +284,7 @@ export default function PromotionPage() {
                       value={failAssignments[item.studentId] || ''}
                       onChange={(e) => setFailAssignments((prev) => ({ ...prev, [item.studentId]: e.target.value }))}
                     >
-                      <option value="">Chua bo tri lai lop</option>
+                      <option value="">Chưa bố trí lại lớp</option>
                       {getAllowedFailClasses(item).map((row: any) => (
                         <option key={row.id} value={row.id}>{row.name} ({row.grade?.name})</option>
                       ))}
@@ -296,9 +298,9 @@ export default function PromotionPage() {
       ) : null}
 
       <section className="card p-5">
-        <h2 className="font-semibold text-gray-900">Tot nghiep nam hoc</h2>
-        <p className="mt-1 text-sm text-gray-600">Tong hop hoc sinh lop cuoi cap da luu tru sau khi thuc thi xet len lop.</p>
-        <p className="mt-3 text-sm text-gray-700">Tong so: {graduationData?.summary?.totalGraduated || 0}</p>
+        <h2 className="font-semibold text-gray-900">Tốt nghiệp năm học</h2>
+        <p className="mt-1 text-sm text-gray-600">Tổng hợp học sinh lớp cuối cấp đã lưu trữ sau khi thực thi xét lên lớp.</p>
+        <p className="mt-3 text-sm text-gray-700">Tổng số: {graduationData?.summary?.totalGraduated || 0}</p>
       </section>
     </div>
   )
