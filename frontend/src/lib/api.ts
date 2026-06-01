@@ -259,7 +259,8 @@ export const parentApi = {
     api.get('/parents', { params }),
   create: (data: { email: string; password: string; fullName: string; phone?: string; studentIds: string[] }) =>
     api.post('/parents', data),
-  update: (id: string, data: Record<string, unknown>) => api.put(`/parents/${id}`, data),
+  update: (id: string, data: { email?: string; fullName?: string; phone?: string; isActive?: boolean; password?: string }) =>
+    api.put(`/parents/${id}`, data),
   delete: (id: string) => api.delete(`/parents/${id}`),
   linkStudent: (parentId: string, studentId: string, relationship?: string) =>
     api.post(`/parents/${parentId}/students`, { studentId, relationship }),

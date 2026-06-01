@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { classApi, reportApi, subjectApi } from '@/lib/api'
+import { classApi, downloadBlob, exportApi, reportApi, subjectApi } from '@/lib/api'
 import { formatSemesterLabel, pickDefaultSemester } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
 import {
@@ -13,6 +13,7 @@ import {
   Layers,
   Loader2,
   School,
+  Download,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -70,6 +71,13 @@ const REPORTS: Array<{
     icon: GraduationCap,
   },
 ]
+
+const REPORT_EXPORT_TYPE: Record<ReportKey, 'subject-summary' | 'class-promotion-summary' | 'semester-promotion-summary' | 'year-promotion-summary'> = {
+  subjectPass: 'subject-summary',
+  classPromotion: 'class-promotion-summary',
+  semesterPromotion: 'semester-promotion-summary',
+  yearPromotion: 'year-promotion-summary',
+}
 
 function formatPercent(value?: number | null) {
   if (typeof value !== 'number' || Number.isNaN(value)) return '0%'
@@ -248,6 +256,7 @@ export default function ReportsPage() {
   const [dashboardLoading, setDashboardLoading] = useState(false)
   const [activeReport, setActiveReport] = useState<ReportKey>('subjectPass')
   const [reportLoading, setReportLoading] = useState(false)
+  const [exportLoading, setExportLoading] = useState(false)
   const [reportData, setReportData] = useState<any | null>(null)
 
   const selectedYear = years.find((item) => item.id === selectedYearId) || null
@@ -351,6 +360,51 @@ export default function ReportsPage() {
       toast.error(error.response?.data?.error?.message || 'Không thể tải báo cáo')
     } finally {
       setReportLoading(false)
+    }
+  }
+
+  const handleExportReport = async () => {
+    try {
+      if (activeReport !== 'yearPromotion' && !effectiveSemester) {
+        toast.error('Vui lòng chọn học kỳ')
+        return
+      }
+      if (activeReport === 'subjectPass' && !reportState.subjectId) {
+        toast.error('Vui lòng chọn môn học')
+        return
+      }
+      if (activeReport === 'classPromotion' && !reportState.classId) {
+        toast.error('Vui lòng chọn lớp')
+        return
+      }
+      if (activeReport === 'yearPromotion' && !selectedYearId) {
+        toast.error('Vui lòng chọn năm học để xuất báo cáo năm')
+        return
+      }
+
+      setExportLoading(true)
+      const exportType = REPORT_EXPORT_TYPE[activeReport]
+      const params: {
+        format: string
+        semesterId?: string
+        classId?: string
+        subjectId?: string
+        academicYearId?: string
+      } = { format: 'xlsx' }
+
+      if (activeReport !== 'yearPromotion') params.semesterId = effectiveSemester
+      if (activeReport === 'subjectPass') params.subjectId = reportState.subjectId
+      if (activeReport === 'classPromotion') params.classId = reportState.classId
+      if (activeReport === 'yearPromotion') params.academicYearId = selectedYearId
+
+      const res = await exportApi.report(exportType, params)
+      const fileName = `bao-cao-${activeReport}-${new Date().toISOString().slice(0, 10)}.xlsx`
+      downloadBlob(res.data, fileName)
+      toast.success('Xuất dữ liệu thành công')
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Không thể xuất dữ liệu')
+    } finally {
+      setExportLoading(false)
     }
   }
 
@@ -467,10 +521,20 @@ export default function ReportsPage() {
               </div>
             </div>
           </div>
-          <button onClick={() => loadReport(activeReport)} className="btn-primary" disabled={reportLoading}>
-            {reportLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Layers className="mr-2 h-4 w-4" />}
-            Xem báo cáo
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportReport}
+              className="btn-outline"
+              disabled={exportLoading || reportLoading}
+            >
+              {exportLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              Xuất dữ liệu
+            </button>
+            <button onClick={() => loadReport(activeReport)} className="btn-primary" disabled={reportLoading || exportLoading}>
+              {reportLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Layers className="mr-2 h-4 w-4" />}
+              Xem báo cáo
+            </button>
+          </div>
         </div>
       </section>
 

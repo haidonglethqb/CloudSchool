@@ -6,6 +6,7 @@ const prisma = require('../lib/prisma')
 const { AppError } = require('../middleware/errorHandler')
 const { authenticate, authorize, invalidateUserCache } = require('../middleware/auth')
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
+const { isValidVietnamPhone, normalizeVietnamPhone } = require('../utils/phone')
 
 router.use(authenticate, requireFeature('parents'), requireRolePermission('parents'))
 
@@ -288,9 +289,23 @@ router.post('/', authorize('SUPER_ADMIN', 'STAFF'), [
 })
 
 // PUT /parents/:id
-router.put('/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+router.put('/:id', authorize('SUPER_ADMIN', 'STAFF'), [
+  body('email').optional().isEmail().withMessage('Invalid email'),
+  body('password').optional({ values: 'falsy' }).isLength({ min: 6 }).withMessage('Password min 6 chars'),
+  body('phone').optional({ values: 'falsy' }).custom((value) => {
+    if (!isValidVietnamPhone(value)) throw new Error('Phone must be a valid Vietnam phone number (0 + 9 or 10 digits)')
+    return true
+  }),
+  body('isActive').optional().isBoolean().withMessage('isActive must be boolean')
+], async (req, res, next) => {
   try {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: { code: 'VALIDATION_ERROR', details: errors.array() } })
+    }
+
     const { email, fullName, phone, isActive, password } = req.body
+    const normalizedPhone = normalizeVietnamPhone(phone)
     const parent = await prisma.user.findFirst({ where: { id: req.params.id, tenantId: req.tenantId, role: 'PARENT' } })
     if (!parent) throw new AppError('Parent not found', 404, 'NOT_FOUND')
 
@@ -305,11 +320,23 @@ router.put('/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => 
     const updateData = {}
     if (email) updateData.email = email
     if (fullName) updateData.fullName = fullName
-    if (phone !== undefined) updateData.phone = phone
+    if (phone !== undefined) updateData.phone = normalizedPhone
     if (isActive !== undefined) updateData.isActive = isActive
     if (password) updateData.password = await bcrypt.hash(password, 10)
 
-    const updated = await prisma.user.update({ where: { id: req.params.id }, data: updateData })
+    const updated = await prisma.user.update({
+      where: { id: req.params.id },
+      data: updateData,
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        isActive: true,
+        role: true,
+        updatedAt: true
+      }
+    })
     invalidateUserCache(req.params.id)
     res.json({ data: updated })
   } catch (error) {

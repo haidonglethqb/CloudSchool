@@ -5,6 +5,13 @@ const { authenticate, authorize } = require('../middleware/auth')
 const { requireFeature } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 
+const formatDateVi = (dateValue) => {
+  if (!dateValue) return ''
+  const date = new Date(dateValue)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('vi-VN', { timeZone: 'UTC' })
+}
+
 const getAcademicYearWithSemesters = async (tenantId, academicYearId) => {
   const academicYear = await prisma.academicYear.findFirst({
     where: { id: academicYearId, tenantId },
@@ -18,13 +25,16 @@ const ensureYearEndReady = (academicYear) => {
   const now = new Date()
   const semesters = academicYear.semesters.filter((sem) => sem.startDate && sem.endDate)
   if (semesters.length < 2) {
-    throw new AppError('NÄƒm há»c cáº§n Ã­t nháº¥t 2 há»c ká»³ Ä‘á»ƒ xÃ©t lÃªn lá»›p', 400, 'NOT_ENOUGH_SEMESTERS')
+    throw new AppError('Năm học cần ít nhất 2 học kỳ để xét lên lớp', 400, 'NOT_ENOUGH_SEMESTERS')
   }
   const firstTwo = semesters.slice(0, 2)
   const notEnded = firstTwo.find((sem) => sem.endDate >= now)
   if (notEnded) {
+    const semesterLabel = `${notEnded.name} (${notEnded.year})`
+    const endDateLabel = formatDateVi(notEnded.endDate)
+    const reason = `Học kỳ ${semesterLabel} chưa kết thúc${endDateLabel ? ` (kết thúc: ${endDateLabel})` : ''}`
     throw new AppError(
-      'Chá»‰ xÃ©t lÃªn lá»›p khi cáº£ 2 há»c ká»³ Ä‘Ã£ káº¿t thÃºc',
+      reason,
       400,
       'SEMESTER_NOT_FINISHED',
       [{
@@ -34,7 +44,7 @@ const ensureYearEndReady = (academicYear) => {
         semesterName: notEnded.name,
         semesterYear: notEnded.year,
         endDate: notEnded.endDate,
-        reason: `Há»c ká»³ ${notEnded.name} (${notEnded.year}) chÆ°a káº¿t thÃºc`
+        reason
       }]
     )
   }
@@ -159,7 +169,7 @@ const buildPromotionEvaluation = async (tenantId, academicYear, classId = null) 
       semesterId: finalSemester.id,
       average: overallAverage,
       result: overallAverage >= settings.passScore && !failedSubject ? 'PASS' : 'FAIL',
-      note: `XÃ©t nÄƒm há»c ${yearLabel}`
+      note: `Xét năm học ${yearLabel}`
     })
   }
 
@@ -181,7 +191,7 @@ router.post('/year-end/evaluate', async (req, res, next) => {
 
     if (missingScores.length > 0) {
       throw new AppError(
-        `ChÆ°a Ä‘á»§ dá»¯ liá»‡u Ä‘iá»ƒm Ä‘á»ƒ xÃ©t lÃªn lá»›p (${missingScores.length} báº£n ghi thiáº¿u)`,
+        `Chưa đủ dữ liệu điểm để xét lên lớp (${missingScores.length} bản ghi thiếu)`,
         400,
         'MISSING_SCORES',
         missingScores.slice(0, 200)
@@ -308,7 +318,7 @@ router.post('/year-end/execute', async (req, res, next) => {
       }
     })
     if (promotions.length === 0) {
-      throw new AppError('ChÆ°a cÃ³ dá»¯ liá»‡u xÃ©t lÃªn lá»›p. HÃ£y cháº¡y xÃ©t trÆ°á»›c.', 400, 'PROMOTION_NOT_EVALUATED')
+      throw new AppError('Chưa có dữ liệu xét lên lớp. Hãy chạy xét trước.', 400, 'PROMOTION_NOT_EVALUATED')
     }
 
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
@@ -372,12 +382,12 @@ router.post('/year-end/execute', async (req, res, next) => {
               studentId: promotion.studentId,
               sourceClassId,
               academicYearId,
-              note: 'Tá»‘t nghiá»‡p lá»›p cuá»‘i cáº¥p',
+              note: 'Tốt nghiệp lớp cuối cấp',
               createdBy: req.user.id
             },
             update: {
               sourceClassId,
-              note: 'Tá»‘t nghiá»‡p lá»›p cuá»‘i cáº¥p',
+              note: 'Tốt nghiệp lớp cuối cấp',
               createdBy: req.user.id
             }
           })
@@ -403,7 +413,7 @@ router.post('/year-end/execute', async (req, res, next) => {
 
         const capacityState = classStateMap.get(targetClassId)
         if (!capacityState) {
-          unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result, reason: 'Lá»›p Ä‘Ã­ch khÃ´ng tá»“n táº¡i' })
+          unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result, reason: 'Lớp đích không tồn tại' })
           continue
         }
         if (promotion.result === 'FAIL') {
@@ -421,7 +431,7 @@ router.post('/year-end/execute', async (req, res, next) => {
           }
         }
         if (capacityState.current >= capacityState.capacity) {
-          unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result, reason: 'Lá»›p Ä‘Ã­ch Ä‘Ã£ Ä‘á»§ sÄ© sá»‘' })
+          unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result, reason: 'Lớp đích đã đủ sĩ số' })
           continue
         }
 
@@ -439,7 +449,7 @@ router.post('/year-end/execute', async (req, res, next) => {
             fromClassId: sourceClassId,
             toClassId: targetClassId,
             semesterId: finalSemester.id,
-            reason: promotion.result === 'PASS' ? 'LÃªn lá»›p - xÃ©t cuá»‘i nÄƒm' : 'Sáº¯p lá»›p láº¡i sau xÃ©t cuá»‘i nÄƒm',
+            reason: promotion.result === 'PASS' ? 'Lên lớp - xét cuối năm' : 'Sắp lớp lại sau xét cuối năm',
             transferredBy: req.user.id
           }
         })
@@ -489,4 +499,3 @@ router.post('/year-end/execute', async (req, res, next) => {
 })
 
 module.exports = router
-

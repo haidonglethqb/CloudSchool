@@ -72,10 +72,11 @@ const errorHandler = (err, req, res, next) => {
 
   // Default error
   const statusCode = err.statusCode || 500
+  const isBusinessError = statusCode >= 400 && statusCode < 500
   res.status(statusCode).json({
     error: {
       code: err.code || 'INTERNAL_ERROR',
-      message: process.env.NODE_ENV === 'production' 
+      message: process.env.NODE_ENV === 'production' && !isBusinessError
         ? 'An unexpected error occurred' 
         : err.message,
       ...(err.details ? { details: err.details } : {})

@@ -50,7 +50,7 @@ const platformAdminMenu: MenuItem[] = [
 // School Admin (SUPER_ADMIN) menu — full access, not filtered by permissions
 const superAdminMenu: MenuItem[] = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
-  { href: '/users', icon: Shield, label: 'Quản lý người dùng' },
+  { href: '/settings/academic-years', icon: CalendarRange, label: 'Năm học', module: 'academic-calendar' },
   { href: '/students/new', icon: UserPlus, label: 'Tiếp nhận HS', module: 'student-admission' },
   { href: '/students', icon: Search, label: 'Tra cứu HS', module: 'student-lookup' },
   { href: '/classes', icon: Users, label: 'Danh sách lớp', module: 'classes' },
@@ -63,8 +63,8 @@ const superAdminMenu: MenuItem[] = [
   { href: '/fees', icon: CreditCard, label: 'Quản lý học phí', module: 'fees' },
   { href: '/export', icon: Download, label: 'Xuất dữ liệu', module: 'export' },
   { href: '/settings', icon: Settings, label: 'Quy định', module: 'settings' },
-  { href: '/settings/academic-years', icon: CalendarRange, label: 'Năm học', module: 'academic-calendar' },
   { href: '/settings/permissions', icon: Layers, label: 'Phân quyền' },
+  { href: '/users', icon: Shield, label: 'Quản lý người dùng' },
 ]
 
 // Staff menu — filtered by permissions

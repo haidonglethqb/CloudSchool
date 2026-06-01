@@ -140,7 +140,7 @@
 |---|---|---|
 | GET | `/parents` | List parent users (SUPER_ADMIN, STAFF) |
 | POST | `/parents` | Create parent + link students |
-| PUT | `/parents/:id` | Update parent |
+| PUT | `/parents/:id` | Update parent account fields (`fullName`, `email`, `phone`, `isActive`, optional `password`); validates email/phone/password and returns safe fields only |
 | DELETE | `/parents/:id` | Delete parent |
 | POST | `/parents/:id/students` | Link student to parent |
 | DELETE | `/parents/:id/students/:studentId` | Unlink student from parent |

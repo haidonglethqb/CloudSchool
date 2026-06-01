@@ -192,20 +192,20 @@ export default function ClassesPage() {
                   ) : null}
                 </div>
                 <div className="mt-4 space-y-1 text-sm text-gray-600">
-                  <p>{item.studentCount} há»c sinh</p>
+                  <p>{item.studentCount} học sinh</p>
                   <p>{item.subject ? `Môn phụ trách: ${item.subject.name}` : 'Môn phụ trách: Đang cập nhật'}</p>
                 </div>
                 <div className="mt-4 flex gap-2">
                   <Link href={`/classes/${item.id}`} className="btn-outline flex-1 justify-center">
                     <BookOpen className="w-4 h-4 mr-1" />
-                    Xem lá»›p
+                    Xem lớp
                   </Link>
                   <Link
                     href={`/scores?classId=${item.id}${item.subject?.id ? `&subjectId=${item.subject.id}` : ''}`}
                     className="btn-primary flex-1 justify-center"
                   >
                     <ClipboardEdit className="w-4 h-4 mr-1" />
-                    Nháº­p Ä‘iá»ƒm
+                    Nhập điểm
                   </Link>
                 </div>
               </div>

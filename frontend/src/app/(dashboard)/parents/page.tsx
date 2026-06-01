@@ -1,10 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { parentApi, studentApi } from '@/lib/api'
-import { Plus, Search, Edit2, Trash2, UserPlus, Eye, Link2, Unlink, X } from 'lucide-react'
-import Link from 'next/link'
+import { isValidVietnamPhone } from '@/lib/phone'
+import { Edit2, Link2, Search, Trash2, Unlink, UserPlus, X } from 'lucide-react'
 import toast from 'react-hot-toast'
+
+interface ParentChild {
+  id: string
+  fullName: string
+  studentCode: string
+  className: string | null
+  relationship: string
+}
 
 interface Parent {
   id: string
@@ -12,42 +20,64 @@ interface Parent {
   fullName: string
   phone: string | null
   isActive: boolean
-  children: {
-    id: string
-    fullName: string
-    studentCode: string
-    className: string | null
-    relationship: string
-  }[]
+  children: ParentChild[]
   createdAt: string
+}
+
+interface StudentOption {
+  id: string
+  fullName: string
+  studentCode: string
+  class?: {
+    name?: string | null
+  } | null
+}
+
+interface ParentEditForm {
+  fullName: string
+  email: string
+  phone: string
+  isActive: boolean
+  password: string
+}
+
+const emptyCreateForm = {
+  email: '',
+  password: '',
+  fullName: '',
+  phone: '',
+  studentIds: [] as string[]
+}
+
+const emptyEditForm: ParentEditForm = {
+  fullName: '',
+  email: '',
+  phone: '',
+  isActive: true,
+  password: ''
 }
 
 export default function ParentsPage() {
   const [parents, setParents] = useState<Parent[]>([])
+  const [students, setStudents] = useState<StudentOption[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [showModal, setShowModal] = useState(false)
-  const [students, setStudents] = useState<any[]>([])
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    fullName: '',
-    phone: '',
-    studentIds: [] as string[]
-  })
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [createForm, setCreateForm] = useState(emptyCreateForm)
+  const [createSubmitting, setCreateSubmitting] = useState(false)
+  const [createError, setCreateError] = useState('')
 
-  // Link student modal state
   const [linkModal, setLinkModal] = useState<{ parentId: string; parentName: string } | null>(null)
   const [linkStudentId, setLinkStudentId] = useState('')
+
+  const [editModal, setEditModal] = useState<Parent | null>(null)
+  const [editForm, setEditForm] = useState<ParentEditForm>(emptyEditForm)
+  const [editSubmitting, setEditSubmitting] = useState(false)
 
   const fetchParents = async () => {
     try {
       const res = await parentApi.list({ search })
-      if (res.data?.data) {
-        setParents(res.data.data)
-      }
+      setParents((res.data?.data || []) as Parent[])
     } catch (err) {
       console.error('Failed to fetch parents:', err)
     } finally {
@@ -58,9 +88,7 @@ export default function ParentsPage() {
   const fetchStudents = async () => {
     try {
       const res = await studentApi.list({ search: '', limit: 100 } as any)
-      if (res.data?.data) {
-        setStudents(res.data.data)
-      }
+      setStudents((res.data?.data || []) as StudentOption[])
     } catch (err) {
       console.error('Failed to fetch students:', err)
     }
@@ -68,33 +96,104 @@ export default function ParentsPage() {
 
   useEffect(() => {
     fetchParents()
-    fetchStudents()
   }, [search])
+
+  useEffect(() => {
+    fetchStudents()
+  }, [])
+
+  const toggleStudentSelection = (studentId: string) => {
+    setCreateForm((prev) => ({
+      ...prev,
+      studentIds: prev.studentIds.includes(studentId)
+        ? prev.studentIds.filter((id) => id !== studentId)
+        : [...prev.studentIds, studentId]
+    }))
+  }
 
   const handleCreateParent = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSubmitting(true)
-    setError('')
+    setCreateSubmitting(true)
+    setCreateError('')
 
     try {
-      await parentApi.create(formData)
-      toast.success('Tạo tài khoản phụ huynh thành công')
-      setShowModal(false)
-      setFormData({ email: '', password: '', fullName: '', phone: '', studentIds: [] })
+      await parentApi.create(createForm)
+      toast.success('Da tao tai khoan phu huynh')
+      setShowCreateModal(false)
+      setCreateForm(emptyCreateForm)
       fetchParents()
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || err.message)
+      setCreateError(err.response?.data?.error?.message || err.message)
     } finally {
-      setSubmitting(false)
+      setCreateSubmitting(false)
+    }
+  }
+
+  const openEditModal = (parent: Parent) => {
+    setEditModal(parent)
+    setEditForm({
+      fullName: parent.fullName,
+      email: parent.email,
+      phone: parent.phone || '',
+      isActive: parent.isActive,
+      password: ''
+    })
+  }
+
+  const closeEditModal = () => {
+    setEditModal(null)
+    setEditForm(emptyEditForm)
+  }
+
+  const handleUpdateParent = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editModal) return
+
+    const fullName = editForm.fullName.trim()
+    const email = editForm.email.trim()
+    const phone = editForm.phone.trim()
+    const password = editForm.password
+
+    if (!fullName || !email) {
+      toast.error('Vui lòng nhập đầy đủ họ tên và email')
+      return
+    }
+    if (phone && !isValidVietnamPhone(phone)) {
+      toast.error('So dien thoai khong hop le')
+      return
+    }
+    if (password && password.length < 6) {
+      toast.error('Mat khau moi toi thieu 6 ky tu')
+      return
+    }
+
+    setEditSubmitting(true)
+    try {
+      const payload: { fullName: string; email: string; phone: string; isActive: boolean; password?: string } = {
+        fullName,
+        email,
+        phone,
+        isActive: editForm.isActive
+      }
+      if (password) payload.password = password
+
+      await parentApi.update(editModal.id, payload)
+      toast.success('Da cap nhat tai khoan phu huynh')
+      closeEditModal()
+      fetchParents()
+    } catch (err: any) {
+      toast.error(err.response?.data?.error?.message || 'Loi cap nhat')
+    } finally {
+      setEditSubmitting(false)
     }
   }
 
   const handleDeleteParent = async (id: string) => {
-    if (!confirm('Bạn có chắc muốn xóa tài khoản phụ huynh này?')) return
+    if (!confirm('Ban co chac muon xoa tai khoan phu huynh nay?')) return
 
     try {
       await parentApi.delete(id)
-      toast.success('Đã xóa tài khoản phụ huynh')
+      toast.success('Da xoa tai khoan phu huynh')
       fetchParents()
     } catch (err) {
       console.error('Failed to delete parent:', err)
@@ -102,105 +201,83 @@ export default function ParentsPage() {
     }
   }
 
-  const toggleStudentSelection = (studentId: string) => {
-    setFormData(prev => ({
-      ...prev,
-      studentIds: prev.studentIds.includes(studentId)
-        ? prev.studentIds.filter(id => id !== studentId)
-        : [...prev.studentIds, studentId]
-    }))
-  }
-
   const handleUnlinkStudent = async (parentId: string, studentId: string) => {
     if (!confirm('Hủy liên kết phụ huynh với học sinh này?')) return
+
     try {
       await parentApi.unlinkStudent(parentId, studentId)
-      toast.success('Đã hủy liên kết')
+      toast.success('Da huy lien ket')
       fetchParents()
     } catch {
-      toast.error('Lỗi hủy liên kết')
+      toast.error('Loi huy lien ket')
     }
   }
 
   const handleLinkStudent = async () => {
     if (!linkModal || !linkStudentId) return
+
     try {
       await parentApi.linkStudent(linkModal.parentId, linkStudentId)
-      toast.success('Đã liên kết học sinh')
+      toast.success('Da lien ket hoc sinh')
       setLinkModal(null)
       setLinkStudentId('')
       fetchParents()
     } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Lỗi liên kết')
+      toast.error(err.response?.data?.error?.message || 'Loi lien ket')
     }
   }
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary" />
       </div>
     )
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Quản lý Phụ huynh</h1>
-          <p className="text-gray-500 mt-1">Tạo và quản lý tài khoản phụ huynh xem điểm</p>
+          <h1 className="text-2xl font-bold text-gray-900">Quan ly Phu huynh</h1>
+          <p className="text-gray-500 mt-1">Tao va quan ly tai khoan phu huynh xem diem</p>
         </div>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => setShowCreateModal(true)}
           className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 transition-colors"
         >
           <UserPlus className="w-5 h-5" />
-          Thêm phụ huynh
+          Them phu huynh
         </button>
       </div>
 
-      {/* Search */}
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
         <input
           type="text"
-          placeholder="Tìm kiếm theo tên, email, SĐT..."
+          placeholder="Tim kiem theo ten, email, SDT..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
         />
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Phụ huynh
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Liên hệ
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Học sinh liên kết
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Trạng thái
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Thao tác
-                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phu huynh</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lien he</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hoc sinh lien ket</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trang thai</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {parents.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
-                    Chưa có phụ huynh nào
-                  </td>
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">Chưa có phụ huynh nào</td>
                 </tr>
               ) : (
                 parents.map((parent) => (
@@ -233,15 +310,22 @@ export default function ParentsPage() {
                       <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         parent.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                       }`}>
-                        {parent.isActive ? 'Hoạt động' : 'Vô hiệu'}
+                        {parent.isActive ? 'Hoat dong' : 'Vo hieu'}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
+                          onClick={() => openEditModal(parent)}
+                          className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                          title="Sua"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => setLinkModal({ parentId: parent.id, parentName: parent.fullName })}
                           className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Liên kết học sinh"
+                          title="Lien ket hoc sinh"
                         >
                           <Link2 className="w-4 h-4" />
                         </button>
@@ -262,74 +346,63 @@ export default function ParentsPage() {
         </div>
       </div>
 
-      {/* Create Modal */}
-      {showModal && (
+      {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-xl font-semibold">Thêm tài khoản phụ huynh</h2>
             </div>
             <form onSubmit={handleCreateParent} className="p-6 space-y-4">
-              {error && (
-                <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm">{error}</div>
+              {createError && (
+                <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm">{createError}</div>
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Họ và tên *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ho va ten *</label>
                 <input
                   type="text"
                   required
-                  value={formData.fullName}
-                  onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                  value={createForm.fullName}
+                  onChange={(e) => setCreateForm({ ...createForm, fullName: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
                 <input
                   type="email"
                   required
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  value={createForm.email}
+                  onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Mật khẩu *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mat khau *</label>
                 <input
                   type="password"
                   required
                   minLength={6}
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  value={createForm.password}
+                  onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Số điện thoại
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">So dien thoai</label>
                 <input
                   type="tel"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  value={createForm.phone}
+                  onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Chọn học sinh liên kết *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Chọn học sinh liên kết *</label>
                 <div className="border border-gray-300 rounded-lg max-h-48 overflow-y-auto">
                   {students.map((student) => (
                     <label
@@ -338,20 +411,20 @@ export default function ParentsPage() {
                     >
                       <input
                         type="checkbox"
-                        checked={formData.studentIds.includes(student.id)}
+                        checked={createForm.studentIds.includes(student.id)}
                         onChange={() => toggleStudentSelection(student.id)}
                         className="rounded border-gray-300 text-primary focus:ring-primary"
                       />
                       <div>
                         <div className="font-medium text-sm">{student.fullName}</div>
                         <div className="text-xs text-gray-500">
-                          {student.studentCode} - {student.class?.name || 'Chưa xếp lớp'}
+                          {student.studentCode} - {student.class?.name || 'Chua xep lop'}
                         </div>
                       </div>
                     </label>
                   ))}
                 </div>
-                {formData.studentIds.length === 0 && (
+                {createForm.studentIds.length === 0 && (
                   <p className="text-xs text-red-500 mt-1">Vui lòng chọn ít nhất một học sinh</p>
                 )}
               </div>
@@ -359,17 +432,17 @@ export default function ParentsPage() {
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => setShowCreateModal(false)}
                   className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 >
-                  Hủy
+                  Huy
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting || formData.studentIds.length === 0}
+                  disabled={createSubmitting || createForm.studentIds.length === 0}
                   className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50"
                 >
-                  {submitting ? 'Đang tạo...' : 'Tạo tài khoản'}
+                  {createSubmitting ? 'Dang tao...' : 'Tao tai khoan'}
                 </button>
               </div>
             </form>
@@ -377,13 +450,95 @@ export default function ParentsPage() {
         </div>
       )}
 
-      {/* Link Student Modal */}
+      {editModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold">Cap nhat tai khoan phu huynh</h2>
+            </div>
+            <form onSubmit={handleUpdateParent} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ho va ten *</label>
+                <input
+                  type="text"
+                  required
+                  value={editForm.fullName}
+                  onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                <input
+                  type="email"
+                  required
+                  value={editForm.email}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">So dien thoai</label>
+                <input
+                  type="tel"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mat khau moi (bo trong de giu nguyen)</label>
+                <input
+                  type="password"
+                  minLength={6}
+                  value={editForm.password}
+                  onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={editForm.isActive}
+                  onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })}
+                  className="rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                Tai khoan dang hoat dong
+              </label>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={closeEditModal}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Huy
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSubmitting}
+                  className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50"
+                >
+                  {editSubmitting ? 'Dang cap nhat...' : 'Cap nhat'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {linkModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
             <div className="p-4 border-b flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Liên kết học sinh cho {linkModal.parentName}</h2>
-              <button onClick={() => { setLinkModal(null); setLinkStudentId('') }}><X className="w-5 h-5 text-gray-400" /></button>
+              <h2 className="text-lg font-semibold">Lien ket hoc sinh cho {linkModal.parentName}</h2>
+              <button onClick={() => { setLinkModal(null); setLinkStudentId('') }}>
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
             </div>
             <div className="p-4 space-y-4">
               <div>
@@ -391,17 +546,30 @@ export default function ParentsPage() {
                 <select
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                   value={linkStudentId}
-                  onChange={e => setLinkStudentId(e.target.value)}
+                  onChange={(e) => setLinkStudentId(e.target.value)}
                 >
-                  <option value="">— Chọn học sinh —</option>
-                  {students.map(s => (
-                    <option key={s.id} value={s.id}>{s.fullName} ({s.studentCode}) - {s.class?.name || 'Chưa xếp lớp'}</option>
+                  <option value="">-- Chọn học sinh --</option>
+                  {students.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.fullName} ({s.studentCode}) - {s.class?.name || 'Chua xep lop'}
+                    </option>
                   ))}
                 </select>
               </div>
               <div className="flex gap-3">
-                <button onClick={() => { setLinkModal(null); setLinkStudentId('') }} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Hủy</button>
-                <button onClick={handleLinkStudent} disabled={!linkStudentId} className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 disabled:opacity-50">Liên kết</button>
+                <button
+                  onClick={() => { setLinkModal(null); setLinkStudentId('') }}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                >
+                  Huy
+                </button>
+                <button
+                  onClick={handleLinkStudent}
+                  disabled={!linkStudentId}
+                  className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 disabled:opacity-50"
+                >
+                  Lien ket
+                </button>
               </div>
             </div>
           </div>

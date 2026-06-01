@@ -363,7 +363,7 @@ function TeacherDashboardCompact() {
           <p className="mt-2 text-3xl font-bold text-gray-900">{subjectIds.size}</p>
         </div>
         <div className="card p-5">
-          <p className="text-sm text-gray-500">Lá»›p chá»§ nhiá»‡m</p>
+          <p className="text-sm text-gray-500">Lớp chủ nhiệm</p>
           <p className="mt-2 text-3xl font-bold text-gray-900">{homeroomCount}</p>
         </div>
       </div>
@@ -374,7 +374,7 @@ function TeacherDashboardCompact() {
           <p className="mt-1 text-sm text-gray-600">Xem chi tiết và mở từng lớp</p>
         </Link>
         <Link href="/scores" className="card p-5 hover:shadow-md transition-shadow">
-          <h3 className="font-semibold text-gray-900">Nháº­p Ä‘iá»ƒm</h3>
+          <h3 className="font-semibold text-gray-900">Nhập điểm</h3>
           <p className="mt-1 text-sm text-gray-600">Nhập điểm theo lớp, môn và học kỳ</p>
         </Link>
         <Link href="/reports" className="card p-5 hover:shadow-md transition-shadow">
