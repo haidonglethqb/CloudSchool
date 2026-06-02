@@ -5,6 +5,7 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
+const { getTenantPlanUsage, getTenantPlanLimits } = require('../utils/subscription-limits')
 
 // Generate student code
 const generateStudentCode = async (tenantId, tx) => {
@@ -77,6 +78,39 @@ router.get('/', authenticate, requireFeature('student-lookup'), authorize('SUPER
   }
 })
 
+// GET /students/transfers/history - all transfer history for current tenant
+router.get('/transfers/history', authenticate, requireFeature('class-transfer'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('class-transfer'), async (req, res, next) => {
+  try {
+    const history = await prisma.transferHistory.findMany({
+      where: { tenantId: req.tenantId },
+      include: {
+        student: { select: { id: true, studentCode: true, fullName: true } },
+        fromClass: { include: { grade: true } },
+        toClass: { include: { grade: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    })
+
+    const userIds = [...new Set(history.map((item) => item.transferredBy).filter(Boolean))]
+    const users = userIds.length > 0
+      ? await prisma.user.findMany({
+        where: { id: { in: userIds }, tenantId: req.tenantId },
+        select: { id: true, fullName: true, email: true }
+      })
+      : []
+    const userMap = new Map(users.map((user) => [user.id, user]))
+
+    res.json({
+      data: history.map((item) => ({
+        ...item,
+        transferredByUser: userMap.get(item.transferredBy) || null
+      }))
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 // GET /students/:id
 router.get('/:id', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('student-lookup'), async (req, res, next) => {
   try {
@@ -128,6 +162,14 @@ router.post('/', authenticate, requireFeature('student-admission'), authorize('S
 
     // Validate age
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    const [usage, limits] = await Promise.all([
+      getTenantPlanUsage(prisma, req.tenantId),
+      getTenantPlanLimits(prisma, req.tenantId)
+    ])
+    if (limits && usage.students + 1 > limits.students) {
+      throw new AppError(`Cannot exceed subscription student limit (${limits.students})`, 400, 'PLAN_LIMIT_EXCEEDED')
+    }
+
     const today = new Date()
     const birth = new Date(dateOfBirth)
     let age = today.getFullYear() - birth.getFullYear()
@@ -277,10 +319,13 @@ router.delete('/:id', authenticate, requireFeature('student-lookup'), authorize(
 router.post('/:id/transfer', authenticate, requireFeature('class-transfer'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('class-transfer'), async (req, res, next) => {
   try {
     const classId = req.body.classId || req.body.newClassId
-    const { reason } = req.body
+    const reason = String(req.body.reason || '').trim()
 
     if (!classId) {
       throw new AppError('Target class ID is required', 400, 'MISSING_PARAMS')
+    }
+    if (!reason) {
+      throw new AppError('Transfer reason is required', 400, 'TRANSFER_REASON_REQUIRED')
     }
 
     // Get current student
@@ -334,7 +379,7 @@ router.post('/:id/transfer', authenticate, requireFeature('class-transfer'), aut
             fromClassId,
             toClassId: classId,
             semesterId: activeSemester.id,
-            reason: reason || null,
+            reason,
             transferredBy: req.user.id
           }
         })

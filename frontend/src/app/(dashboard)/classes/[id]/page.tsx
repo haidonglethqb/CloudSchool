@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { classApi, settingsApi, exportApi, downloadBlob } from '@/lib/api'
+import { classApi, exportApi, downloadBlob } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
 import { formatDate, getGenderLabel } from '@/lib/utils'
 import {
@@ -51,7 +51,6 @@ export default function ClassDetailPage() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [maxClassSize, setMaxClassSize] = useState(40)
   const [loadError, setLoadError] = useState('')
   const [formData, setFormData] = useState({
     name: '',
@@ -67,17 +66,6 @@ export default function ClassDetailPage() {
           name: data.name || '',
         })
 
-        if (isTeacher) {
-          setMaxClassSize(data.capacity || 40)
-          return
-        }
-
-        try {
-          const settingsRes = await settingsApi.get()
-          setMaxClassSize(settingsRes.data.data.maxClassSize || data.capacity || 40)
-        } catch {
-          setMaxClassSize(data.capacity || 40)
-        }
       } catch (error: any) {
         console.error('Failed to fetch class:', error)
         if (error.response?.status === 404) {
@@ -141,7 +129,8 @@ export default function ClassDetailPage() {
   }
 
   const studentCount = classData.students?.length || classData._count?.students || 0
-  const capacityPercent = Math.min((studentCount / maxClassSize) * 100, 100)
+  const classCapacity = classData.capacity || 1
+  const capacityPercent = Math.min((studentCount / classCapacity) * 100, 100)
 
   return (
     <div className="space-y-6">
@@ -218,7 +207,7 @@ export default function ClassDetailPage() {
         <div className="card p-4">
           <p className="text-sm text-gray-500">Sĩ số</p>
           <p className="text-2xl font-bold text-primary">
-            {studentCount}/{maxClassSize}
+            {studentCount}/{classData.capacity}
           </p>
           <div className="mt-2 w-full h-2 bg-gray-100 rounded-full overflow-hidden">
             <div

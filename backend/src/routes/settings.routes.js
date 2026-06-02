@@ -6,6 +6,7 @@ const { body, param, validationResult } = require('express-validator')
 const { AppError } = require('../middleware/errorHandler')
 const { MODULE_KEYS } = require('../constants/module-registry')
 const { requireFeature, requireRolePermission, DEFAULT_ROLE_PERMISSIONS, normalizeRolePermissions } = require('../middleware/feature-flags')
+const { getTenantPlanUsage, getTenantPlanLimits } = require('../utils/subscription-limits')
 
 // GET /settings/role-permissions
 // Read-only endpoint for sidebar/menu filtering.
@@ -17,9 +18,13 @@ router.get('/role-permissions', authenticate, authorize('SUPER_ADMIN', 'STAFF', 
     })
     if (!settings) throw new AppError('Settings not found', 404, 'NOT_FOUND')
 
+    const [usage, limits] = await Promise.all([
+      getTenantPlanUsage(prisma, req.tenantId),
+      getTenantPlanLimits(prisma, req.tenantId)
+    ])
     const permissions = normalizeRolePermissions(settings.rolePermissions)
 
-    res.json({ data: permissions })
+    res.json({ data: permissions, meta: { roleUsage: usage, planLimits: limits } })
   } catch (error) {
     next(error)
   }
@@ -81,6 +86,41 @@ router.put('/', authorize('SUPER_ADMIN'), [
     if (effectiveMinGrade > effectiveMaxGrade) {
       throw new AppError('Khối tối thiểu không được lớn hơn khối tối đa', 400, 'INVALID_GRADE_RANGE')
     }
+    const invalidGrades = await prisma.grade.findMany({
+      where: {
+        tenantId: req.tenantId,
+        OR: [
+          { level: { lt: effectiveMinGrade } },
+          { level: { gt: effectiveMaxGrade } }
+        ]
+      },
+      select: { name: true, level: true },
+      orderBy: { level: 'asc' }
+    })
+    if (invalidGrades.length > 0) {
+      throw new AppError(
+        `Cannot apply grade range ${effectiveMinGrade}-${effectiveMaxGrade}. Existing grades outside range: ${invalidGrades.map((g) => `${g.name} (${g.level})`).join(', ')}`,
+        400,
+        'GRADE_RANGE_HAS_EXISTING_DATA'
+      )
+    }
+
+    if (maxClassSize !== undefined) {
+      const activeClasses = await prisma.class.findMany({
+        where: { tenantId: req.tenantId, isActive: true },
+        include: { _count: { select: { students: true } } },
+        orderBy: { name: 'asc' }
+      })
+      const overCapacity = activeClasses.filter((cls) => cls._count.students > maxClassSize)
+      if (overCapacity.length > 0) {
+        throw new AppError(
+          `Cannot set max class size to ${maxClassSize}. Classes over limit: ${overCapacity.map((cls) => `${cls.name} (${cls._count.students})`).join(', ')}`,
+          400,
+          'MAX_CLASS_SIZE_BELOW_CURRENT_USAGE'
+        )
+      }
+    }
+
 
     // Validate score range
     const effectiveMinScore = minScore ?? current.minScore
@@ -107,9 +147,18 @@ router.put('/', authorize('SUPER_ADMIN'), [
     if (maxScore !== undefined) updateData.maxScore = maxScore
     if (maxSemesters !== undefined) updateData.maxSemesters = maxSemesters
 
-    const settings = await prisma.tenantSettings.update({
-      where: { tenantId: req.tenantId },
-      data: updateData
+    const settings = await prisma.$transaction(async (tx) => {
+      const updated = await tx.tenantSettings.update({
+        where: { tenantId: req.tenantId },
+        data: updateData
+      })
+      if (maxClassSize !== undefined) {
+        await tx.class.updateMany({
+          where: { tenantId: req.tenantId, isActive: true },
+          data: { capacity: maxClassSize }
+        })
+      }
+      return updated
     })
 
     invalidateSettingsCache(req.tenantId)
@@ -234,6 +283,15 @@ router.put('/grades/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, ne
         where: { tenantId: req.tenantId, level, NOT: { id: req.params.id } }
       })
       if (conflict) throw new AppError('Grade level exists', 409, 'DUPLICATE')
+
+      const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+      if (level < settings.minGradeLevel || level > settings.maxGradeLevel) {
+        throw new AppError(
+          `Grade must be between ${settings.minGradeLevel}-${settings.maxGradeLevel}`,
+          400,
+          'INVALID_GRADE_LEVEL'
+        )
+      }
     }
 
     const grade = await prisma.grade.update({

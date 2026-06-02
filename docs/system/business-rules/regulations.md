@@ -61,8 +61,8 @@ flowchart LR
 ## Enforcement Points
 
 - **QD1**: `POST /students` — validate `birthYear` → `currentYear - birthYear ∈ [minAge, maxAge]`
-- **QD2**: `POST /students/:id/enroll` — count existing students, reject if `≥ maxClassSize`
-- **QD3**: Grade CRUD — enforce `minGradeLevel ≤ level ≤ maxGradeLevel`
+- **QD2**: `POST /students`, `POST /classes/:id/students`, and `POST /students/:id/transfer` compare current enrollment with `class.capacity`; settings updates reject a lower `maxClassSize` than any active class's current enrollment and then sync active class capacity.
+- **QD3**: Grade CRUD and class create/update enforce `minGradeLevel <= level <= maxGradeLevel`; settings updates reject shrinking the range while existing grades fall outside the new bounds.
 - **QD5**: Promotion calculation — compare `averageScore ≥ passScore`
 - **QD6**: `POST /scores/batch` — validate `Σ weights ≤ 100` per subject on create/update
 

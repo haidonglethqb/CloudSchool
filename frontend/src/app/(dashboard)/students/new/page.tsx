@@ -28,6 +28,7 @@ type StudentFormData = z.infer<typeof studentSchema>
 interface ClassOption {
   id: string
   name: string
+  capacity: number
   grade: { name: string; level: number }
   _count: { students: number }
 }
@@ -86,7 +87,7 @@ export default function NewStudentPage() {
 
   const selectedClass = classes.find((c) => c.id === selectedClassId)
   const isClassFull = selectedClass
-    ? selectedClass._count.students >= (settings?.maxClassSize || 40)
+    ? selectedClass._count.students >= selectedClass.capacity
     : false
 
   // Calculate age warning
@@ -298,11 +299,11 @@ export default function NewStudentPage() {
                 <option
                   key={cls.id}
                   value={cls.id}
-                  disabled={cls._count.students >= (settings?.maxClassSize || 40)}
+                  disabled={cls._count.students >= cls.capacity}
                 >
                   {cls.name} ({cls.grade.name}) - {cls._count.students}/
-                  {settings?.maxClassSize || 40} học sinh
-                  {cls._count.students >= (settings?.maxClassSize || 40)
+                  {cls.capacity} học sinh
+                  {cls._count.students >= cls.capacity
                     ? ' (Đầy)'
                     : ''}
                 </option>
@@ -314,7 +315,7 @@ export default function NewStudentPage() {
             {isClassFull && (
               <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
                 <span className="material-symbols-outlined text-sm">error</span>
-                Lớp đã đầy (QD2: Sĩ số tối đa {settings?.maxClassSize})
+                Lớp đã đầy (sĩ số tối đa lớp này: {selectedClass?.capacity})
               </p>
             )}
           </div>

@@ -5,6 +5,7 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize, tenantGuard } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
+const { getTenantPlanUsage, getTenantPlanLimits } = require('../utils/subscription-limits')
 
 router.use(authenticate, requireFeature('classes'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('classes'))
 
@@ -177,7 +178,7 @@ router.post('/', authorize('SUPER_ADMIN', 'STAFF'), [
       return res.status(400).json({ error: { code: 'VALIDATION_ERROR', details: errors.array() } })
     }
 
-    const { name, gradeId, academicYearId, capacity } = req.body
+    const { name, gradeId, academicYearId } = req.body
 
     const grade = await prisma.grade.findFirst({ where: { id: gradeId, tenantId: req.tenantId } })
     if (!grade) throw new AppError('Grade not found', 404, 'GRADE_NOT_FOUND')
@@ -191,6 +192,22 @@ router.post('/', authorize('SUPER_ADMIN', 'STAFF'), [
     }
 
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    if (!settings) throw new AppError('Tenant settings not configured', 404, 'SETTINGS_NOT_FOUND')
+    if (grade.level < settings.minGradeLevel || grade.level > settings.maxGradeLevel) {
+      throw new AppError(
+        `Grade must be between ${settings.minGradeLevel}-${settings.maxGradeLevel}`,
+        400,
+        'INVALID_GRADE_LEVEL'
+      )
+    }
+
+    const [usage, limits] = await Promise.all([
+      getTenantPlanUsage(prisma, req.tenantId),
+      getTenantPlanLimits(prisma, req.tenantId)
+    ])
+    if (limits && usage.classes + 1 > limits.classes) {
+      throw new AppError(`Cannot exceed subscription class limit (${limits.classes})`, 400, 'PLAN_LIMIT_EXCEEDED')
+    }
     const academicYearLabel = buildAcademicYearLabel(targetAcademicYear)
 
     const classInfo = await prisma.class.create({
@@ -200,7 +217,7 @@ router.post('/', authorize('SUPER_ADMIN', 'STAFF'), [
         name,
         academicYearId: targetAcademicYear.id,
         academicYear: academicYearLabel,
-        capacity: capacity || settings?.maxClassSize || 40
+        capacity: settings?.maxClassSize || 40
       },
       include: { grade: true }
     })
@@ -225,6 +242,15 @@ router.put('/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => 
     if (gradeId && gradeId !== existingClass.gradeId) {
       const grade = await prisma.grade.findFirst({ where: { id: gradeId, tenantId: req.tenantId } })
       if (!grade) throw new AppError('Grade not found', 404, 'GRADE_NOT_FOUND')
+      const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+      if (!settings) throw new AppError('Tenant settings not configured', 404, 'SETTINGS_NOT_FOUND')
+      if (grade.level < settings.minGradeLevel || grade.level > settings.maxGradeLevel) {
+        throw new AppError(
+          `Grade must be between ${settings.minGradeLevel}-${settings.maxGradeLevel}`,
+          400,
+          'INVALID_GRADE_LEVEL'
+        )
+      }
     }
 
     // Validate capacity is not less than current student count
@@ -234,6 +260,11 @@ router.put('/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => 
         include: { _count: { select: { students: true } } }
       })
       if (!cls) throw new AppError('Class not found', 404, 'NOT_FOUND')
+      const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+      if (!settings) throw new AppError('Tenant settings not configured', 404, 'SETTINGS_NOT_FOUND')
+      if (capacity > settings.maxClassSize) {
+        throw new AppError(`Capacity cannot exceed max class size (${settings.maxClassSize})`, 400, 'CAPACITY_EXCEEDS_SETTINGS')
+      }
       if (capacity < cls._count.students) {
         throw new AppError(`Capacity (${capacity}) cannot be less than current student count (${cls._count.students})`, 400, 'CAPACITY_TOO_LOW')
       }

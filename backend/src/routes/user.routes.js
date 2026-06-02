@@ -7,6 +7,7 @@ const { authenticate, authorize, invalidateUserCache } = require('../middleware/
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 const { isValidVietnamPhone, normalizeVietnamPhone } = require('../utils/phone')
+const { assertRoleUserLimit } = require('../utils/subscription-limits')
 
 router.use(authenticate, requireFeature('users'))
 
@@ -91,6 +92,7 @@ router.post('/', authorize('SUPER_ADMIN'), [
     const { fullName, email, password, role, department } = req.body
     const phone = normalizeVietnamPhone(req.body.phone)
     const hashedPassword = await bcrypt.hash(password, 10)
+    await assertRoleUserLimit(prisma, req.tenantId, role)
 
     const user = await prisma.user.create({
       data: {
@@ -158,6 +160,16 @@ router.put('/:id', authorize('SUPER_ADMIN'), [
         where: { tenantId: req.tenantId, email, id: { not: req.params.id } }
       })
       if (dup) throw new AppError('Email already exists', 409, 'DUPLICATE_EMAIL')
+    }
+
+    const effectiveRole = role || existingUser.role
+    const effectiveActive = isActive !== undefined ? isActive : existingUser.isActive
+    const needsLimitCheck =
+      effectiveActive &&
+      ['STAFF', 'TEACHER'].includes(effectiveRole) &&
+      (effectiveRole !== existingUser.role || existingUser.isActive === false)
+    if (needsLimitCheck) {
+      await assertRoleUserLimit(prisma, req.tenantId, effectiveRole, req.params.id)
     }
 
     const user = await prisma.user.update({

@@ -5,8 +5,29 @@ import { classApi, studentApi } from '@/lib/api'
 import { Loader2, ArrowRightLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-interface ClassItem { id: string; name: string; grade?: { name: string } }
-interface StudentItem { id: string; fullName: string; studentCode: string; class?: { id: string; name: string } | null }
+interface ClassItem {
+  id: string
+  name: string
+  grade?: { name: string }
+}
+
+interface StudentItem {
+  id: string
+  fullName: string
+  studentCode: string
+  class?: { id: string; name: string } | null
+}
+
+interface TransferHistoryItem {
+  id: string
+  reason: string | null
+  createdAt: string
+  transferredBy?: string | null
+  student?: { fullName: string; studentCode: string } | null
+  fromClass?: { name: string } | null
+  toClass?: { name: string } | null
+  transferredByUser?: { fullName: string; email?: string } | null
+}
 
 export default function ClassTransferPage() {
   const [loading, setLoading] = useState(true)
@@ -16,15 +37,20 @@ export default function ClassTransferPage() {
   const [targetClassId, setTargetClassId] = useState('')
   const [reason, setReason] = useState('')
   const [transferring, setTransferring] = useState(false)
-  const [history, setHistory] = useState<any[]>([])
+  const [history, setHistory] = useState<TransferHistoryItem[]>([])
 
   const selectedStudent = students.find((s) => s.id === studentId)
 
   const fetchData = async () => {
     try {
-      const [classRes, studentRes] = await Promise.all([classApi.list(), studentApi.list({ limit: 200 })])
+      const [classRes, studentRes, historyRes] = await Promise.all([
+        classApi.list(),
+        studentApi.list({ limit: 200 }),
+        studentApi.getAllTransferHistory(),
+      ])
       setClasses(classRes.data.data || [])
       setStudents(studentRes.data.data || [])
+      setHistory(historyRes.data.data || [])
     } catch {
       toast.error('Không thể tải dữ liệu chuyển lớp')
     } finally {
@@ -32,27 +58,29 @@ export default function ClassTransferPage() {
     }
   }
 
-  useEffect(() => { fetchData() }, [])
-
   useEffect(() => {
-    if (!studentId) return setHistory([])
-    studentApi.getTransferHistory(studentId)
-      .then((res) => setHistory(res.data.data || []))
-      .catch(() => setHistory([]))
-  }, [studentId])
+    fetchData()
+  }, [])
 
   const submitTransfer = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!studentId || !targetClassId) return toast.error('Vui lòng chọn học sinh và lớp đích')
+    const trimmedReason = reason.trim()
+    if (!studentId || !targetClassId) {
+      toast.error('Vui lòng chọn học sinh và lớp đích')
+      return
+    }
+    if (!trimmedReason) {
+      toast.error('Vui lòng nhập lý do chuyển lớp')
+      return
+    }
+
     try {
       setTransferring(true)
-      await studentApi.transfer(studentId, { classId: targetClassId, reason: reason || undefined })
+      await studentApi.transfer(studentId, { classId: targetClassId, reason: trimmedReason })
       toast.success('Chuyển lớp thành công')
       setReason('')
       setTargetClassId('')
       await fetchData()
-      const res = await studentApi.getTransferHistory(studentId)
-      setHistory(res.data.data || [])
     } catch (error: any) {
       toast.error(error.response?.data?.error?.message || 'Chuyển lớp thất bại')
     } finally {
@@ -60,7 +88,13 @@ export default function ClassTransferPage() {
     }
   }
 
-  if (loading) return <div className="flex items-center justify-center h-[60vh]"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -93,8 +127,14 @@ export default function ClassTransferPage() {
           </select>
         </div>
         <div className="md:col-span-2">
-          <label className="label">Lý do</label>
-          <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Nhập lý do chuyển lớp" />
+          <label className="label">Lý do chuyển <span className="text-red-500">*</span></label>
+          <input
+            className="input"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Nhập lý do chuyển lớp"
+            required
+          />
         </div>
         <div className="md:col-span-2">
           <button type="submit" disabled={transferring} className="btn-primary">
@@ -115,19 +155,26 @@ export default function ClassTransferPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100">
-                  <th className="table-header">Thời gian</th>
+                  <th className="table-header">Học sinh</th>
                   <th className="table-header">Lớp cũ</th>
-                  <th className="table-header">Lớp mới</th>
-                  <th className="table-header">Lý do</th>
+                  <th className="table-header">Lớp đích</th>
+                  <th className="table-header">Thời gian</th>
+                  <th className="table-header">Lý do chuyển</th>
+                  <th className="table-header">Người thực hiện</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {history.map((item) => (
                   <tr key={item.id}>
-                    <td className="table-cell">{new Date(item.createdAt).toLocaleString('vi-VN')}</td>
+                    <td className="table-cell">
+                      <div className="font-medium text-gray-900">{item.student?.fullName || '-'}</div>
+                      <div className="text-xs text-gray-500">{item.student?.studentCode || ''}</div>
+                    </td>
                     <td className="table-cell">{item.fromClass?.name || '-'}</td>
                     <td className="table-cell">{item.toClass?.name || '-'}</td>
+                    <td className="table-cell">{new Date(item.createdAt).toLocaleString('vi-VN')}</td>
                     <td className="table-cell">{item.reason || '-'}</td>
+                    <td className="table-cell">{item.transferredByUser?.fullName || item.transferredBy || '-'}</td>
                   </tr>
                 ))}
               </tbody>

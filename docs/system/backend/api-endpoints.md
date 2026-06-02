@@ -26,7 +26,7 @@
 | GET | `/admin/schools` | List schools (paginated, search, status filter) |
 | POST | `/admin/schools` | Create school + admin user + grades (validates VN phone when `phone` is provided) |
 | GET | `/admin/schools/:id` | School detail + users by role breakdown |
-| PUT | `/admin/schools/:id` | Update school info (validates VN phone when `phone` is provided) |
+| PUT | `/admin/schools/:id` | Update school info (validates VN phone when `phone` is provided; rejects plan changes below current usage) |
 | PATCH | `/admin/schools/:id/suspend` | Suspend school |
 | PATCH | `/admin/schools/:id/activate` | Activate school |
 | DELETE | `/admin/schools/:id` | Delete school |
@@ -35,9 +35,9 @@
 | GET | `/admin/schools/:id/activity` | Activity logs for a school |
 | GET | `/admin/schools/:id/features` | Get tenant feature modules |
 | PUT | `/admin/schools/:id/features` | Update tenant feature modules |
-| GET | `/admin/subscriptions` | List subscription plans |
-| POST | `/admin/subscriptions` | Create plan |
-| PUT | `/admin/subscriptions/:id` | Update plan |
+| GET | `/admin/subscriptions` | List subscription plans, including student/staff/teacher/class limits |
+| POST | `/admin/subscriptions` | Create plan with student/staff/teacher/class limits |
+| PUT | `/admin/subscriptions/:id` | Update plan; rejects limit reductions below assigned tenants' current usage |
 | DELETE | `/admin/subscriptions/:id` | Delete plan |
 
 ## Users
@@ -46,8 +46,8 @@
 |---|---|---|
 | GET | `/users` | List users (paginated, role/status filter) |
 | GET | `/users/:id` | User detail + teacher assignments |
-| POST | `/users` | Create user (SUPER_ADMIN, validates VN phone when `phone` is provided) |
-| PUT | `/users/:id` | Update user (email duplicate check, self-disable guard, validates VN phone when `phone` is provided) |
+| POST | `/users` | Create user (SUPER_ADMIN, validates VN phone when `phone` is provided; enforces plan limits for STAFF/TEACHER) |
+| PUT | `/users/:id` | Update user (email duplicate check, self-disable guard, validates VN phone when `phone` is provided; enforces plan limits when role/status changes) |
 | PATCH | `/users/:id/disable` | Disable user |
 | PUT | `/users/:id/assignments` | Set teacher class/subject assignments |
 | DELETE | `/users/:id` | Delete user (self-delete guard) |
@@ -58,11 +58,12 @@
 |---|---|---|
 | GET | `/students` | List students (paginated, search, classId, status) |
 | GET | `/students/:id` | Student detail + scores |
-| POST | `/students` | Create student (age validation, capacity check, code generation) |
+| POST | `/students` | Create student (age validation, class capacity check, plan student limit, code generation) |
 | PUT | `/students/:id` | Update student info (class change blocked — use transfer) |
 | DELETE | `/students/:id` | Delete student (dependency checks) |
-| POST | `/students/:id/transfer` | Transfer to another class + transfer history record |
-| GET | `/students/:id/transfer-history` | Transfer history |
+| POST | `/students/:id/transfer` | Transfer to another class + transfer history record; `reason` is required |
+| GET | `/students/:id/transfer-history` | Transfer history for one student |
+| GET | `/students/transfers/history` | Tenant-wide transfer history with student, old class, target class, reason, timestamp, and actor |
 
 ## Classes
 
@@ -71,8 +72,8 @@
 | GET | `/classes` | List classes (`gradeId`, `academicYear`, `academicYearId`); defaults to active academic year; teacher is assignment-scoped and deduped by class |
 | GET | `/classes/grades` | Grades with nested classes + student counts; defaults to active academic year and teacher assignment scope |
 | GET | `/classes/:id` | Class detail + students + teacher assignments |
-| POST | `/classes` | Create class (capacity from settings) |
-| PUT | `/classes/:id` | Update class (capacity ≥ current students) |
+| POST | `/classes` | Create class (capacity from settings; grade must be within current grade range; enforces plan class limit) |
+| PUT | `/classes/:id` | Update class (capacity must be within settings and `>=` current students; grade must be within current grade range) |
 | DELETE | `/classes/:id` | Delete class (no students/assignments/fees) |
 | POST | `/classes/:id/assign-teacher` | Assign teacher to class+subject |
 | DELETE | `/classes/:id/assign-teacher/:assignmentId` | Remove teacher assignment |
@@ -153,8 +154,8 @@
 | Method | Path | Description |
 |---|---|---|
 | GET | `/settings` | Get current tenant settings |
-| PUT | `/settings` | Update settings (validates ranges, invalidates cache) |
-| GET | `/settings/role-permissions` | Get role-based module permissions (read-only for `SUPER_ADMIN`,`STAFF`,`TEACHER`; not gated by `settings` module permission) |
+| PUT | `/settings` | Update settings (validates ranges, blocks grade range/max class size changes below existing data, syncs class capacity, invalidates cache) |
+| GET | `/settings/role-permissions` | Get role-based module permissions plus active STAFF/TEACHER usage and plan limits (read-only for `SUPER_ADMIN`,`STAFF`,`TEACHER`; not gated by `settings` module permission) |
 | PUT | `/settings/role-permissions` | Update role permissions |
 | GET | `/settings/grades` | List grades |
 | POST | `/settings/grades` | Create grade (level uniqueness, min/max validation) |

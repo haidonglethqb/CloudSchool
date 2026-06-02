@@ -61,6 +61,7 @@ model SubscriptionPlan {
   name          String   @unique
   price         Float    @default(0)
   studentLimit  Int      @default(100)
+  staffLimit    Int      @default(10)
   teacherLimit  Int      @default(20)
   classLimit    Int      @default(30)
   description   String?

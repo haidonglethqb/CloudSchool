@@ -12,6 +12,7 @@ model SubscriptionPlan {
   name          String   @unique
   price         Float    @default(0)
   studentLimit  Int      @default(100)
+  staffLimit    Int      @default(10)
   teacherLimit  Int      @default(20)
   classLimit    Int      @default(30)
   description   String?
@@ -29,6 +30,7 @@ model SubscriptionPlan {
 | `name` | `String @unique` | Plan identifier (e.g., "Basic", "Pro") |
 | `price` | `Float` | Monthly subscription cost |
 | `studentLimit` | `Int` | Max students per tenant |
+| `staffLimit` | `Int` | Max staff users per tenant |
 | `teacherLimit` | `Int` | Max teachers per tenant |
 | `classLimit` | `Int` | Max classes per tenant |
 | `features` | `String[]` | Array of feature flags |

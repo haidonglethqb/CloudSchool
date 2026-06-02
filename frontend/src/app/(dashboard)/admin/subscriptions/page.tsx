@@ -3,13 +3,14 @@
 import { useEffect, useState, useCallback } from 'react'
 import { adminApi } from '@/lib/api'
 import toast from 'react-hot-toast'
-import { Plus, Loader2, X, Trash2, Pencil, CreditCard, Check, Users, BookOpen, Building2, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Plus, Loader2, X, Trash2, Pencil, CreditCard, Check, Users, BookOpen, Building2, ToggleLeft, ToggleRight, Shield } from 'lucide-react'
 
 interface Plan {
   id: string
   name: string
   description: string | null
   maxStudents: number
+  maxStaff: number
   maxTeachers: number
   maxClasses: number
   price: number
@@ -35,6 +36,7 @@ const emptyForm = {
   name: '',
   description: '',
   maxStudents: 500,
+  maxStaff: 10,
   maxTeachers: 50,
   maxClasses: 30,
   price: 0,
@@ -75,6 +77,7 @@ export default function SubscriptionsPage() {
       name: p.name,
       description: p.description || '',
       maxStudents: p.maxStudents,
+      maxStaff: p.maxStaff,
       maxTeachers: p.maxTeachers,
       maxClasses: p.maxClasses,
       price: p.price,
@@ -105,6 +108,7 @@ export default function SubscriptionsPage() {
         name: form.name,
         description: form.description || null,
         maxStudents: Number(form.maxStudents),
+        maxStaff: Number(form.maxStaff),
         maxTeachers: Number(form.maxTeachers),
         maxClasses: Number(form.maxClasses),
         price: Number(form.price),
@@ -198,6 +202,7 @@ export default function SubscriptionsPage() {
 
               <div className="space-y-2 text-sm text-gray-600">
                 <div className="flex items-center gap-2"><Users className="w-4 h-4 text-blue-500" /><span>Tối đa <strong>{p.maxStudents}</strong> học sinh</span></div>
+                <div className="flex items-center gap-2"><Shield className="w-4 h-4 text-indigo-500" /><span>Tối đa <strong>{p.maxStaff}</strong> nhân viên giáo vụ</span></div>
                 <div className="flex items-center gap-2"><BookOpen className="w-4 h-4 text-green-500" /><span>Tối đa <strong>{p.maxTeachers}</strong> giáo viên</span></div>
                 <div className="flex items-center gap-2"><Building2 className="w-4 h-4 text-purple-500" /><span>Tối đa <strong>{p.maxClasses}</strong> lớp học</span></div>
               </div>
@@ -238,10 +243,14 @@ export default function SubscriptionsPage() {
                 <label className="label">Mô tả</label>
                 <input className="input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="VD: Phù hợp trường quy mô vừa" />
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
                   <label className="label">Max HS</label>
                   <input type="number" className="input" value={form.maxStudents} onChange={e => setForm({ ...form, maxStudents: +e.target.value })} />
+                </div>
+                <div>
+                  <label className="label">Max NVGV</label>
+                  <input type="number" className="input" value={form.maxStaff} onChange={e => setForm({ ...form, maxStaff: +e.target.value })} />
                 </div>
                 <div>
                   <label className="label">Max GV</label>

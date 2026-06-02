@@ -11,9 +11,9 @@ import toast from 'react-hot-toast'
 import Link from 'next/link'
 
 const ROLES = [
-  { key: 'STAFF', label: getUiRoleLabel('STAFF') },
-  { key: 'TEACHER', label: getUiRoleLabel('TEACHER') },
-]
+  { key: 'STAFF', label: getUiRoleLabel('STAFF'), usageKey: 'staff' },
+  { key: 'TEACHER', label: getUiRoleLabel('TEACHER'), usageKey: 'teachers' },
+] as const
 
 const MODULES = [
   { key: 'student-admission', label: getUiModuleLabel('student-admission') },
@@ -31,11 +31,18 @@ const MODULES = [
 ]
 
 type Permissions = Record<string, string[]>
+type RoleLimitKey = 'staff' | 'teachers'
+
+interface PermissionMeta {
+  roleUsage?: Partial<Record<RoleLimitKey, number>>
+  planLimits?: Partial<Record<RoleLimitKey, number | null>>
+}
 
 export default function PermissionsPage() {
   const { user } = useAuthStore()
   const router = useRouter()
   const [permissions, setPermissions] = useState<Permissions>({})
+  const [permissionMeta, setPermissionMeta] = useState<PermissionMeta>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -45,17 +52,21 @@ export default function PermissionsPage() {
       return
     }
     settingsApi.getRolePermissions()
-      .then((res) => setPermissions(res.data.data || {}))
+      .then((res) => {
+        setPermissions(res.data.data || {})
+        setPermissionMeta(res.data.meta || {})
+      })
       .catch(() => toast.error('Không thể tải phân quyền.'))
       .finally(() => setLoading(false))
   }, [user, router])
 
   const roleStats = useMemo(() => {
-    return ROLES.map((role) => ({
-      ...role,
-      count: (permissions[role.key] || []).length,
-    }))
-  }, [permissions])
+    return ROLES.map((role) => {
+      const used = permissionMeta.roleUsage?.[role.usageKey] ?? 0
+      const limit = permissionMeta.planLimits?.[role.usageKey]
+      return { ...role, used, limit }
+    })
+  }, [permissionMeta])
 
   const togglePermission = (role: string, module: string) => {
     setPermissions((prev) => {
@@ -104,7 +115,10 @@ export default function PermissionsPage() {
         {roleStats.map((role) => (
           <div key={role.key} className="card p-4">
             <p className="text-sm text-gray-500">{role.label}</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">{role.count}/{MODULES.length}</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900">
+              {role.used}/{role.limit ?? '-'}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">Số người đang hoạt động theo giới hạn gói</p>
           </div>
         ))}
       </div>

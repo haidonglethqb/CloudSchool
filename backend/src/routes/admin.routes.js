@@ -7,6 +7,10 @@ const { authenticate, authorize } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
 const { MODULE_KEYS, DEFAULT_ENABLED_MODULES } = require('../constants/module-registry')
 const { isValidVietnamPhone, normalizeVietnamPhone } = require('../utils/phone')
+const {
+  getTenantPlanUsage,
+  assertUsageWithinLimits
+} = require('../utils/subscription-limits')
 
 // All routes require PLATFORM_ADMIN
 router.use(authenticate, authorize('PLATFORM_ADMIN'))
@@ -337,6 +341,18 @@ router.put('/schools/:id', [
     const { name, email, phone, address, planId, status } = req.body
     const normalizedPhone = normalizeVietnamPhone(phone)
 
+    if (planId !== undefined && planId) {
+      const targetPlan = await prisma.subscriptionPlan.findUnique({ where: { id: planId } })
+      if (!targetPlan) throw new AppError('Plan not found', 404, 'PLAN_NOT_FOUND')
+      const usage = await getTenantPlanUsage(prisma, req.params.id)
+      assertUsageWithinLimits(usage, {
+        students: targetPlan.studentLimit,
+        classes: targetPlan.classLimit,
+        staff: targetPlan.staffLimit,
+        teachers: targetPlan.teacherLimit
+      }, 'PLAN_DOWNGRADE_TOO_LOW')
+    }
+
     const tenant = await prisma.tenant.update({
       where: { id: req.params.id },
       data: {
@@ -405,6 +421,7 @@ router.get('/subscriptions', async (req, res, next) => {
     const mapped = plans.map(p => ({
       ...p,
       maxStudents: p.studentLimit,
+      maxStaff: p.staffLimit,
       maxTeachers: p.teacherLimit,
       maxClasses: p.classLimit
     }))
@@ -426,13 +443,14 @@ router.post('/subscriptions', [
     }
 
     const { name, price, description } = req.body
-    const studentLimit = req.body.studentLimit || req.body.maxStudents || 100
-    const teacherLimit = req.body.teacherLimit || req.body.maxTeachers || 20
-    const classLimit = req.body.classLimit || req.body.maxClasses || 30
+    const studentLimit = req.body.studentLimit ?? req.body.maxStudents ?? 100
+    const staffLimit = req.body.staffLimit ?? req.body.maxStaff ?? 10
+    const teacherLimit = req.body.teacherLimit ?? req.body.maxTeachers ?? 20
+    const classLimit = req.body.classLimit ?? req.body.maxClasses ?? 30
     const features = req.body.features || []
 
     const plan = await prisma.subscriptionPlan.create({
-      data: { name, price, studentLimit, teacherLimit, classLimit, description, features }
+      data: { name, price, studentLimit, staffLimit, teacherLimit, classLimit, description, features }
     })
 
     res.status(201).json({ data: plan })
@@ -445,19 +463,38 @@ router.post('/subscriptions', [
 router.put('/subscriptions/:id', async (req, res, next) => {
   try {
     const { name, price, description, isActive } = req.body
-    const studentLimit = req.body.studentLimit || req.body.maxStudents
-    const teacherLimit = req.body.teacherLimit || req.body.maxTeachers
-    const classLimit = req.body.classLimit || req.body.maxClasses
+    const studentLimit = req.body.studentLimit ?? req.body.maxStudents
+    const staffLimit = req.body.staffLimit ?? req.body.maxStaff
+    const teacherLimit = req.body.teacherLimit ?? req.body.maxTeachers
+    const classLimit = req.body.classLimit ?? req.body.maxClasses
     const features = req.body.features
+
+    const currentPlan = await prisma.subscriptionPlan.findUnique({
+      where: { id: req.params.id },
+      include: { tenants: { select: { id: true } } }
+    })
+    if (!currentPlan) throw new AppError('Plan not found', 404, 'PLAN_NOT_FOUND')
+
+    const nextLimits = {
+      students: studentLimit ?? currentPlan.studentLimit,
+      classes: classLimit ?? currentPlan.classLimit,
+      staff: staffLimit ?? currentPlan.staffLimit,
+      teachers: teacherLimit ?? currentPlan.teacherLimit
+    }
+    for (const tenant of currentPlan.tenants) {
+      const usage = await getTenantPlanUsage(prisma, tenant.id)
+      assertUsageWithinLimits(usage, nextLimits, 'PLAN_LIMIT_TOO_LOW')
+    }
 
     const plan = await prisma.subscriptionPlan.update({
       where: { id: req.params.id },
       data: {
         ...(name && { name }),
         ...(price !== undefined && { price }),
-        ...(studentLimit && { studentLimit }),
-        ...(teacherLimit && { teacherLimit }),
-        ...(classLimit && { classLimit }),
+        ...(studentLimit !== undefined && { studentLimit }),
+        ...(staffLimit !== undefined && { staffLimit }),
+        ...(teacherLimit !== undefined && { teacherLimit }),
+        ...(classLimit !== undefined && { classLimit }),
         ...(description !== undefined && { description }),
         ...(features !== undefined && { features }),
         ...(isActive !== undefined && { isActive })

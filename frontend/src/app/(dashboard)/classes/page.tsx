@@ -28,6 +28,7 @@ interface Grade {
 interface Class {
   id: string
   name: string
+  capacity: number
   grade?: { name: string }
   teacherAssignments?: Array<{
     id: string
@@ -358,10 +359,10 @@ export default function ClassesPage() {
                           <div>
                             <p className="font-medium text-gray-900">{cls.name}</p>
                             <p className="text-sm text-gray-500">
-                              {cls._count.students}/{settings?.maxClassSize || 40}{' '}
+                              {cls._count.students}/{cls.capacity}{' '}
                               học sinh
                               {cls._count.students >=
-                                (settings?.maxClassSize || 40) && (
+                                (cls.capacity) && (
                                 <span className="text-red-500 ml-2">(Đầy)</span>
                               )}
                             </p>
@@ -374,15 +375,15 @@ export default function ClassesPage() {
                             <div
                               className={`h-full rounded-full ${
                                 cls._count.students >=
-                                (settings?.maxClassSize || 40)
+                                (cls.capacity)
                                   ? 'bg-red-500'
                                   : cls._count.students >=
-                                      (settings?.maxClassSize || 40) * 0.8
+                                      (cls.capacity) * 0.8
                                     ? 'bg-amber-500'
                                     : 'bg-green-500'
                               }`}
                               style={{
-                                width: `${Math.min((cls._count.students / (settings?.maxClassSize || 40)) * 100, 100)}%`,
+                                width: `${Math.min((cls._count.students / (cls.capacity)) * 100, 100)}%`,
                               }}
                             />
                           </div>

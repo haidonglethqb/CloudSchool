@@ -93,7 +93,7 @@ export const adminApi = {
     api.put(`/admin/schools/${id}/features`, { enabledModules }),
   // Subscriptions
   listSubscriptions: () => api.get('/admin/subscriptions'),
-  createSubscription: (data: { name: string; maxStudents: number; maxTeachers: number; maxClasses: number; price: number; features?: string[] }) =>
+  createSubscription: (data: { name: string; maxStudents: number; maxStaff: number; maxTeachers: number; maxClasses: number; price: number; features?: string[] }) =>
     api.post('/admin/subscriptions', data),
   updateSubscription: (id: string, data: Record<string, unknown>) => api.put(`/admin/subscriptions/${id}`, data),
   deleteSubscription: (id: string) => api.delete(`/admin/subscriptions/${id}`),
@@ -122,9 +122,10 @@ export const studentApi = {
     api.post('/students', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/students/${id}`, data),
   delete: (id: string) => api.delete(`/students/${id}`),
-  transfer: (id: string, data: { classId: string; reason?: string }) =>
+  transfer: (id: string, data: { classId: string; reason: string }) =>
     api.post(`/students/${id}/transfer`, data),
   getTransferHistory: (id: string) => api.get(`/students/${id}/transfer-history`),
+  getAllTransferHistory: () => api.get('/students/transfers/history'),
 }
 
 // ==================== Classes ====================
