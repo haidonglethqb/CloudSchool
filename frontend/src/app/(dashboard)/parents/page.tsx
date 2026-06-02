@@ -118,7 +118,7 @@ export default function ParentsPage() {
 
     try {
       await parentApi.create(createForm)
-      toast.success('Da tao tai khoan phu huynh')
+      toast.success('Đã tạo tài khoản phụ huynh')
       setShowCreateModal(false)
       setCreateForm(emptyCreateForm)
       fetchParents()
@@ -159,11 +159,11 @@ export default function ParentsPage() {
       return
     }
     if (phone && !isValidVietnamPhone(phone)) {
-      toast.error('So dien thoai khong hop le')
+      toast.error('Số điện thoại không hợp lệ')
       return
     }
     if (password && password.length < 6) {
-      toast.error('Mat khau moi toi thieu 6 ky tu')
+      toast.error('Mật khẩu mới tối thiểu 6 ký tự')
       return
     }
 
@@ -178,22 +178,22 @@ export default function ParentsPage() {
       if (password) payload.password = password
 
       await parentApi.update(editModal.id, payload)
-      toast.success('Da cap nhat tai khoan phu huynh')
+      toast.success('Đã cập nhật tài khoản phụ huynh')
       closeEditModal()
       fetchParents()
     } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Loi cap nhat')
+      toast.error(err.response?.data?.error?.message || 'Lỗi cập nhật')
     } finally {
       setEditSubmitting(false)
     }
   }
 
   const handleDeleteParent = async (id: string) => {
-    if (!confirm('Ban co chac muon xoa tai khoan phu huynh nay?')) return
+    if (!confirm('Bạn có chắc muốn xóa tài khoản phụ huynh này?')) return
 
     try {
       await parentApi.delete(id)
-      toast.success('Da xoa tai khoan phu huynh')
+      toast.success('Đã xóa tài khoản phụ huynh')
       fetchParents()
     } catch (err) {
       console.error('Failed to delete parent:', err)
@@ -206,10 +206,10 @@ export default function ParentsPage() {
 
     try {
       await parentApi.unlinkStudent(parentId, studentId)
-      toast.success('Da huy lien ket')
+      toast.success('Đã hủy liên kết')
       fetchParents()
     } catch {
-      toast.error('Loi huy lien ket')
+      toast.error('Lỗi hủy liên kết')
     }
   }
 
@@ -218,12 +218,12 @@ export default function ParentsPage() {
 
     try {
       await parentApi.linkStudent(linkModal.parentId, linkStudentId)
-      toast.success('Da lien ket hoc sinh')
+      toast.success('Đã liên kết học sinh')
       setLinkModal(null)
       setLinkStudentId('')
       fetchParents()
     } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || 'Loi lien ket')
+      toast.error(err.response?.data?.error?.message || 'Lỗi liên kết')
     }
   }
 
@@ -239,15 +239,15 @@ export default function ParentsPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Quan ly Phu huynh</h1>
-          <p className="text-gray-500 mt-1">Tao va quan ly tai khoan phu huynh xem diem</p>
+          <h1 className="text-2xl font-bold text-gray-900">Quản lý Phụ huynh</h1>
+          <p className="text-gray-500 mt-1">Tạo và quản lý tài khoản phụ huynh xem điểm</p>
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
           className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 transition-colors"
         >
           <UserPlus className="w-5 h-5" />
-          Them phu huynh
+          Thêm phụ huynh
         </button>
       </div>
 
@@ -255,7 +255,7 @@ export default function ParentsPage() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
         <input
           type="text"
-          placeholder="Tim kiem theo ten, email, SDT..."
+          placeholder="Tìm kiếm theo tên, email, SĐT..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
@@ -267,10 +267,10 @@ export default function ParentsPage() {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phu huynh</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lien he</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hoc sinh lien ket</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trang thai</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phụ huynh</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Liên hệ</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Học sinh liên kết</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trạng thái</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Thao tác</th>
               </tr>
             </thead>
@@ -310,7 +310,7 @@ export default function ParentsPage() {
                       <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
                         parent.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                       }`}>
-                        {parent.isActive ? 'Hoat dong' : 'Vo hieu'}
+                        {parent.isActive ? 'Hoạt động' : 'Vô hiệu'}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -318,14 +318,14 @@ export default function ParentsPage() {
                         <button
                           onClick={() => openEditModal(parent)}
                           className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                          title="Sua"
+                          title="Sửa"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => setLinkModal({ parentId: parent.id, parentName: parent.fullName })}
                           className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Lien ket hoc sinh"
+                          title="Liên kết học sinh"
                         >
                           <Link2 className="w-4 h-4" />
                         </button>
@@ -358,7 +358,7 @@ export default function ParentsPage() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ho va ten *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Họ và tên *</label>
                 <input
                   type="text"
                   required
@@ -380,7 +380,7 @@ export default function ParentsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mat khau *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu *</label>
                 <input
                   type="password"
                   required
@@ -392,7 +392,7 @@ export default function ParentsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">So dien thoai</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Số điện thoại</label>
                 <input
                   type="tel"
                   value={createForm.phone}
@@ -418,7 +418,7 @@ export default function ParentsPage() {
                       <div>
                         <div className="font-medium text-sm">{student.fullName}</div>
                         <div className="text-xs text-gray-500">
-                          {student.studentCode} - {student.class?.name || 'Chua xep lop'}
+                          {student.studentCode} - {student.class?.name || 'Chưa xếp lớp'}
                         </div>
                       </div>
                     </label>
@@ -435,14 +435,14 @@ export default function ParentsPage() {
                   onClick={() => setShowCreateModal(false)}
                   className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 >
-                  Huy
+                  Hủy
                 </button>
                 <button
                   type="submit"
                   disabled={createSubmitting || createForm.studentIds.length === 0}
                   className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50"
                 >
-                  {createSubmitting ? 'Dang tao...' : 'Tao tai khoan'}
+                  {createSubmitting ? 'Đang tạo...' : 'Tạo tài khoản'}
                 </button>
               </div>
             </form>
@@ -454,11 +454,11 @@ export default function ParentsPage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
             <div className="p-6 border-b border-gray-200">
-              <h2 className="text-xl font-semibold">Cap nhat tai khoan phu huynh</h2>
+              <h2 className="text-xl font-semibold">Cập nhật tài khoản phụ huynh</h2>
             </div>
             <form onSubmit={handleUpdateParent} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ho va ten *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Họ và tên *</label>
                 <input
                   type="text"
                   required
@@ -480,7 +480,7 @@ export default function ParentsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">So dien thoai</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Số điện thoại</label>
                 <input
                   type="tel"
                   value={editForm.phone}
@@ -490,7 +490,7 @@ export default function ParentsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mat khau moi (bo trong de giu nguyen)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu mới (bỏ trống để giữ nguyên)</label>
                 <input
                   type="password"
                   minLength={6}
@@ -507,7 +507,7 @@ export default function ParentsPage() {
                   onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })}
                   className="rounded border-gray-300 text-primary focus:ring-primary"
                 />
-                Tai khoan dang hoat dong
+                Tài khoản đang hoạt động
               </label>
 
               <div className="flex gap-3 pt-4">
@@ -516,14 +516,14 @@ export default function ParentsPage() {
                   onClick={closeEditModal}
                   className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 >
-                  Huy
+                  Hủy
                 </button>
                 <button
                   type="submit"
                   disabled={editSubmitting}
                   className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50"
                 >
-                  {editSubmitting ? 'Dang cap nhat...' : 'Cap nhat'}
+                  {editSubmitting ? 'Đang cập nhật...' : 'Cập nhật'}
                 </button>
               </div>
             </form>
@@ -535,7 +535,7 @@ export default function ParentsPage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
             <div className="p-4 border-b flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Lien ket hoc sinh cho {linkModal.parentName}</h2>
+              <h2 className="text-lg font-semibold">Liên kết học sinh cho {linkModal.parentName}</h2>
               <button onClick={() => { setLinkModal(null); setLinkStudentId('') }}>
                 <X className="w-5 h-5 text-gray-400" />
               </button>
@@ -551,7 +551,7 @@ export default function ParentsPage() {
                   <option value="">-- Chọn học sinh --</option>
                   {students.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.fullName} ({s.studentCode}) - {s.class?.name || 'Chua xep lop'}
+                      {s.fullName} ({s.studentCode}) - {s.class?.name || 'Chưa xếp lớp'}
                     </option>
                   ))}
                 </select>
@@ -561,14 +561,14 @@ export default function ParentsPage() {
                   onClick={() => { setLinkModal(null); setLinkStudentId('') }}
                   className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                 >
-                  Huy
+                  Hủy
                 </button>
                 <button
                   onClick={handleLinkStudent}
                   disabled={!linkStudentId}
                   className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-600 disabled:opacity-50"
                 >
-                  Lien ket
+                  Liên kết
                 </button>
               </div>
             </div>

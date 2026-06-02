@@ -188,7 +188,7 @@ export default function ClassesPage() {
                     <p className="text-sm text-gray-500">{item.gradeName}</p>
                   </div>
                   {item.isHomeroom ? (
-                    <span className="inline-flex rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-700">Chá»§ nhiá»‡m</span>
+                    <span className="inline-flex rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-700">Chủ nhiệm</span>
                   ) : null}
                 </div>
                 <div className="mt-4 space-y-1 text-sm text-gray-600">
