@@ -5,11 +5,12 @@ Year-end promotion is now **synchronous**, **school-admin only**, and executed f
 ## Endpoints
 
 1. `POST /api/promotion/year-end/evaluate`
-   - Input: `academicYearId`, optional `classId`
+   - Input: `academicYearId`
    - Preconditions:
      - Academic year has at least 2 semesters
-     - First 2 semesters have ended (`endDate < now`)
-     - Required score components exist for each student/subject/semester
+     - Every semester has `startDate/endDate`
+     - Every semester has ended (`endDate < now`)
+     - Required component sets exist for each applied subject/semester
    - Result:
      - Upsert promotion records on final semester of year
      - `PASS` only when overall + per-subject conditions satisfy `passScore`
@@ -43,10 +44,15 @@ Year-end promotion is now **synchronous**, **school-admin only**, and executed f
 
 ## Key Rule Changes
 
+- Promotion is all-only by academic year; API/UI do not accept class filtering.
+- Missing score checks use `SubjectVersion` scope for each class/year.
+- Required components come from `ScoreComponentSet(subjectId, semesterId)`.
+- Removed/inactive components with historical scores are ignored; only active required components count.
 - Failed students stay active in their old class until assigned or inactivated.
 - Inactivation from the failed queue requires a reason.
 - Placement timeline records every major step: evaluate, draft, assign, inactive, graduate, create target class.
 - `RETAKE` is not used in final promotion summary rates.
+- New promotion workflow only writes `PASS`/`FAIL`; `RETAKE` remains for legacy/report compatibility.
 - BM2/BM3/BM4 promotion reports count only `PromotionResult.PASS` as promoted.
 - Seed data includes PASS/FAIL/RETAKE promotion rows for report smoke testing; học kỳ 2 in seed ends on `30/06`.
 

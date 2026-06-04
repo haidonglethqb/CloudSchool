@@ -5,15 +5,26 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
+const { getComponentSetForSubjectSemester } = require('../utils/academic-scope')
 
 // GET /score-components
 router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
   try {
-    const { subjectId } = req.query
+    const { subjectId, semesterId } = req.query
+
+    if (subjectId && semesterId) {
+      const context = await getComponentSetForSubjectSemester(prisma, req.tenantId, { subjectId, semesterId })
+      return res.json({
+        data: context.components,
+        componentSet: context.componentSet,
+        warning: context.warning
+      })
+    }
 
     const where = {
       tenantId: req.tenantId,
-      ...(subjectId && { subjectId })
+      ...(subjectId && { subjectId }),
+      scoreComponentSetId: null
     }
 
     const components = await prisma.scoreComponent.findMany({

@@ -41,19 +41,25 @@ All routes use `express-validator` chains:
 |-------|------|-------|
 | **Age** | `currentYear - birthYear âˆˆ [minAge, maxAge]` | `POST /students` |
 | **Class capacity** | `count(students) < class.capacity`; settings reject lower `maxClassSize` than current class usage | Student create, add-to-class, transfer, settings update |
-| **Score range** | `0 â‰¤ value â‰¤ 10` | `POST /scores/*` |
+| **Score range** | `minScore ≤ value ≤ maxScore`; settings cannot shrink range below existing scores | `POST /scores/*`, `PUT /settings` |
 | **Score lock** | `isLocked === true` â†’ block modify/delete | `PUT/DELETE /scores/*` |
-| **Weight sum** | `Î£ component weights â‰¤ 100` per subject | Score component CRUD |
+| **Weight sum** | `Σ component weights ≤ 100` per subject+semester component set | Score component set CRUD |
+| **Component names/order** | Component names are unique per subject+semester set; order is normalized from payload order | Score component set CRUD |
 | **Student delete guard** | Block if has promotions, transfers, parent links, enrollments, or scores | `DELETE /students/:id` |
 | **Capacity guard** | Cannot reduce class `capacity < current student count` or above current `maxClassSize` | `PUT /classes/:id` |
 | **Academic year overlap** | No overlapping `[startDate, endDate]` ranges | `POST/PUT /academic-years` |
 | **Role escalation** | Only `SUPER_ADMIN`, `STAFF`, `TEACHER` via `PUT /users` | `PUT /users/:id` |
 | **PassScore range** | `passScore âˆˆ [minScore, maxScore]` | `PUT /settings` |
 | **Class creation order** | Must have active academic year (or valid `academicYearId`), valid grade range, and available plan class quota | `POST /classes` |
-| **Enrollment order** | Add-to-class / transfer require active semester with academicYearId; transfer requires non-empty reason | `POST /classes/:id/students`, `POST /students/:id/transfer` |
-| **Semester score window** | Score write only when semester active + configured + in date range | `POST /scores`, `POST /scores/batch` |
-| **Component-subject consistency** | `scoreComponent.subjectId` must equal payload `subjectId` | `POST /scores`, `POST /scores/batch` |
+| **Enrollment order** | Admission/add-to-class/transfer require active semester with academicYearId; target class must belong to active semester year; transfer requires non-empty reason | `POST /students`, `POST /classes/:id/students`, `POST /students/:id/transfer` |
+| **Semester score window** | Score write only when semester active | `POST /scores`, `POST /scores/batch` |
+| **Subject scope** | Subject must apply to selected class/year through `SubjectVersion` grade/class scope | `GET /subjects`, `POST /scores`, promotion evaluate |
+| **Component set consistency** | Score component must belong to `ScoreComponentSet(subjectId, semesterId)` | `POST /scores`, `POST /scores/batch` |
 | **Subject/component active** | Block writes if subject or component inactive | `POST /scores`, `POST /scores/batch` |
+| **Settings usage guards** | `maxSubjects`, `maxSemesters`, score range, grade range, class size cannot be reduced below current data | `PUT /settings` |
+| **Promotion all-only** | Year-end promotion accepts `academicYearId` only, no `classId` filter | `/promotion/year-end/*` |
+| **Promotion readiness** | Every semester in the academic year needs schedule dates and must have ended before evaluation | `/promotion/year-end/evaluate`, `/promotion/year-end/execute` |
+| **Inactive components** | A removed component with historical scores is ignored by current averages/promotion calculations | Score reports, parent/student score views, promotion |
 | **Plan quotas** | Enforce student, class, staff, and teacher limits from the tenant subscription plan | Student/class/user create/update and platform plan changes |
 
 ## Student Delete Guard
@@ -96,4 +102,8 @@ const scoreSchema = z.object({
 - `NO_ACTIVE_SEMESTER`
 - `SEMESTER_NOT_CONFIGURED`
 - `SEMESTER_CLOSED`
-- `COMPONENT_SUBJECT_MISMATCH`
+- `COMPONENT_SET_MISMATCH`
+- `SUBJECT_NOT_APPLIED_TO_CLASS`
+- `MAX_SUBJECTS_BELOW_CURRENT_USAGE`
+- `MAX_SEMESTERS_BELOW_CURRENT_USAGE`
+- `SCORE_RANGE_HAS_EXISTING_DATA`

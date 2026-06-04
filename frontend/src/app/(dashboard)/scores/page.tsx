@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { classApi, subjectApi, scoreApi, scoreComponentApi, settingsApi, exportApi, downloadBlob } from '@/lib/api'
+import { academicYearApi, classApi, subjectApi, scoreApi, settingsApi, exportApi, downloadBlob } from '@/lib/api'
 import { formatDateTime, getPassStatus, getSemesterEntryStatus, getSemesterScheduleStatus } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
 import { Save, Loader2, AlertCircle, CheckCircle, Lock, Unlock, Download, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -11,7 +11,7 @@ import toast from 'react-hot-toast'
 interface Class {
   id: string
   name: string
-  grade: { name: string }
+  grade?: { name: string }
 }
 
 interface Subject {
@@ -23,9 +23,19 @@ interface Subject {
 interface Semester {
   id: string
   name: string
+  year?: string
+  displayName?: string
+  academicYearId?: string
   isActive: boolean
   startDate?: string | null
   endDate?: string | null
+}
+
+interface AcademicYear {
+  id: string
+  startYear: number
+  endYear: number
+  isActive: boolean
 }
 
 interface ScoreComponent {
@@ -68,7 +78,11 @@ export default function ScoresPage() {
   const [classes, setClasses] = useState<Class[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [semesters, setSemesters] = useState<Semester[]>([])
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([])
   const [passScore, setPassScore] = useState(5)
+  const [minScore, setMinScore] = useState(0)
+  const [maxScore, setMaxScore] = useState(10)
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState('')
   const [selectedClass, setSelectedClass] = useState('')
   const [selectedSubject, setSelectedSubject] = useState('')
   const [selectedSemester, setSelectedSemester] = useState('')
@@ -89,6 +103,9 @@ export default function ScoresPage() {
   const now = new Date()
   const selectedSemesterRef = useRef('')
   const selectedSemesterMeta = semesters.find((semester) => semester.id === selectedSemester)
+  const filteredSemesters = selectedAcademicYear
+    ? semesters.filter((semester) => semester.academicYearId === selectedAcademicYear)
+    : semesters
   const isSemesterOpenForEntry = Boolean(selectedSemesterMeta?.isActive)
 
   const selectedSemesterEntryStatus = selectedSemesterMeta ? getSemesterEntryStatus(selectedSemesterMeta) : null
@@ -128,30 +145,37 @@ export default function ScoresPage() {
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        const [classesRes, subjectsRes] = await Promise.all([
-          classApi.list(), subjectApi.list(),
+        const [yearsRes, semesterRows] = await Promise.all([
+          academicYearApi.list(),
+          refreshSemesters()
         ])
-        const classRows = classesRes.data.data || []
-        const subjectRows = subjectsRes.data.data || []
-        setClasses(classRows)
-        setSubjects(subjectRows)
+        const yearRows = yearsRes.data.data || []
+        setAcademicYears(yearRows)
 
         try {
           const settingsRes = await settingsApi.get()
-          setPassScore(settingsRes.data.data?.passScore ?? 5)
+          const settings = settingsRes.data.data || {}
+          setPassScore(settings.passScore ?? 5)
+          setMinScore(settings.minScore ?? 0)
+          setMaxScore(settings.maxScore ?? 10)
         } catch {
           setPassScore(5)
+          setMinScore(0)
+          setMaxScore(10)
         }
 
-        const semesterRows = await refreshSemesters()
         const queryClassId = searchParams.get('classId')
         const querySubjectId = searchParams.get('subjectId')
         const querySemesterId = searchParams.get('semesterId')
+        const queryYearId = searchParams.get('academicYearId')
+        const activeYear = yearRows.find((row: AcademicYear) => row.isActive) || yearRows[0]
+        const initialYearId = queryYearId || (semesterRows || []).find((row: Semester) => row.id === querySemesterId)?.academicYearId || activeYear?.id || ''
+        if (initialYearId) setSelectedAcademicYear(initialYearId)
 
-        if (queryClassId && classRows.some((row: Class) => row.id === queryClassId)) {
+        if (queryClassId) {
           setSelectedClass(queryClassId)
         }
-        if (querySubjectId && subjectRows.some((row: Subject) => row.id === querySubjectId)) {
+        if (querySubjectId) {
           setSelectedSubject(querySubjectId)
         }
         if (querySemesterId && (semesterRows || []).some((row: Semester) => row.id === querySemesterId)) {
@@ -165,6 +189,49 @@ export default function ScoresPage() {
   }, [refreshSemesters, searchParams])
 
   useEffect(() => {
+    if (!selectedAcademicYear) return
+    classApi.list({ academicYearId: selectedAcademicYear })
+      .then((res) => {
+        const rows = res.data.data || []
+        setClasses(rows)
+        if (selectedClass && !rows.some((row: Class) => row.id === selectedClass)) {
+          setSelectedClass('')
+          setSelectedSubject('')
+        }
+      })
+      .catch(() => toast.error('Không thể tải danh sách lớp'))
+  }, [selectedAcademicYear, selectedClass])
+
+  useEffect(() => {
+    if (!selectedAcademicYear || !selectedClass) {
+      setSubjects([])
+      setSelectedSubject('')
+      return
+    }
+    subjectApi.list({ academicYearId: selectedAcademicYear, classId: selectedClass })
+      .then((res) => {
+        const rows = res.data.data || []
+        setSubjects(rows)
+        if (selectedSubject && !rows.some((row: Subject) => row.id === selectedSubject)) {
+          setSelectedSubject('')
+        }
+        if (!selectedSubject && rows[0]) setSelectedSubject(rows[0].id)
+      })
+      .catch(() => {
+        setSubjects([])
+        toast.error('Không thể tải môn áp dụng cho lớp')
+      })
+  }, [selectedAcademicYear, selectedClass, selectedSubject])
+
+  useEffect(() => {
+    if (!selectedAcademicYear || semesters.length === 0) return
+    const yearSemesters = semesters.filter((semester) => semester.academicYearId === selectedAcademicYear)
+    if (selectedSemester && yearSemesters.some((semester) => semester.id === selectedSemester)) return
+    const activeSemester = yearSemesters.find((semester) => semester.isActive) || yearSemesters[0]
+    setSelectedSemester(activeSemester?.id || '')
+  }, [selectedAcademicYear, selectedSemester, semesters])
+
+  useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         refreshSemesters({ notifyIfSelectionMissing: true }).catch(() => {})
@@ -175,20 +242,14 @@ export default function ScoresPage() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [refreshSemesters])
 
-  // Load score components when subject changes
-  useEffect(() => {
-    if (!selectedSubject) { setComponents([]); return }
-    scoreComponentApi.list(selectedSubject)
-      .then(res => setComponents(res.data.data || []))
-      .catch(() => setComponents([]))
-  }, [selectedSubject])
-
   const fetchScores = useCallback(async () => {
     if (!selectedClass || !selectedSubject || !selectedSemester) { setStudents([]); return }
     try {
       setLoadingScores(true)
       const response = await scoreApi.getByClass(selectedClass, selectedSubject, selectedSemester)
       const data = response.data.data
+      setComponents(data.scoreComponents || [])
+      if (data.warning) toast.error(data.warning)
       const rows = (data.students || data || []).map((item: any) => {
         const st = item.student || item
         const scoreMap: Record<string, ScoreEntry> = {}
@@ -218,7 +279,7 @@ export default function ScoresPage() {
         await refreshSemesters({ notifyIfSelectionMissing: true })
         return
       }
-      toast.error('Không thể tải điểm')
+      toast.error(err.response?.data?.error?.message || 'Không thể tải điểm')
     } finally { setLoadingScores(false) }
   }, [selectedClass, selectedSubject, selectedSemester, refreshSemesters])
 
@@ -273,7 +334,7 @@ export default function ScoresPage() {
 
   const handleScoreChange = (studentId: string, compId: string, value: string) => {
     const numValue = parseFloat(value)
-    if (value !== '' && (isNaN(numValue) || numValue < 0 || numValue > 10)) return
+    if (value !== '' && (isNaN(numValue) || numValue < minScore || numValue > maxScore)) return
 
     setStudents(prev => prev.map(st => {
       if (st.studentId !== studentId) return st
@@ -432,12 +493,21 @@ export default function ScoresPage() {
 
       {/* Filters */}
       <div className="card p-4">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div>
+            <label className="label">Năm học</label>
+            <select className="input" value={selectedAcademicYear} onChange={e => { setSelectedAcademicYear(e.target.value); setSelectedClass(''); setSelectedSubject('') }}>
+              <option value="">Chọn năm học</option>
+              {academicYears.map((year) => (
+                <option key={year.id} value={year.id}>{year.startYear}-{year.endYear}{year.isActive ? ' - Đang active' : ''}</option>
+              ))}
+            </select>
+          </div>
           <div>
             <label className="label">Lớp</label>
             <select className="input" value={selectedClass} onChange={e => setSelectedClass(e.target.value)}>
               <option value="">Chọn lớp</option>
-              {classes.map(c => <option key={c.id} value={c.id}>{c.name} ({c.grade.name})</option>)}
+              {classes.map(c => <option key={c.id} value={c.id}>{c.name} ({c.grade?.name || 'Khối'})</option>)}
             </select>
           </div>
           <div>
@@ -451,12 +521,12 @@ export default function ScoresPage() {
             <label className="label">Học kỳ</label>
             <select className="input" value={selectedSemester} onChange={e => setSelectedSemester(e.target.value)}>
               <option value="">Chọn học kỳ</option>
-              {semesters.map((semester) => {
+              {filteredSemesters.map((semester) => {
                 const entryStatus = getSemesterEntryStatus(semester)
                 const scheduleStatus = getSemesterScheduleStatus(semester, now)
                 return (
                   <option key={semester.id} value={semester.id}>
-                    {semester.name} - {entryStatus.label} | {scheduleStatus.label}
+                    {semester.displayName || `${semester.name} (${semester.year || ''})`} - {entryStatus.label} | {scheduleStatus.label}
                   </option>
                 )
               })}
@@ -538,8 +608,8 @@ export default function ScoresPage() {
                             <div className="flex items-center gap-0.5">
                               <input
                                 type="number"
-                                min="0"
-                                max="10"
+                                min={minScore}
+                                max={maxScore}
                                 step="0.1"
                                 disabled={isLocked || !isSemesterOpenForEntry}
                                 className={`w-14 px-1 py-1 text-center text-sm border rounded focus:outline-none focus:ring-1 focus:ring-primary ${isLocked ? 'bg-gray-100 text-gray-400 border-gray-200' : 'border-gray-200'}`}
@@ -582,7 +652,7 @@ export default function ScoresPage() {
           {/* Legend */}
           <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 text-sm text-gray-600">
             <p>
-              <span className="font-medium">Điểm:</span> 0 - 10 |{' '}
+              <span className="font-medium">Điểm:</span> {minScore} - {maxScore} |{' '}
               <span className="font-medium">Đạt:</span> TB ≥ {passScore} |{' '}
               <span className="font-medium">Tổng trọng số:</span>{' '}
               <span className={totalWeight === 100 ? 'text-green-600' : 'text-red-600'}>{totalWeight}%</span> |{' '}

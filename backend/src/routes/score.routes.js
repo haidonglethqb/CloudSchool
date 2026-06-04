@@ -6,6 +6,7 @@ const { authenticate, authorize } = require('../middleware/auth')
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 const { getUserAssignmentScope, ensureClassSubjectAccess } = require('../utils/assignment-scope')
+const { getComponentSetForSubjectSemester, getEffectiveSubjectsForClass, resolveScoreEntryContext } = require('../utils/academic-scope')
 
 router.use(authenticate, requireFeature('scores'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('scores'))
 
@@ -57,7 +58,7 @@ const getStudentIdsForClassAndSemester = async (tenantId, classId, semesterId) =
   return legacyStudents.map((student) => student.id)
 }
 
-const assertAssignedUserCanAccessStudent = async (req, studentId) => {
+const assertAssignedUserCanAccessStudent = async (req, studentId, semesterId = null) => {
   const scope = await getUserAssignmentScope(prisma, req)
   if (!scope) return
   const student = await prisma.student.findFirst({
@@ -65,9 +66,13 @@ const assertAssignedUserCanAccessStudent = async (req, studentId) => {
     select: { classId: true }
   })
   if (!student) throw new AppError('Student not found', 404, 'NOT_FOUND')
-  if (!student.classId) throw new AppError('Student has no class', 400, 'INVALID_STUDENT')
+  const semesterClassId = semesterId
+    ? await resolveStudentClassInSemester(req.tenantId, studentId, semesterId)
+    : null
+  const classId = semesterClassId || student.classId
+  if (!classId) throw new AppError('Student has no class', 400, 'INVALID_STUDENT')
 
-  if (!scope.classIds.includes(student.classId)) throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
+  if (!scope.classIds.includes(classId)) throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
 }
 
 const createActorSnapshot = (user) => ({
@@ -171,9 +176,11 @@ router.get('/class/:classId', async (req, res, next) => {
 
     await ensureClassSubjectAccess(prisma, req, req.params.classId, subjectId)
 
-    // Validate classId belongs to this tenant
-    const classCheck = await prisma.class.findFirst({ where: { id: req.params.classId, tenantId: req.tenantId } })
-    if (!classCheck) throw new AppError('Class not found', 404, 'NOT_FOUND')
+    const scoreContext = await resolveScoreEntryContext(prisma, req.tenantId, {
+      classId: req.params.classId,
+      subjectId,
+      semesterId
+    })
 
     const studentIds = await getStudentIdsForClassAndSemester(req.tenantId, req.params.classId, semesterId)
     const students = studentIds.length > 0
@@ -183,11 +190,7 @@ router.get('/class/:classId', async (req, res, next) => {
         })
       : []
 
-    // Get score components for this subject
-    const scoreComponents = await prisma.scoreComponent.findMany({
-      where: { tenantId: req.tenantId, subjectId },
-      orderBy: { weight: 'desc' }
-    })
+    const scoreComponents = scoreContext.components
 
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
 
@@ -242,7 +245,10 @@ router.get('/class/:classId', async (req, res, next) => {
         class: classInfo,
         subject,
         semester,
+        subjectVersionId: scoreContext.version.id,
+        componentSet: scoreContext.componentSet,
         scoreComponents,
+        warning: scoreContext.componentWarning,
         students: studentsWithScores,
         passScore: settings.passScore
       }
@@ -257,7 +263,7 @@ router.get('/student/:studentId', async (req, res, next) => {
   try {
     const { semesterId } = req.query
 
-    await assertAssignedUserCanAccessStudent(req, req.params.studentId)
+    await assertAssignedUserCanAccessStudent(req, req.params.studentId, semesterId || null)
 
     const where = {
       studentId: req.params.studentId,
@@ -287,6 +293,45 @@ router.get('/student/:studentId', async (req, res, next) => {
     })
 
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+    let scoreContext = null
+    if (semesterId) {
+      const [semester, classIdForSemester] = await Promise.all([
+        prisma.semester.findFirst({
+          where: { id: semesterId, tenantId: req.tenantId },
+          select: { id: true, academicYearId: true }
+        }),
+        resolveStudentClassInSemester(req.tenantId, req.params.studentId, semesterId)
+      ])
+      if (semester?.academicYearId && classIdForSemester) {
+        try {
+          const [classContext, effectiveSubjects] = await Promise.all([
+            prisma.class.findFirst({
+              where: { id: classIdForSemester, tenantId: req.tenantId },
+              include: { grade: true }
+            }),
+            getEffectiveSubjectsForClass(prisma, req.tenantId, {
+              classId: classIdForSemester,
+              academicYearId: semester.academicYearId
+            })
+          ])
+          const subjectContexts = await Promise.all(effectiveSubjects.map(async (subject) => {
+            const componentContext = await getComponentSetForSubjectSemester(prisma, req.tenantId, {
+              subjectId: subject.id,
+              semesterId
+            })
+            return {
+              subject,
+              componentSet: componentContext.componentSet,
+              components: componentContext.components,
+              warning: componentContext.warning
+            }
+          }))
+          scoreContext = { class: classContext, subjects: subjectContexts }
+        } catch {
+          scoreContext = null
+        }
+      }
+    }
 
     const subjectScores = subjects.map(subject => {
       const subjectData = scores.filter(s => s.subjectId === subject.id)
@@ -294,6 +339,7 @@ router.get('/student/:studentId', async (req, res, next) => {
       let weightedSum = 0
       let totalWeight = 0
       for (const s of subjectData) {
+        if (!s.scoreComponent || s.scoreComponent.isActive === false) continue
         weightedSum += s.value * s.scoreComponent.weight
         totalWeight += s.scoreComponent.weight
       }
@@ -317,10 +363,29 @@ router.get('/student/:studentId', async (req, res, next) => {
     // Ranking (among classmates) - use per-subject averages to match overallAverage logic
     let ranking = null
     let totalStudents = null
-    if (student.classId && semesterId) {
+    let rankingStudentIds = null
+    if (semesterId) {
+      const selectedEnrollment = await prisma.classEnrollment.findFirst({
+        where: { tenantId: req.tenantId, studentId: student.id, semesterId },
+        select: { classId: true }
+      })
+      if (selectedEnrollment?.classId) {
+        const classmates = await prisma.classEnrollment.findMany({
+          where: { tenantId: req.tenantId, classId: selectedEnrollment.classId, semesterId },
+          select: { studentId: true }
+        })
+        rankingStudentIds = classmates.map((item) => item.studentId)
+      }
+    }
+
+    if ((rankingStudentIds?.length || student.classId) && semesterId) {
       const classmateScores = await prisma.score.findMany({
-        where: { student: { classId: student.classId, tenantId: req.tenantId, isActive: true }, semesterId, tenantId: req.tenantId },
-        select: { studentId: true, subjectId: true, value: true, scoreComponent: { select: { weight: true } } }
+        where: {
+          ...(rankingStudentIds ? { studentId: { in: rankingStudentIds } } : { student: { classId: student.classId, tenantId: req.tenantId, isActive: true } }),
+          semesterId,
+          tenantId: req.tenantId
+        },
+        select: { studentId: true, subjectId: true, value: true, scoreComponent: { select: { weight: true, isActive: true } } }
       })
 
       // Group by student → subject
@@ -335,7 +400,11 @@ router.get('/student/:studentId', async (req, res, next) => {
         const subjectAvgs = []
         for (const scores of Object.values(subjects)) {
           let wSum = 0; let wTotal = 0
-          for (const s of scores) { wSum += s.value * s.scoreComponent.weight; wTotal += s.scoreComponent.weight }
+          for (const s of scores) {
+            if (!s.scoreComponent || s.scoreComponent.isActive === false) continue
+            wSum += s.value * s.scoreComponent.weight
+            wTotal += s.scoreComponent.weight
+          }
           if (wTotal > 0) subjectAvgs.push(wSum / wTotal)
         }
         const avg = subjectAvgs.length > 0 ? Math.round((subjectAvgs.reduce((a, b) => a + b, 0) / subjectAvgs.length) * 100) / 100 : 0
@@ -351,6 +420,7 @@ router.get('/student/:studentId', async (req, res, next) => {
       data: {
         student,
         subjectScores,
+        scoreContext,
         overallAverage,
         ranking,
         totalStudents
@@ -400,7 +470,7 @@ router.post('/', [
       }),
       prisma.scoreComponent.findFirst({
         where: { id: scoreComponentId, tenantId: req.tenantId },
-        select: { id: true, name: true, subjectId: true, isActive: true }
+        include: { scoreComponentSet: true }
       })
     ])
     if (!studentCheck) throw new AppError('Student not found in your school', 404, 'NOT_FOUND')
@@ -408,9 +478,6 @@ router.post('/', [
     if (!componentCheck) throw new AppError('Score component not found', 404, 'NOT_FOUND')
     if (!subjectCheck.isActive) throw new AppError('Subject is inactive', 400, 'SUBJECT_INACTIVE')
     if (!componentCheck.isActive) throw new AppError('Score component is inactive', 400, 'SCORE_COMPONENT_INACTIVE')
-    if (componentCheck.subjectId !== subjectId) {
-      throw new AppError('Score component does not belong to the specified subject', 400, 'COMPONENT_SUBJECT_MISMATCH')
-    }
 
     const classId = await resolveStudentClassInSemester(req.tenantId, studentId, semesterId)
     if (!classId) {
@@ -418,6 +485,10 @@ router.post('/', [
     }
 
     await ensureClassSubjectAccess(prisma, req, classId, subjectId)
+    const scoreContext = await resolveScoreEntryContext(prisma, req.tenantId, { classId, subjectId, semesterId })
+    if (!scoreContext.components.some((component) => component.id === scoreComponentId)) {
+      throw new AppError('Thành phần điểm không thuộc môn và học kỳ đã chọn', 400, 'COMPONENT_SET_MISMATCH')
+    }
 
     const existingScore = await prisma.score.findUnique({
       where: {
@@ -446,9 +517,9 @@ router.post('/', [
       },
       create: {
         tenantId: req.tenantId,
-        studentId, subjectId, semesterId, scoreComponentId, value
+        studentId, subjectId, subjectVersionId: scoreContext.version.id, semesterId, scoreComponentId, value
       },
-      update: { value }
+      update: { value, subjectVersionId: scoreContext.version.id }
     })
 
     await prisma.scoreHistory.create({
@@ -517,7 +588,7 @@ router.post('/batch', async (req, res, next) => {
     const componentIds = [...new Set(scores.map(s => s.scoreComponentId))]
     const subjectIds = [...new Set(scores.map(s => s.subjectId))]
     const [components, subjects, semesters, existingScores] = await Promise.all([
-      prisma.scoreComponent.findMany({ where: { id: { in: componentIds }, tenantId: req.tenantId }, select: { id: true, name: true, subjectId: true, isActive: true } }),
+      prisma.scoreComponent.findMany({ where: { id: { in: componentIds }, tenantId: req.tenantId }, include: { scoreComponentSet: true } }),
       prisma.subject.findMany({ where: { id: { in: subjectIds }, tenantId: req.tenantId }, select: { id: true, name: true, isActive: true } }),
       prisma.semester.findMany({ where: { id: { in: semesterIds }, tenantId: req.tenantId }, select: { id: true, name: true } }),
       prisma.score.findMany({
@@ -556,9 +627,6 @@ router.post('/batch', async (req, res, next) => {
       if (!semester) {
         throw new AppError(`Semester ${s.semesterId} not found`, 404, 'NOT_FOUND')
       }
-      if (component.subjectId !== s.subjectId) {
-        throw new AppError(`Score component does not belong to the specified subject`, 400, 'COMPONENT_SUBJECT_MISMATCH')
-      }
       if (!subject.isActive) {
         throw new AppError('Subject is inactive', 400, 'SUBJECT_INACTIVE')
       }
@@ -591,6 +659,27 @@ router.post('/batch', async (req, res, next) => {
     })
     const classMap = new Map(classes.map((classItem) => [classItem.id, classItem]))
 
+    const contextByClassSubjectSemester = new Map()
+    const subjectVersionByScoreKey = new Map()
+    for (const s of scores) {
+      const classId = classByStudentSemester.get(`${s.studentId}::${s.semesterId}`)
+      const contextKey = `${classId}::${s.subjectId}::${s.semesterId}`
+      if (!contextByClassSubjectSemester.has(contextKey)) {
+        contextByClassSubjectSemester.set(
+          contextKey,
+          await resolveScoreEntryContext(prisma, req.tenantId, { classId, subjectId: s.subjectId, semesterId: s.semesterId })
+        )
+      }
+      const context = contextByClassSubjectSemester.get(contextKey)
+      if (!context.components.some((component) => component.id === s.scoreComponentId)) {
+        throw new AppError('Thành phần điểm không thuộc môn và học kỳ đã chọn', 400, 'COMPONENT_SET_MISMATCH')
+      }
+      subjectVersionByScoreKey.set(
+        `${s.studentId}::${s.subjectId}::${s.semesterId}::${s.scoreComponentId}`,
+        context.version.id
+      )
+    }
+
     const scope = await getUserAssignmentScope(prisma, req)
     if (scope) {
       // Batch validate all student+subject pairs at once
@@ -620,14 +709,15 @@ router.post('/batch', async (req, res, next) => {
     const results = await prisma.$transaction(async (tx) => {
       const upsertedScores = await Promise.all(
         scores.map(({ studentId, subjectId, semesterId, scoreComponentId, value }) => {
+          const subjectVersionId = subjectVersionByScoreKey.get(`${studentId}::${subjectId}::${semesterId}::${scoreComponentId}`) || null
           return tx.score.upsert({
             where: {
               studentId_subjectId_semesterId_scoreComponentId: {
                 studentId, subjectId, semesterId, scoreComponentId
               }
             },
-            create: { tenantId: req.tenantId, studentId, subjectId, semesterId, scoreComponentId, value: Number(value) },
-            update: { value: Number(value) }
+            create: { tenantId: req.tenantId, studentId, subjectId, subjectVersionId, semesterId, scoreComponentId, value: Number(value) },
+            update: { value: Number(value), subjectVersionId }
           })
         })
       )
@@ -1050,6 +1140,7 @@ router.get('/student/:studentId/yearly', async (req, res, next) => {
       let weightedSum = 0
       let totalWeight = 0
       for (const s of scores) {
+        if (!s.scoreComponent || s.scoreComponent.isActive === false) continue
         weightedSum += s.value * s.scoreComponent.weight
         totalWeight += s.scoreComponent.weight
       }

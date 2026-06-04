@@ -7,6 +7,7 @@ const { AppError } = require('../middleware/errorHandler')
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { getTenantPlanUsage, getTenantPlanLimits } = require('../utils/subscription-limits')
 const { getUserAssignmentScope, ensureClassAccess } = require('../utils/assignment-scope')
+const { academicYearLabel } = require('../utils/academic-scope')
 
 // Generate student code
 const generateStudentCode = async (tenantId, tx) => {
@@ -172,12 +173,28 @@ router.post('/', authenticate, requireFeature('student-admission'), authorize('S
     // Use transaction to prevent race conditions
     const student = await prisma.$transaction(async (tx) => {
       // Check class capacity inside transaction
+      let activeSemester = null
       if (classId) {
+        activeSemester = await tx.semester.findFirst({
+          where: { tenantId: req.tenantId, isActive: true, academicYearId: { not: null } },
+          include: { academicYear: true },
+          orderBy: [{ updatedAt: 'desc' }, { semesterNum: 'asc' }]
+        })
+        if (!activeSemester) {
+          throw new AppError('No active semester found', 400, 'NO_ACTIVE_SEMESTER')
+        }
+
         const cls = await tx.class.findFirst({
           where: { id: classId, tenantId: req.tenantId },
           include: { _count: { select: { students: true } } }
         })
         if (!cls) throw new AppError('Class not found', 404, 'CLASS_NOT_FOUND')
+        const activeYearLabel = activeSemester.academicYear ? academicYearLabel(activeSemester.academicYear) : null
+        const classInActiveYear = cls.academicYearId === activeSemester.academicYearId
+          || (activeYearLabel && cls.academicYear === activeYearLabel)
+        if (!classInActiveYear) {
+          throw new AppError('Lớp nhập học phải thuộc năm học của học kỳ đang hoạt động', 400, 'TARGET_CLASS_YEAR_MISMATCH')
+        }
         if (cls._count.students >= cls.capacity) {
           throw new AppError(`Class ${cls.name} is full (max: ${cls.capacity})`, 400, 'CLASS_FULL')
         }
@@ -205,14 +222,6 @@ router.post('/', authenticate, requireFeature('student-admission'), authorize('S
 
       // Create enrollment if student is assigned to a class
       if (classId) {
-        const activeSemester = await tx.semester.findFirst({
-          where: { tenantId: req.tenantId, isActive: true, academicYearId: { not: null } },
-          orderBy: [{ updatedAt: 'desc' }, { semesterNum: 'asc' }]
-        })
-        if (!activeSemester) {
-          throw new AppError('No active semester found', 400, 'NO_ACTIVE_SEMESTER')
-        }
-
         await tx.classEnrollment.create({
           data: {
             tenantId: req.tenantId,
@@ -347,9 +356,16 @@ router.post('/:id/transfer', authenticate, requireFeature('class-transfer'), aut
     // Find active semester for enrollment + transfer history
     const activeSemester = await prisma.semester.findFirst({
       where: { tenantId: req.tenantId, isActive: true, academicYearId: { not: null } },
+      include: { academicYear: true },
       orderBy: [{ updatedAt: 'desc' }, { semesterNum: 'asc' }]
     })
     if (!activeSemester) throw new AppError('No active semester found', 400, 'NO_ACTIVE_SEMESTER')
+    const activeYearLabel = activeSemester.academicYear ? academicYearLabel(activeSemester.academicYear) : null
+    const classInActiveYear = cls.academicYearId === activeSemester.academicYearId
+      || (activeYearLabel && cls.academicYear === activeYearLabel)
+    if (!classInActiveYear) {
+      throw new AppError('Lớp đích phải thuộc năm học của học kỳ đang hoạt động', 400, 'TARGET_CLASS_YEAR_MISMATCH')
+    }
 
     await ensureClassAccess(prisma, req, fromClassId)
     await ensureClassAccess(prisma, req, classId)

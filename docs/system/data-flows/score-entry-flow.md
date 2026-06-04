@@ -1,16 +1,16 @@
 # Score Entry Flow
 
 ## Overview
-Teacher/staff enters scores for students in a class, subject, and semester.
+Teacher/staff enters scores for students in a class, subject, and semester. Subjects are filtered by class/year scope; components are resolved by subject+semester.
 
 ## User Journey
 
 1. Teacher visits `/scores`
 2. Frontend fetches semesters from `GET /api/academic-years/semesters` and marks each term as `Đang mở nhập điểm` or `Đã đóng nhập điểm` from `semester.isActive`
-3. Selects Class → `GET /api/classes/:id/students`
-4. Selects Subject → `GET /api/score-components?subjectId=X`
-5. Selects Semester
-6. `GET /api/scores/class/:classId?subjectId=X&semesterId=Y` → Loads score table
+3. Selects academic year → `GET /api/classes?academicYearId=Y`
+4. Selects class → `GET /api/subjects?academicYearId=Y&classId=C`
+5. Selects subject and semester
+6. `GET /api/scores/class/:classId?subjectId=X&semesterId=Y` → Loads score table + component set
 7. `GET /api/scores/history?classId=A&subjectId=X&semesterId=Y` → Loads audit timeline for the same context
 8. Frontend renders table: Rows = Students, Columns = Score Components
 9. User enters scores, clicks "Save All" → `POST /api/scores/batch`
@@ -20,14 +20,16 @@ Teacher/staff enters scores for students in a class, subject, and semester.
 
 | Check | Rule |
 |-------|------|
-| Score range | 0 ≤ value ≤ 10 |
+| Score range | `settings.minScore ≤ value ≤ settings.maxScore` |
 | Lock status | `isLocked === false` |
-| Component ownership | Score component belongs to subject |
+| Subject scope | Subject applies to class/year through `SubjectVersion` |
+| Component ownership | Score component belongs to `ScoreComponentSet(subjectId, semesterId)` |
 | Component/Subject active | `subject.isActive === true` và `scoreComponent.isActive === true` |
 | Tenant validation | All students belong to tenant |
 | Teacher assignment | TEACHER phải có `TeacherAssignment` đúng `classId + subjectId` |
 | Semester entry status | Semester phải được `isActive === true`; `startDate/endDate` chỉ dùng để hiển thị lịch trên UI |
 | Student source by semester | Ưu tiên `ClassEnrollment` theo `semesterId`; fallback `student.classId` cho dữ liệu legacy |
+| Current averages | Only active components in the subject+semester set are counted |
 
 ## Sequence Diagram
 
@@ -38,17 +40,17 @@ sequenceDiagram
     participant S as Score API
     participant D as Database
 
-    T->>F: Select class, subject, semester
-    F->>S: GET /api/classes/:id/students
-    S-->>F: Student list
-    F->>S: GET /api/score-components?subjectId=X
-    S-->>F: Score components
+    T->>F: Select year, class, subject, semester
+    F->>S: GET /api/subjects?academicYearId=Y&classId=C
+    S-->>F: Effective subject list
     F->>S: GET /api/scores/class/:classId?subjectId=X&semesterId=Y
-    S-->>F: Score table (students × components)
+    S-->>F: Score table + component set
     T->>F: Enter scores, click "Save All"
     F->>S: POST /api/scores/batch [{studentId, componentId, value}]
     S->>S: Validate each score
     S->>S: assertSemesterOpenForScoreEntry
+    S->>S: Resolve SubjectVersion for class/year
+    S->>S: Validate component set by subject+semester
     S->>S: Check TeacherAssignment (if TEACHER)
     S->>D: BEGIN TRANSACTION
     loop Each score

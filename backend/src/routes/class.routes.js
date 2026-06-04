@@ -282,12 +282,10 @@ router.delete('/:id', authorize('SUPER_ADMIN'), async (req, res, next) => {
       throw new AppError('Cannot delete class with students', 400, 'CLASS_HAS_STUDENTS')
     }
 
-    const assignmentCount = await prisma.teacherAssignment.count({ where: { classId: req.params.id } })
-    if (assignmentCount > 0) {
-      throw new AppError('Cannot delete class with active teacher assignments', 400, 'HAS_ASSIGNMENTS')
-    }
-
-    await prisma.class.delete({ where: { id: req.params.id } })
+    await prisma.$transaction(async (tx) => {
+      await tx.teacherAssignment.deleteMany({ where: { classId: req.params.id, tenantId: req.tenantId } })
+      await tx.class.delete({ where: { id: req.params.id } })
+    })
     res.json({ data: { message: 'Class deleted' } })
   } catch (error) {
     next(error)

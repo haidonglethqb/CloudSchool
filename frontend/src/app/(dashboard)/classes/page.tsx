@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { classApi, settingsApi } from '@/lib/api'
+import { academicYearApi, classApi, settingsApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
 import {
   Users,
@@ -43,11 +43,20 @@ interface Settings {
   maxClassSize: number
 }
 
+interface AcademicYear {
+  id: string
+  startYear: number
+  endYear: number
+  isActive: boolean
+}
+
 export default function ClassesPage() {
   const user = useAuthStore((state) => state.user)
   const isTeacher = user?.role === 'TEACHER'
   const [grades, setGrades] = useState<Grade[]>([])
   const [teacherClasses, setTeacherClasses] = useState<Class[]>([])
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([])
+  const [selectedAcademicYearId, setSelectedAcademicYearId] = useState('')
   const [settings, setSettings] = useState<Settings | null>(null)
   const [loading, setLoading] = useState(true)
   const [expandedGrades, setExpandedGrades] = useState<Set<string>>(new Set())
@@ -58,7 +67,14 @@ export default function ClassesPage() {
 
   const fetchData = async () => {
     try {
-      const classesRes = await classApi.list()
+      const yearRes = await academicYearApi.list()
+      const yearRows = yearRes.data.data || []
+      const activeYearId = yearRows.find((item: AcademicYear) => item.isActive)?.id || yearRows[0]?.id || ''
+      const targetYearId = selectedAcademicYearId || activeYearId
+      setAcademicYears(yearRows)
+      if (!selectedAcademicYearId && targetYearId) setSelectedAcademicYearId(targetYearId)
+
+      const classesRes = await classApi.list(targetYearId ? { academicYearId: targetYearId } : undefined)
       setTeacherClasses(classesRes.data.data || [])
 
       if (isTeacher) {
@@ -68,7 +84,7 @@ export default function ClassesPage() {
       }
 
       const [gradesRes, settingsRes] = await Promise.all([
-        classApi.getGrades(),
+        classApi.getGrades(targetYearId ? { academicYearId: targetYearId } : undefined),
         settingsApi.get(),
       ])
       setGrades(gradesRes.data.data || [])
@@ -85,7 +101,7 @@ export default function ClassesPage() {
 
   useEffect(() => {
     fetchData()
-  }, [isTeacher])
+  }, [isTeacher, selectedAcademicYearId])
 
   const toggleGrade = (gradeId: string) => {
     const newExpanded = new Set(expandedGrades)
@@ -106,7 +122,7 @@ export default function ClassesPage() {
 
     try {
       setSubmitting(true)
-      await classApi.create({ name: newClassName.trim(), gradeId: selectedGradeId })
+      await classApi.create({ name: newClassName.trim(), gradeId: selectedGradeId, academicYearId: selectedAcademicYearId })
       toast.success('Thêm lớp thành công')
       setNewClassName('')
       setSelectedGradeId('')
@@ -224,13 +240,24 @@ export default function ClassesPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Lập danh sách lớp</h1>
           <p className="text-gray-600 text-sm mt-1">
-            BM2 - Quản lý danh sách lớp theo khối
+            BM2 - Quản lý danh sách lớp theo khối và năm học
           </p>
         </div>
         <button onClick={() => setShowAddClass(true)} className="btn-primary">
           <Plus className="w-4 h-4 mr-2" />
           Thêm lớp mới
         </button>
+      </div>
+
+      <div className="card p-4">
+        <label className="label">Đang xem danh sách lớp năm học</label>
+        <select className="input max-w-sm" value={selectedAcademicYearId} onChange={(e) => setSelectedAcademicYearId(e.target.value)}>
+          {academicYears.map((year) => (
+            <option key={year.id} value={year.id}>
+              {year.startYear}-{year.endYear}{year.isActive ? ' - Đang active' : ''}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Stats */}

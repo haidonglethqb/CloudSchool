@@ -5,6 +5,7 @@ const { authenticate, authorize } = require('../middleware/auth')
 const { requireFeature } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 const { getClassCountForAcademicYear, getTenantPlanLimits } = require('../utils/subscription-limits')
+const { getEffectiveSubjectsForClass, getComponentSetForSubjectSemester } = require('../utils/academic-scope')
 
 const formatDateVi = (dateValue) => {
   if (!dateValue) return ''
@@ -56,12 +57,15 @@ const getAcademicYearWithSemesters = async (tenantId, academicYearId) => {
 
 const ensureYearEndReady = (academicYear) => {
   const now = new Date()
-  const semesters = academicYear.semesters.filter((sem) => sem.startDate && sem.endDate)
-  if (semesters.length < 2) {
+  if (academicYear.semesters.length < 2) {
     throw new AppError('Năm học cần ít nhất 2 học kỳ để xét lên lớp', 400, 'NOT_ENOUGH_SEMESTERS')
   }
-  const firstTwo = semesters.slice(0, 2)
-  const notEnded = firstTwo.find((sem) => sem.endDate >= now)
+  const missingSchedule = academicYear.semesters.find((sem) => !sem.startDate || !sem.endDate)
+  if (missingSchedule) {
+    throw new AppError(`Học kỳ ${missingSchedule.name} chưa cấu hình đủ ngày bắt đầu/kết thúc`, 400, 'SEMESTER_SCHEDULE_MISSING')
+  }
+  const semesters = academicYear.semesters
+  const notEnded = semesters.find((sem) => sem.endDate >= now)
   if (notEnded) {
     const semesterLabel = `${notEnded.name} (${notEnded.year})`
     const endDateLabel = formatDateVi(notEnded.endDate)
@@ -135,7 +139,7 @@ const buildHistoryMaps = async (tenantId, promotionIds) => {
   return { byPromotionId, latestByPromotionId }
 }
 
-const buildPromotionEvaluation = async (tenantId, academicYear, classId = null) => {
+const buildPromotionEvaluation = async (tenantId, academicYear) => {
   const settings = await prisma.tenantSettings.findUnique({ where: { tenantId } })
   if (!settings) throw new AppError('Tenant settings not configured', 400, 'SETTINGS_NOT_FOUND')
 
@@ -144,51 +148,94 @@ const buildPromotionEvaluation = async (tenantId, academicYear, classId = null) 
   if (!finalSemester) throw new AppError('Academic year has no semesters', 400, 'NO_SEMESTERS')
 
   const yearLabel = `${academicYear.startYear}-${academicYear.endYear}`
-  const students = await prisma.student.findMany({
+  let enrollments = await prisma.classEnrollment.findMany({
     where: {
       tenantId,
-      isActive: true,
-      ...(classId && { classId }),
-      class: {
-        isActive: true,
-        OR: [
-          { academicYearId: academicYear.id },
-          { academicYear: yearLabel }
-        ]
-      }
+      academicYearId: academicYear.id,
+      semesterId: finalSemester.id,
+      student: { isActive: true },
+      class: { isActive: true }
     },
     include: {
-      class: { include: { grade: true } },
-      scores: {
-        where: { semesterId: { in: semesterIds } },
-        include: {
-          scoreComponent: true,
-          subject: true,
-          semester: true
-        }
-      }
+      student: true,
+      class: { include: { grade: true } }
     },
-    orderBy: [{ class: { name: 'asc' } }, { fullName: 'asc' }]
+    orderBy: [{ class: { name: 'asc' } }, { student: { fullName: 'asc' } }]
   })
 
-  const subjects = await prisma.subject.findMany({
-    where: { tenantId, isActive: true },
-    include: { scoreComponents: { where: { isActive: true } } }
-  })
+  if (enrollments.length === 0) {
+    const fallbackEnrollments = await prisma.classEnrollment.findMany({
+      where: { tenantId, academicYearId: academicYear.id, student: { isActive: true }, class: { isActive: true } },
+      include: { student: true, class: { include: { grade: true } } },
+      orderBy: [{ semester: { semesterNum: 'desc' } }, { class: { name: 'asc' } }]
+    })
+    const byStudent = new Map()
+    for (const enrollment of fallbackEnrollments) {
+      if (!byStudent.has(enrollment.studentId)) byStudent.set(enrollment.studentId, enrollment)
+    }
+    enrollments = [...byStudent.values()]
+  }
 
+  const allScores = await prisma.score.findMany({
+    where: {
+      tenantId,
+      studentId: { in: enrollments.map((item) => item.studentId) },
+      semesterId: { in: semesterIds }
+    },
+    include: { scoreComponent: true, subject: true, semester: true }
+  })
+  const scoresByStudent = new Map()
+  for (const score of allScores) {
+    if (!scoresByStudent.has(score.studentId)) scoresByStudent.set(score.studentId, [])
+    scoresByStudent.get(score.studentId).push(score)
+  }
+
+  const subjectCache = new Map()
+  const componentCache = new Map()
   const missingScores = []
   const evaluations = []
 
-  for (const student of students) {
+  for (const enrollment of enrollments) {
+    const student = enrollment.student
+    const classInfo = enrollment.class
     const subjectYearlyAverages = []
     let studentHasMissing = false
+
+    if (!subjectCache.has(classInfo.id)) {
+      subjectCache.set(classInfo.id, await getEffectiveSubjectsForClass(prisma, tenantId, {
+        classId: classInfo.id,
+        academicYearId: academicYear.id
+      }))
+    }
+    const subjects = subjectCache.get(classInfo.id)
 
     for (const subject of subjects) {
       const semesterAverages = []
       for (const semester of academicYear.semesters) {
-        const semesterScores = student.scores.filter((score) => score.subjectId === subject.id && score.semesterId === semester.id)
+        const componentKey = `${subject.id}::${semester.id}`
+        if (!componentCache.has(componentKey)) {
+          componentCache.set(componentKey, await getComponentSetForSubjectSemester(prisma, tenantId, { subjectId: subject.id, semesterId: semester.id }))
+        }
+        const componentContext = componentCache.get(componentKey)
+        const requiredComponents = componentContext.components || []
+        if (requiredComponents.length === 0) {
+          studentHasMissing = true
+          missingScores.push({
+            studentId: student.id,
+            studentCode: student.studentCode,
+            studentName: student.fullName,
+            classId: classInfo.id,
+            className: classInfo.name,
+            subjectName: subject.name,
+            semesterName: semester.name,
+            missingComponents: ['Chưa cấu hình thành phần điểm']
+          })
+          continue
+        }
+
+        const semesterScores = (scoresByStudent.get(student.id) || []).filter((score) => score.subjectId === subject.id && score.semesterId === semester.id)
         const componentMap = new Map(semesterScores.map((score) => [score.scoreComponentId, score]))
-        const missingComponents = subject.scoreComponents
+        const missingComponents = requiredComponents
           .filter((component) => !componentMap.has(component.id))
           .map((component) => component.name)
 
@@ -198,8 +245,8 @@ const buildPromotionEvaluation = async (tenantId, academicYear, classId = null) 
             studentId: student.id,
             studentCode: student.studentCode,
             studentName: student.fullName,
-            classId: student.classId,
-            className: student.class?.name || '',
+            classId: classInfo.id,
+            className: classInfo.name || '',
             subjectName: subject.name,
             semesterName: semester.name,
             missingComponents
@@ -209,9 +256,11 @@ const buildPromotionEvaluation = async (tenantId, academicYear, classId = null) 
 
         let weightedSum = 0
         let totalWeight = 0
-        for (const score of semesterScores) {
-          weightedSum += score.value * score.scoreComponent.weight
-          totalWeight += score.scoreComponent.weight
+        for (const component of requiredComponents) {
+          const score = componentMap.get(component.id)
+          if (!score) continue
+          weightedSum += score.value * component.weight
+          totalWeight += component.weight
         }
         if (totalWeight > 0) semesterAverages.push(weightedSum / totalWeight)
       }
@@ -230,7 +279,7 @@ const buildPromotionEvaluation = async (tenantId, academicYear, classId = null) 
     evaluations.push({
       tenantId,
       studentId: student.id,
-      classId: student.classId,
+      classId: classInfo.id,
       semesterId: finalSemester.id,
       average: overallAverage,
       result: overallAverage >= settings.passScore && !failedSubject ? 'PASS' : 'FAIL',
@@ -248,11 +297,12 @@ router.post('/year-end/evaluate', async (req, res, next) => {
   try {
     const { academicYearId, classId } = req.body
     if (!academicYearId) throw new AppError('academicYearId is required', 400, 'MISSING_PARAMS')
+    if (classId) throw new AppError('Xét lên lớp chỉ hỗ trợ toàn bộ năm học, không lọc theo lớp', 400, 'PROMOTION_ALL_ONLY')
 
     const academicYear = await getAcademicYearWithSemesters(req.tenantId, academicYearId)
     ensureYearEndReady(academicYear)
 
-    const { missingScores, evaluations, finalSemester } = await buildPromotionEvaluation(req.tenantId, academicYear, classId || null)
+    const { missingScores, evaluations, finalSemester } = await buildPromotionEvaluation(req.tenantId, academicYear)
 
     if (missingScores.length > 0) {
       throw new AppError(
@@ -310,11 +360,12 @@ router.post('/year-end/evaluate', async (req, res, next) => {
   }
 })
 
-// GET /promotion/year-end/results?academicYearId=...&classId=...
+// GET /promotion/year-end/results?academicYearId=...
 router.get('/year-end/results', async (req, res, next) => {
   try {
     const { academicYearId, classId } = req.query
     if (!academicYearId) throw new AppError('academicYearId is required', 400, 'MISSING_PARAMS')
+    if (classId) throw new AppError('Xét lên lớp chỉ hỗ trợ toàn bộ năm học, không lọc theo lớp', 400, 'PROMOTION_ALL_ONLY')
 
     const academicYear = await getAcademicYearWithSemesters(req.tenantId, academicYearId)
     const finalSemester = academicYear.semesters[academicYear.semesters.length - 1]
@@ -333,8 +384,7 @@ router.get('/year-end/results', async (req, res, next) => {
     const promotions = await prisma.promotion.findMany({
       where: {
         tenantId: req.tenantId,
-        semesterId: finalSemester.id,
-        ...(classId && { classId })
+        semesterId: finalSemester.id
       },
       include: {
         student: { select: { id: true, fullName: true, studentCode: true, classId: true, gender: true, dateOfBirth: true, isActive: true, inactiveReason: true } },
@@ -425,6 +475,9 @@ router.post('/year-end/execute', async (req, res, next) => {
     const maxGrade = settings?.maxGradeLevel ?? 12
 
     const nextAcademicYear = await findNextAcademicYear(req.tenantId, academicYear)
+    if (!nextAcademicYear) {
+      throw new AppError('Chưa có năm học kế tiếp để thực thi xét lên lớp', 400, 'NO_NEXT_ACADEMIC_YEAR')
+    }
     const nextYearLabel = nextAcademicYear ? toAcademicYearLabel(nextAcademicYear) : null
     const nextSemester = nextAcademicYear
       ? await prisma.semester.findFirst({
@@ -432,6 +485,9 @@ router.post('/year-end/execute', async (req, res, next) => {
           orderBy: { semesterNum: 'asc' }
         })
       : null
+    if (!nextSemester) {
+      throw new AppError('Năm học kế tiếp chưa có học kỳ để ghi nhận phân lớp', 400, 'NO_NEXT_SEMESTER')
+    }
     const failMap = new Map(failAssignments.map((item) => [item.studentId, item.toClassId]))
 
     const passPromotions = promotions.filter((promotion) => promotion.result === 'PASS')
@@ -487,7 +543,7 @@ router.post('/year-end/execute', async (req, res, next) => {
         ])
         if (limits && classCountForNextYear + uniqueMissingTargets.length > limits.classes) {
           throw new AppError(
-            `Cannot exceed subscription class limit (${limits.classes}) for academic year ${nextAcademicYearLabel}`,
+            `Cannot exceed subscription class limit (${limits.classes}) for academic year ${nextYearLabel}`,
             400,
             'PLAN_LIMIT_EXCEEDED'
           )

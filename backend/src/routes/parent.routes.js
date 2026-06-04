@@ -38,7 +38,7 @@ const getSemesterDisplayName = (semester) => {
 function calcWeightedAverage (scores) {
   let weightedSum = 0; let totalWeight = 0
   for (const s of scores) {
-    if (s.scoreComponent) {
+    if (s.scoreComponent && s.scoreComponent.isActive !== false) {
       weightedSum += s.value * s.scoreComponent.weight
       totalWeight += s.scoreComponent.weight
     }

@@ -5,6 +5,7 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
+const { decorateSemester } = require('../utils/academic-scope')
 
 const parseDateInput = (value, fieldName) => {
   const date = new Date(value)
@@ -71,9 +72,10 @@ router.get('/semesters', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHE
   try {
     const semesters = await prisma.semester.findMany({
       where: { tenantId: req.tenantId },
+      include: { academicYear: true },
       orderBy: [{ year: 'desc' }, { semesterNum: 'asc' }]
     })
-    res.json({ data: semesters })
+    res.json({ data: semesters.map(decorateSemester) })
   } catch (error) {
     next(error)
   }
@@ -253,9 +255,10 @@ router.get('/:id/semesters', async (req, res, next) => {
 
     const semesters = await prisma.semester.findMany({
       where: { tenantId: req.tenantId, academicYearId: req.params.id },
+      include: { academicYear: true },
       orderBy: [{ semesterNum: 'asc' }, { startDate: 'asc' }]
     })
-    res.json({ data: semesters })
+    res.json({ data: semesters.map(decorateSemester) })
   } catch (error) {
     next(error)
   }

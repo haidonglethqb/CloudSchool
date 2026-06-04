@@ -9,6 +9,7 @@ const { authenticate, authorize } = require('../middleware/auth')
 const { requireFeature, requireAllFeatures, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 const { getUserAssignmentScope, ensureClassSubjectAccess } = require('../utils/assignment-scope')
+const { academicYearLabel, resolveScoreEntryContext } = require('../utils/academic-scope')
 
 const PDF_SECTION_KEYS = ['cover', 'filters', 'summary', 'table', 'students', 'signature']
 const DEFAULT_COMMON_SECTIONS = ['cover', 'filters', 'summary', 'table', 'signature']
@@ -604,20 +605,27 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADM
 
     await ensureClassSubjectAccess(prisma, req, classId, subjectId)
 
-    const [students, scoreComponents] = await Promise.all([
-      prisma.student.findMany({
-        where: { classId, tenantId: req.tenantId, isActive: true },
-        orderBy: { fullName: 'asc' }
-      }),
-      prisma.scoreComponent.findMany({
-        where: { subjectId, tenantId: req.tenantId },
-        orderBy: { weight: 'desc' }
-      })
-    ])
-    const allScores = students.length
+    const scoreContext = await resolveScoreEntryContext(prisma, req.tenantId, { classId, subjectId, semesterId })
+    const scoreComponents = scoreContext.components
+
+    const students = await prisma.student.findMany({
+      where: {
+        tenantId: req.tenantId,
+        isActive: true,
+        enrollments: { some: { classId, semesterId, tenantId: req.tenantId } }
+      },
+      orderBy: { fullName: 'asc' }
+    })
+
+    const fallbackStudents = students.length ? students : await prisma.student.findMany({
+      where: { classId, tenantId: req.tenantId, isActive: true },
+      orderBy: { fullName: 'asc' }
+    })
+
+    const allScores = fallbackStudents.length
       ? await prisma.score.findMany({
           where: {
-            studentId: { in: students.map((student) => student.id) },
+            studentId: { in: fallbackStudents.map((student) => student.id) },
             subjectId,
             semesterId,
             tenantId: req.tenantId
@@ -631,7 +639,7 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADM
       scoresByStudent[score.studentId].push(score)
     }
 
-    const rowModels = students.map((student, index) => {
+    const rowModels = fallbackStudents.map((student, index) => {
       const scores = scoresByStudent[student.id] || []
       let weightedSum = 0
       let totalWeight = 0
@@ -689,7 +697,7 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADM
           { label: 'Môn', value: subjectId },
           { label: 'Học kỳ', value: semesterId }
         ],
-        summary: [{ label: 'Số học sinh', value: students.length }],
+        summary: [{ label: 'Số học sinh', value: fallbackStudents.length }],
         table: { title: 'Bảng điểm chi tiết', headers, rows }
       })
       return
@@ -842,8 +850,18 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
       filters.push({ label: 'Môn học', value: subjectId }, { label: 'Học kỳ', value: semesterId })
 
       const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+      const semester = await prisma.semester.findFirst({
+        where: { id: semesterId, tenantId: req.tenantId },
+        include: { academicYear: true }
+      })
+      if (!semester) throw new AppError('Semester not found', 404, 'NOT_FOUND')
+      const classYearFilter = semester.academicYearId
+        ? { academicYearId: semester.academicYearId }
+        : semester.academicYear
+          ? { academicYear: academicYearLabel(semester.academicYear) }
+          : {}
       const classes = await prisma.class.findMany({
-        where: { tenantId: req.tenantId, isActive: true },
+        where: { tenantId: req.tenantId, isActive: true, ...classYearFilter },
         include: { students: { where: { isActive: true } }, grade: true }
       })
       const allStudentIds = classes.flatMap((cls) => cls.students.map((student) => student.id))
@@ -866,6 +884,7 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
           let weightedSum = 0
           let totalWeight = 0
           for (const value of values) {
+            if (!value.scoreComponent || value.scoreComponent.isActive === false) continue
             weightedSum += value.value * value.scoreComponent.weight
             totalWeight += value.scoreComponent.weight
           }

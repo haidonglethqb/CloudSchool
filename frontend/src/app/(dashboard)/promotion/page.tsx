@@ -18,7 +18,7 @@ export default function PromotionPage() {
   const [running, setRunning] = useState(false)
   const [classes, setClasses] = useState<any[]>([])
   const [years, setYears] = useState<any[]>([])
-  const [filters, setFilters] = useState({ classId: '', academicYearId: '' })
+  const [filters, setFilters] = useState({ academicYearId: '' })
   const [results, setResults] = useState<PromotionResultData | null>(null)
   const [failAssignments, setFailAssignments] = useState<Record<string, string>>({})
   const [inactiveReasons, setInactiveReasons] = useState<Record<string, string>>({})
@@ -27,12 +27,10 @@ export default function PromotionPage() {
   const [graduationData, setGraduationData] = useState<any>(null)
 
   useEffect(() => {
-    Promise.all([classApi.list(), academicYearApi.list()])
-      .then(([classRes, yearRes]) => {
-        const classRows = classRes.data.data || []
+    academicYearApi.list()
+      .then((yearRes) => {
         const yearRows = yearRes.data.data || []
         const activeYearId = yearRows.find((item: any) => item.isActive)?.id || yearRows[0]?.id || ''
-        setClasses(classRows)
         setYears(yearRows)
         setFilters((prev) => ({ ...prev, academicYearId: prev.academicYearId || activeYearId }))
       })
@@ -58,9 +56,15 @@ export default function PromotionPage() {
     if (!filters.academicYearId) return
     const resultRes = await promotionApi.getYearEndResults({
       academicYearId: filters.academicYearId,
-      classId: filters.classId || undefined,
     })
-    setResults(resultRes.data.data)
+    const data = resultRes.data.data
+    setResults(data)
+    if (data.nextAcademicYear?.id) {
+      const classRes = await classApi.list({ academicYearId: data.nextAcademicYear.id })
+      setClasses(classRes.data.data || [])
+    } else {
+      setClasses([])
+    }
     const gradRes = await reportApi.graduationSummary(filters.academicYearId).catch(() => null)
     if (gradRes) setGraduationData(gradRes.data.data)
   }
@@ -112,7 +116,6 @@ export default function PromotionPage() {
       setInactiveReasons({})
       await promotionApi.evaluateYearEnd({
         academicYearId: filters.academicYearId,
-        classId: filters.classId || undefined,
       })
       await refreshResults()
       toast.success('Đã chạy xét lên lớp.')
@@ -202,19 +205,12 @@ export default function PromotionPage() {
       </div>
 
       <section className="card p-5">
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-[1fr_auto]">
           <div>
             <label className="label">Năm học</label>
             <select className="input" value={filters.academicYearId} onChange={(e) => setFilters((prev) => ({ ...prev, academicYearId: e.target.value }))}>
               <option value="">Chọn năm học</option>
               {years.map((year) => <option key={year.id} value={year.id}>{year.startYear}-{year.endYear}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">Lọc theo lớp</label>
-            <select className="input" value={filters.classId} onChange={(e) => setFilters((prev) => ({ ...prev, classId: e.target.value }))}>
-              <option value="">Tất cả lớp</option>
-              {classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </div>
           <div className="flex items-end gap-2">

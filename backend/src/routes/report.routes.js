@@ -10,7 +10,7 @@ function calcWeightedAverage(scores) {
   let weightedSum = 0
   let totalWeight = 0
   for (const score of scores) {
-    if (!score.scoreComponent) continue
+    if (!score.scoreComponent || score.scoreComponent.isActive === false) continue
     weightedSum += score.value * score.scoreComponent.weight
     totalWeight += score.scoreComponent.weight
   }
