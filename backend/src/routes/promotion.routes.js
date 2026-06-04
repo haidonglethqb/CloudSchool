@@ -4,6 +4,7 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { requireFeature } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
+const { getTenantPlanUsage, getTenantPlanLimits } = require('../utils/subscription-limits')
 
 const formatDateVi = (dateValue) => {
   if (!dateValue) return ''
@@ -11,6 +12,38 @@ const formatDateVi = (dateValue) => {
   if (Number.isNaN(date.getTime())) return ''
   return date.toLocaleDateString('vi-VN', { timeZone: 'UTC' })
 }
+
+const createActorSnapshot = (user) => ({
+  actorId: user?.id || null,
+  actorName: user?.fullName || user?.email || 'Unknown',
+  actorRole: String(user?.role || 'UNKNOWN'),
+})
+
+const createPlacementHistoryPayload = ({
+  tenantId,
+  promotionId = null,
+  studentId,
+  academicYearId,
+  action,
+  fromClassId = null,
+  toClassId = null,
+  reason = null,
+  actor,
+  metadata = null,
+}) => ({
+  tenantId,
+  promotionId,
+  studentId,
+  academicYearId,
+  action,
+  fromClassId,
+  toClassId,
+  reason,
+  actorId: actor.actorId,
+  actorName: actor.actorName,
+  actorRole: actor.actorRole,
+  metadata,
+})
 
 const getAcademicYearWithSemesters = async (tenantId, academicYearId) => {
   const academicYear = await prisma.academicYear.findFirst({
@@ -68,6 +101,38 @@ const findNextAcademicYear = async (tenantId, academicYear) => {
     }
   })
   return next || null
+}
+
+const getPlacementStatus = (promotion, latestHistory) => {
+  if (promotion.result === 'PASS') {
+    if (promotion.class?.grade?.level && promotion.isGraduating) return 'GRADUATED'
+    return latestHistory?.action === 'ASSIGNED' ? 'ASSIGNED' : 'PENDING'
+  }
+  if (!latestHistory) return 'PENDING'
+  if (latestHistory.action === 'INACTIVE') return 'INACTIVE'
+  if (latestHistory.action === 'ASSIGNED') return 'ASSIGNED'
+  if (latestHistory.action === 'DRAFT_TARGET') return 'DRAFTED'
+  return 'PENDING'
+}
+
+const buildHistoryMaps = async (tenantId, promotionIds) => {
+  if (promotionIds.length === 0) return { byPromotionId: new Map(), latestByPromotionId: new Map() }
+  const histories = await prisma.promotionPlacementHistory.findMany({
+    where: { tenantId, promotionId: { in: promotionIds } },
+    include: {
+      fromClass: { select: { id: true, name: true } },
+      toClass: { select: { id: true, name: true } }
+    },
+    orderBy: { createdAt: 'desc' }
+  })
+  const byPromotionId = new Map()
+  const latestByPromotionId = new Map()
+  for (const history of histories) {
+    if (!byPromotionId.has(history.promotionId)) byPromotionId.set(history.promotionId, [])
+    byPromotionId.get(history.promotionId).push(history)
+    if (!latestByPromotionId.has(history.promotionId)) latestByPromotionId.set(history.promotionId, history)
+  }
+  return { byPromotionId, latestByPromotionId }
 }
 
 const buildPromotionEvaluation = async (tenantId, academicYear, classId = null) => {
@@ -198,19 +263,39 @@ router.post('/year-end/evaluate', async (req, res, next) => {
       )
     }
 
-    const promotions = await prisma.$transaction(
-      evaluations.map((evaluation) => prisma.promotion.upsert({
-        where: {
-          studentId_classId_semesterId: {
-            studentId: evaluation.studentId,
-            classId: evaluation.classId,
-            semesterId: evaluation.semesterId
-          }
-        },
-        create: evaluation,
-        update: { average: evaluation.average, result: evaluation.result, note: evaluation.note }
-      }))
-    )
+    const actor = createActorSnapshot(req.user)
+    const promotions = await prisma.$transaction(async (tx) => {
+      const rows = []
+      for (const evaluation of evaluations) {
+        const promotion = await tx.promotion.upsert({
+          where: {
+            studentId_classId_semesterId: {
+              studentId: evaluation.studentId,
+              classId: evaluation.classId,
+              semesterId: evaluation.semesterId
+            }
+          },
+          create: evaluation,
+          update: { average: evaluation.average, result: evaluation.result, note: evaluation.note }
+        })
+        rows.push(promotion)
+      }
+      if (rows.length > 0) {
+        await tx.promotionPlacementHistory.createMany({
+          data: rows.map((promotion) => createPlacementHistoryPayload({
+            tenantId: req.tenantId,
+            promotionId: promotion.id,
+            studentId: promotion.studentId,
+            academicYearId,
+            action: 'EVALUATED',
+            fromClassId: promotion.classId,
+            actor,
+            metadata: { result: promotion.result, average: promotion.average }
+          }))
+        })
+      }
+      return rows
+    })
 
     res.json({
       data: {
@@ -252,11 +337,12 @@ router.get('/year-end/results', async (req, res, next) => {
         ...(classId && { classId })
       },
       include: {
-        student: { select: { id: true, fullName: true, studentCode: true, classId: true } },
+        student: { select: { id: true, fullName: true, studentCode: true, classId: true, gender: true, dateOfBirth: true, isActive: true, inactiveReason: true } },
         class: { select: { id: true, name: true, grade: true } }
       },
       orderBy: [{ result: 'asc' }, { student: { fullName: 'asc' } }]
     })
+    const { byPromotionId, latestByPromotionId } = await buildHistoryMaps(req.tenantId, promotions.map((item) => item.id))
 
     const passStudents = promotions
       .filter((item) => item.result === 'PASS')
@@ -268,11 +354,15 @@ router.get('/year-end/results', async (req, res, next) => {
           ? targetClasses.find((cls) => cls.grade?.level === sourceGrade + 1 && parseClassSuffix(cls.name) === suffix)
           : null
 
+        const latestHistory = latestByPromotionId.get(item.id) || null
         return {
           ...item,
           isGraduating,
           autoTargetClassId: isGraduating ? null : (autoTargetClass?.id || null),
           autoTargetClassName: isGraduating ? 'Tốt nghiệp' : (autoTargetClass?.name || null),
+          placementStatus: isGraduating ? 'GRADUATED' : getPlacementStatus({ ...item, isGraduating }, latestHistory),
+          latestPlacementHistory: latestHistory,
+          placementHistory: byPromotionId.get(item.id) || [],
           autoAssignmentReason: isGraduating
             ? 'Học sinh lớp cuối cấp, sẽ được lưu vào danh sách tốt nghiệp'
             : (autoTargetClass
@@ -290,7 +380,17 @@ router.get('/year-end/results', async (req, res, next) => {
           ? { id: nextAcademicYear.id, startYear: nextAcademicYear.startYear, endYear: nextAcademicYear.endYear }
           : null,
         passStudents,
-        failStudents: promotions.filter((item) => item.result === 'FAIL')
+        failStudents: promotions
+          .filter((item) => item.result === 'FAIL')
+          .map((item) => {
+            const latestHistory = latestByPromotionId.get(item.id) || null
+            return {
+              ...item,
+              placementStatus: getPlacementStatus(item, latestHistory),
+              latestPlacementHistory: latestHistory,
+              placementHistory: byPromotionId.get(item.id) || []
+            }
+          })
       }
     })
   } catch (error) {
@@ -301,7 +401,7 @@ router.get('/year-end/results', async (req, res, next) => {
 // POST /promotion/year-end/execute
 router.post('/year-end/execute', async (req, res, next) => {
   try {
-    const { academicYearId, failAssignments = [] } = req.body
+    const { academicYearId, failAssignments = [], confirmCreateMissingClasses = false } = req.body
     if (!academicYearId) throw new AppError('academicYearId is required', 400, 'MISSING_PARAMS')
 
     const academicYear = await getAcademicYearWithSemesters(req.tenantId, academicYearId)
@@ -326,18 +426,109 @@ router.post('/year-end/execute', async (req, res, next) => {
 
     const nextAcademicYear = await findNextAcademicYear(req.tenantId, academicYear)
     const nextYearLabel = nextAcademicYear ? toAcademicYearLabel(nextAcademicYear) : null
+    const nextSemester = nextAcademicYear
+      ? await prisma.semester.findFirst({
+          where: { tenantId: req.tenantId, academicYearId: nextAcademicYear.id },
+          orderBy: { semesterNum: 'asc' }
+        })
+      : null
     const failMap = new Map(failAssignments.map((item) => [item.studentId, item.toClassId]))
 
     const passPromotions = promotions.filter((promotion) => promotion.result === 'PASS')
     const autoPassTargetByStudentId = new Map()
+    const createdClasses = []
     if (nextAcademicYear) {
       const nextYearClasses = await prisma.class.findMany({
         where: { tenantId: req.tenantId, isActive: true, academicYearId: nextAcademicYear.id },
         include: { grade: true }
       })
+      const targetGrades = await prisma.grade.findMany({
+        where: { tenantId: req.tenantId },
+        select: { id: true, name: true, level: true }
+      })
+      const missingTargetClasses = []
 
       for (const promotion of passPromotions) {
         const sourceGrade = promotion.class?.grade?.level || 0
+        if (sourceGrade >= maxGrade) continue
+        const suffix = parseClassSuffix(promotion.class?.name || '')
+        if (!suffix) continue
+        const targetClass = nextYearClasses.find((cls) => cls.grade?.level === sourceGrade + 1 && parseClassSuffix(cls.name) === suffix)
+        if (targetClass) autoPassTargetByStudentId.set(promotion.studentId, targetClass.id)
+        else {
+          const targetGrade = targetGrades.find((grade) => grade.level === sourceGrade + 1)
+          if (targetGrade) {
+            const targetName = `${sourceGrade + 1}${suffix}`
+            missingTargetClasses.push({
+              sourceClassId: promotion.classId,
+              sourceClassName: promotion.class?.name,
+              targetClassName: targetName,
+              targetGradeId: targetGrade.id,
+              targetGradeName: targetGrade.name
+            })
+          }
+        }
+      }
+
+      const uniqueMissingTargets = [...new Map(missingTargetClasses.map((item) => [item.targetClassName, item])).values()]
+      if (uniqueMissingTargets.length > 0 && !confirmCreateMissingClasses) {
+        throw new AppError(
+          'Cần xác nhận tạo lớp đích còn thiếu trước khi thực thi xét lên lớp.',
+          409,
+          'MISSING_TARGET_CLASSES',
+          uniqueMissingTargets
+        )
+      }
+
+      if (uniqueMissingTargets.length > 0) {
+        const [usage, limits] = await Promise.all([
+          getTenantPlanUsage(prisma, req.tenantId),
+          getTenantPlanLimits(prisma, req.tenantId)
+        ])
+        if (limits && usage.classes + uniqueMissingTargets.length > limits.classes) {
+          throw new AppError(`Cannot exceed subscription class limit (${limits.classes})`, 400, 'PLAN_LIMIT_EXCEEDED')
+        }
+
+        const actor = createActorSnapshot(req.user)
+        const newClasses = await prisma.$transaction(async (tx) => {
+          const rows = []
+          for (const target of uniqueMissingTargets) {
+            const created = await tx.class.create({
+              data: {
+                tenantId: req.tenantId,
+                gradeId: target.targetGradeId,
+                name: target.targetClassName,
+                academicYearId: nextAcademicYear.id,
+                academicYear: nextYearLabel,
+                capacity: settings?.maxClassSize || 40
+              },
+              include: { grade: true }
+            })
+            await tx.promotionPlacementHistory.create({
+              data: createPlacementHistoryPayload({
+                tenantId: req.tenantId,
+                promotionId: null,
+                studentId: passPromotions.find((item) => item.classId === target.sourceClassId)?.studentId || passPromotions[0]?.studentId,
+                academicYearId,
+                action: 'CREATE_TARGET_CLASS',
+                fromClassId: target.sourceClassId,
+                toClassId: created.id,
+                reason: `Tự tạo lớp ${created.name} vì chưa có lớp đích`,
+                actor,
+                metadata: target
+              })
+            })
+            rows.push(created)
+          }
+          return rows
+        })
+        createdClasses.push(...newClasses)
+        nextYearClasses.push(...newClasses)
+      }
+
+      for (const promotion of passPromotions) {
+        const sourceGrade = promotion.class?.grade?.level || 0
+        if (sourceGrade >= maxGrade) continue
         const suffix = parseClassSuffix(promotion.class?.name || '')
         if (!suffix) continue
         const targetClass = nextYearClasses.find((cls) => cls.grade?.level === sourceGrade + 1 && parseClassSuffix(cls.name) === suffix)
@@ -357,6 +548,7 @@ router.post('/year-end/execute', async (req, res, next) => {
     const failedAssigned = []
     const unresolved = []
 
+    const actor = createActorSnapshot(req.user)
     await prisma.$transaction(async (tx) => {
       for (const promotion of promotions) {
         const sourceClassId = promotion.classId
@@ -366,7 +558,14 @@ router.post('/year-end/execute', async (req, res, next) => {
         if (isGraduating) {
           await tx.student.update({
             where: { id: promotion.studentId },
-            data: { classId: null, isActive: false }
+            data: {
+              classId: null,
+              isActive: false,
+              inactiveReason: 'Tốt nghiệp lớp cuối cấp',
+              inactiveAt: new Date(),
+              inactivatedBy: req.user.id,
+              inactivatedByName: actor.actorName
+            }
           })
 
           await tx.graduationArchive.upsert({
@@ -393,6 +592,19 @@ router.post('/year-end/execute', async (req, res, next) => {
           })
 
           archived.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, className: promotion.class.name })
+          await tx.promotionPlacementHistory.create({
+            data: createPlacementHistoryPayload({
+              tenantId: req.tenantId,
+              promotionId: promotion.id,
+              studentId: promotion.studentId,
+              academicYearId,
+              action: 'GRADUATED',
+              fromClassId: sourceClassId,
+              reason: 'Tốt nghiệp lớp cuối cấp',
+              actor,
+              metadata: { className: promotion.class.name }
+            })
+          })
           continue
         }
 
@@ -408,6 +620,10 @@ router.post('/year-end/execute', async (req, res, next) => {
                 : 'Không tìm thấy lớp đích theo quy tắc tự động')
               : 'Chưa chọn lớp đích cho học sinh chưa đạt'
           })
+          continue
+        }
+        if (!nextSemester) {
+          unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result, reason: 'Năm học kế tiếp chưa có học kỳ để ghi nhận phân lớp' })
           continue
         }
 
@@ -439,7 +655,14 @@ router.post('/year-end/execute', async (req, res, next) => {
 
         await tx.student.update({
           where: { id: promotion.studentId },
-          data: { classId: targetClassId, isActive: true }
+          data: {
+            classId: targetClassId,
+            isActive: true,
+            inactiveReason: null,
+            inactiveAt: null,
+            inactivatedBy: null,
+            inactivatedByName: null
+          }
         })
 
         await tx.transferHistory.create({
@@ -448,9 +671,29 @@ router.post('/year-end/execute', async (req, res, next) => {
             studentId: promotion.studentId,
             fromClassId: sourceClassId,
             toClassId: targetClassId,
-            semesterId: finalSemester.id,
+            semesterId: nextSemester.id,
             reason: promotion.result === 'PASS' ? 'Lên lớp - xét cuối năm' : 'Sắp lớp lại sau xét cuối năm',
             transferredBy: req.user.id
+          }
+        })
+
+        await tx.classEnrollment.upsert({
+          where: {
+            studentId_semesterId: {
+              studentId: promotion.studentId,
+              semesterId: nextSemester.id
+            }
+          },
+          create: {
+            tenantId: req.tenantId,
+            studentId: promotion.studentId,
+            classId: targetClassId,
+            semesterId: nextSemester.id,
+            academicYearId: nextAcademicYear.id
+          },
+          update: {
+            classId: targetClassId,
+            academicYearId: nextAcademicYear.id
           }
         })
 
@@ -459,6 +702,20 @@ router.post('/year-end/execute', async (req, res, next) => {
         } else {
           failedAssigned.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, fromClassId: sourceClassId, toClassId: targetClassId })
         }
+        await tx.promotionPlacementHistory.create({
+          data: createPlacementHistoryPayload({
+            tenantId: req.tenantId,
+            promotionId: promotion.id,
+            studentId: promotion.studentId,
+            academicYearId,
+            action: 'ASSIGNED',
+            fromClassId: sourceClassId,
+            toClassId: targetClassId,
+            reason: promotion.result === 'PASS' ? 'Lên lớp - xét cuối năm' : 'Sắp lớp lại sau xét cuối năm',
+            actor,
+            metadata: { result: promotion.result }
+          })
+        })
       }
     })
 
@@ -474,6 +731,7 @@ router.post('/year-end/execute', async (req, res, next) => {
           promoted: promoted.length,
           archived: archived.length,
           failedAssigned: failedAssigned.length,
+          createdClasses: createdClasses.length,
           unresolved: unresolved.length
         })
       }
@@ -484,15 +742,180 @@ router.post('/year-end/execute', async (req, res, next) => {
         promoted,
         archived,
         failedAssigned,
+        createdClasses,
         unresolved,
         summary: {
           promoted: promoted.length,
           archived: archived.length,
           failedAssigned: failedAssigned.length,
+          createdClasses: createdClasses.length,
           unresolved: unresolved.length
         }
       }
     })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// PATCH /promotion/year-end/failed/:promotionId
+router.patch('/year-end/failed/:promotionId', async (req, res, next) => {
+  try {
+    const { action, toClassId, reason } = req.body
+    if (!['draft', 'assign', 'inactive'].includes(action)) {
+      throw new AppError('Invalid action', 400, 'INVALID_ACTION')
+    }
+
+    const promotion = await prisma.promotion.findFirst({
+      where: { id: req.params.promotionId, tenantId: req.tenantId, result: 'FAIL' },
+      include: {
+        student: true,
+        class: { include: { grade: true } },
+        semester: { include: { academicYear: true } }
+      }
+    })
+    if (!promotion) throw new AppError('Promotion fail row not found', 404, 'NOT_FOUND')
+    if (!promotion.semester?.academicYear) throw new AppError('Promotion has no academic year context', 400, 'NO_ACADEMIC_YEAR')
+
+    const academicYear = promotion.semester.academicYear
+    const nextAcademicYear = await findNextAcademicYear(req.tenantId, academicYear)
+    if (!nextAcademicYear && action !== 'inactive') {
+      throw new AppError('Chưa có năm học kế tiếp để phân lớp', 400, 'NO_NEXT_ACADEMIC_YEAR')
+    }
+    const nextSemester = nextAcademicYear
+      ? await prisma.semester.findFirst({
+          where: { tenantId: req.tenantId, academicYearId: nextAcademicYear.id },
+          orderBy: { semesterNum: 'asc' }
+        })
+      : null
+
+    const actor = createActorSnapshot(req.user)
+    const sourceClassId = promotion.classId
+
+    if (action === 'draft') {
+      if (!toClassId) throw new AppError('toClassId is required', 400, 'MISSING_PARAMS')
+      const targetClass = await prisma.class.findFirst({ where: { id: toClassId, tenantId: req.tenantId }, include: { grade: true } })
+      if (!targetClass) throw new AppError('Target class not found', 404, 'NOT_FOUND')
+      await prisma.promotionPlacementHistory.create({
+        data: createPlacementHistoryPayload({
+          tenantId: req.tenantId,
+          promotionId: promotion.id,
+          studentId: promotion.studentId,
+          academicYearId: academicYear.id,
+          action: 'DRAFT_TARGET',
+          fromClassId: sourceClassId,
+          toClassId,
+          reason: reason || 'Chọn lớp dự kiến cho học sinh chưa đạt',
+          actor
+        })
+      })
+      return res.json({ data: { message: 'Draft saved' } })
+    }
+
+    if (action === 'inactive') {
+      const inactiveReason = String(reason || '').trim()
+      if (!inactiveReason) throw new AppError('Inactive reason is required', 400, 'INACTIVE_REASON_REQUIRED')
+      const updated = await prisma.$transaction(async (tx) => {
+        const student = await tx.student.update({
+          where: { id: promotion.studentId },
+          data: {
+            isActive: false,
+            inactiveReason,
+            inactiveAt: new Date(),
+            inactivatedBy: req.user.id,
+            inactivatedByName: actor.actorName
+          }
+        })
+        await tx.promotionPlacementHistory.create({
+          data: createPlacementHistoryPayload({
+            tenantId: req.tenantId,
+            promotionId: promotion.id,
+            studentId: promotion.studentId,
+            academicYearId: academicYear.id,
+            action: 'INACTIVE',
+            fromClassId: sourceClassId,
+            reason: inactiveReason,
+            actor
+          })
+        })
+        return student
+      })
+      return res.json({ data: updated })
+    }
+
+    if (!toClassId) throw new AppError('toClassId is required', 400, 'MISSING_PARAMS')
+    if (!nextSemester) throw new AppError('Năm học kế tiếp chưa có học kỳ để ghi nhận phân lớp', 400, 'NO_NEXT_SEMESTER')
+    const targetClass = await prisma.class.findFirst({
+      where: { id: toClassId, tenantId: req.tenantId },
+      include: { grade: true, _count: { select: { students: true } } }
+    })
+    if (!targetClass) throw new AppError('Target class not found', 404, 'NOT_FOUND')
+    if (targetClass._count.students >= targetClass.capacity) throw new AppError('Target class is full', 400, 'CLASS_FULL')
+    const isInNextYear = targetClass.academicYearId === nextAcademicYear.id || targetClass.academicYear === toAcademicYearLabel(nextAcademicYear)
+    if (!isInNextYear) throw new AppError('Lớp đích phải thuộc năm học kế tiếp', 400, 'INVALID_TARGET_YEAR')
+    if ((targetClass.grade?.level || 0) > (promotion.class?.grade?.level || 0)) {
+      throw new AppError('Học sinh chưa đạt không được xếp lên khối cao hơn', 400, 'INVALID_TARGET_GRADE')
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const student = await tx.student.update({
+        where: { id: promotion.studentId },
+        data: {
+          classId: toClassId,
+          isActive: true,
+          inactiveReason: null,
+          inactiveAt: null,
+          inactivatedBy: null,
+          inactivatedByName: null
+        }
+      })
+      await tx.transferHistory.create({
+        data: {
+          tenantId: req.tenantId,
+          studentId: promotion.studentId,
+          fromClassId: sourceClassId,
+          toClassId,
+          semesterId: nextSemester.id,
+          reason: reason || 'Sắp lớp lại sau xét cuối năm',
+          transferredBy: req.user.id
+        }
+      })
+      await tx.classEnrollment.upsert({
+        where: {
+          studentId_semesterId: {
+            studentId: promotion.studentId,
+            semesterId: nextSemester.id
+          }
+        },
+        create: {
+          tenantId: req.tenantId,
+          studentId: promotion.studentId,
+          classId: toClassId,
+          semesterId: nextSemester.id,
+          academicYearId: nextAcademicYear.id
+        },
+        update: {
+          classId: toClassId,
+          academicYearId: nextAcademicYear.id
+        }
+      })
+      await tx.promotionPlacementHistory.create({
+        data: createPlacementHistoryPayload({
+          tenantId: req.tenantId,
+          promotionId: promotion.id,
+          studentId: promotion.studentId,
+          academicYearId: academicYear.id,
+          action: 'ASSIGNED',
+          fromClassId: sourceClassId,
+          toClassId,
+          reason: reason || 'Sắp lớp lại sau xét cuối năm',
+          actor
+        })
+      })
+      return student
+    })
+
+    res.json({ data: updated })
   } catch (error) {
     next(error)
   }

@@ -30,6 +30,11 @@ const MODULES = [
   { key: 'settings', label: getUiModuleLabel('settings') },
 ]
 
+const ROLE_MODULES: Record<string, typeof MODULES> = {
+  STAFF: MODULES,
+  TEACHER: MODULES.filter((module) => ['student-lookup', 'classes', 'subjects', 'scores', 'reports'].includes(module.key)),
+}
+
 type Permissions = Record<string, string[]>
 type RoleLimitKey = 'staff' | 'teachers'
 
@@ -131,7 +136,7 @@ export default function PermissionsPage() {
               <h2 className="font-semibold text-gray-900">{role.label}</h2>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {MODULES.map((module) => {
+              {(ROLE_MODULES[role.key] || MODULES).map((module) => {
                 const checked = (permissions[role.key] || []).includes(module.key)
                 return (
                   <label key={module.key} className="flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2 hover:bg-gray-50">

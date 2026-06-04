@@ -53,6 +53,8 @@ items = items.filter(item => !item.module || allowed.includes(item.module))
 - `module` field on each menu item maps to a permission key
 - SUPER_ADMIN bypasses permission filtering (full access)
 - If permissions fail to load → fallback: show all items
+- Teacher permission UI only shows backend-supported modules: student lookup, classes, subjects, scores, reports.
+- STAFF users with class/subject assignments see scoped academic data; STAFF without assignments keep module-level access.
 
 ## Architecture
 
@@ -94,6 +96,8 @@ flowchart TD
 - Class detail for teacher now hides class-management actions (edit class, add/edit student) and handles `403/404` by toast + redirect/fallback instead of blank screen.
 - `/scores` supports deep-link query prefill (`classId`, `subjectId`, `semesterId`) for teacher quick navigation.
 - SUPER_ADMIN sidebar now has a dedicated `/promotion` entry; promotion workflow moved out of `/reports`.
+- Teacher sidebar can show `Môn học` when `subjects` is enabled for Teacher.
+- `/promotion` now shows graduate details, failed-student pending placement, placement history, inactive reason, and target-class creation confirmation.
 - `/reports`, `/settings`, and `/settings/permissions` were compacted to reduce empty space and improve operator readability.
 - `/reports` now uses Vietnamese labels, global year/semester filters, year-scoped semester options, lightweight CSS/SVG charts, and report-scoped API calls so TEACHER users do not need academic-calendar permission.
 

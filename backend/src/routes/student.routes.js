@@ -6,6 +6,7 @@ const { authenticate, authorize } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { getTenantPlanUsage, getTenantPlanLimits } = require('../utils/subscription-limits')
+const { getUserAssignmentScope, ensureClassAccess } = require('../utils/assignment-scope')
 
 // Generate student code
 const generateStudentCode = async (tenantId, tx) => {
@@ -43,18 +44,12 @@ router.get('/', authenticate, requireFeature('student-lookup'), authorize('SUPER
       })
     }
 
-    // Teacher can only see students in assigned classes
-    if (req.user.role === 'TEACHER') {
-      const assignments = await prisma.teacherAssignment.findMany({
-        where: { teacherId: req.user.id, tenantId: req.tenantId },
-        select: { classId: true }
-      })
-      const assignedClassIds = assignments.map(a => a.classId)
-      // Intersection: if classId from query is specified, it must also be in assigned classes
+    const scope = await getUserAssignmentScope(prisma, req)
+    if (scope) {
       if (classId) {
-        where.classId = { in: assignedClassIds.filter(id => id === classId) }
+        where.classId = { in: scope.classIds.filter((id) => id === classId) }
       } else {
-        where.classId = { in: assignedClassIds }
+        where.classId = { in: scope.classIds }
       }
     }
 
@@ -127,16 +122,10 @@ router.get('/:id', authenticate, requireFeature('student-lookup'), authorize('SU
 
     if (!student) throw new AppError('Student not found', 404, 'NOT_FOUND')
 
-    if (req.user.role === 'TEACHER') {
+    const scope = await getUserAssignmentScope(prisma, req)
+    if (scope) {
       if (!student.classId) throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
-      const assignment = await prisma.teacherAssignment.findFirst({
-        where: {
-          tenantId: req.tenantId,
-          teacherId: req.user.id,
-          classId: student.classId
-        }
-      })
-      if (!assignment) throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
+      if (!scope.classIds.includes(student.classId)) throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
     }
 
     res.json({ data: student })
@@ -363,6 +352,9 @@ router.post('/:id/transfer', authenticate, requireFeature('class-transfer'), aut
     })
     if (!activeSemester) throw new AppError('No active semester found', 400, 'NO_ACTIVE_SEMESTER')
 
+    await ensureClassAccess(prisma, req, fromClassId)
+    await ensureClassAccess(prisma, req, classId)
+
     // Update student, record transfer, and update enrollment in a single transaction
     await prisma.$transaction(async (tx) => {
       await tx.student.update({
@@ -438,6 +430,38 @@ router.get('/:id/transfer-history', authenticate, requireFeature('class-transfer
       include: {
         fromClass: { include: { grade: true } },
         toClass: { include: { grade: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    })
+    const actorIds = [...new Set(history.map((item) => item.transferredBy).filter(Boolean))]
+    const actors = actorIds.length
+      ? await prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, fullName: true, email: true, role: true } })
+      : []
+    const actorMap = new Map(actors.map((actor) => [actor.id, actor]))
+    res.json({
+      data: history.map((item) => ({
+        ...item,
+        actor: item.transferredBy ? actorMap.get(item.transferredBy) || null : null,
+        actorName: item.transferredBy ? (actorMap.get(item.transferredBy)?.fullName || item.transferredBy) : null
+      }))
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /students/:id/promotion-placement-history
+router.get('/:id/promotion-placement-history', authenticate, requireFeature('reports'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('reports'), async (req, res, next) => {
+  try {
+    const student = await prisma.student.findFirst({ where: { id: req.params.id, tenantId: req.tenantId }, select: { id: true } })
+    if (!student) throw new AppError('Student not found', 404, 'NOT_FOUND')
+
+    const history = await prisma.promotionPlacementHistory.findMany({
+      where: { studentId: req.params.id, tenantId: req.tenantId },
+      include: {
+        fromClass: { select: { id: true, name: true } },
+        toClass: { select: { id: true, name: true } },
+        promotion: { select: { id: true, result: true, average: true } }
       },
       orderBy: { createdAt: 'desc' }
     })

@@ -208,7 +208,7 @@ router.patch('/:id/disable', authorize('SUPER_ADMIN'), async (req, res, next) =>
   }
 })
 
-// PUT /users/:id/assignments - Manage teacher assignments (SUPER_ADMIN only)
+// PUT /users/:id/assignments - Manage teacher/staff assignments (SUPER_ADMIN only)
 router.put('/:id/assignments', authorize('SUPER_ADMIN'), async (req, res, next) => {
   try {
     const { assignments } = req.body
@@ -217,9 +217,9 @@ router.put('/:id/assignments', authorize('SUPER_ADMIN'), async (req, res, next) 
     }
 
     const targetUser = await prisma.user.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId, role: 'TEACHER' },
+      where: { id: req.params.id, tenantId: req.tenantId, role: { in: ['TEACHER', 'STAFF'] } },
     })
-    if (!targetUser) throw new AppError('Teacher not found', 404, 'NOT_FOUND')
+    if (!targetUser) throw new AppError('Teacher/staff not found', 404, 'NOT_FOUND')
 
     // Validate all classIds and subjectIds belong to this tenant
     const classIds = [...new Set(assignments.map(a => a.classId))]

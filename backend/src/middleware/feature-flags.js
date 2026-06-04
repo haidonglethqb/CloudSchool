@@ -1,5 +1,5 @@
 const { AppError } = require('./errorHandler')
-const { MODULE_KEYS, DEFAULT_ENABLED_MODULES } = require('../constants/module-registry')
+const { MODULE_KEYS, ROLE_MODULE_KEYS, DEFAULT_ENABLED_MODULES } = require('../constants/module-registry')
 
 const DEFAULT_ROLE_PERMISSIONS = {
   STAFF: [
@@ -17,7 +17,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'export',
     'fees',
   ],
-  TEACHER: ['student-lookup', 'classes', 'scores', 'reports'],
+  TEACHER: ['student-lookup', 'classes', 'subjects', 'scores', 'reports'],
 }
 
 const normalizeEnabledModules = (rawValue) => {
@@ -63,7 +63,8 @@ const normalizeRolePermissions = (rawPermissions) => {
       normalized[roleKey] = [...DEFAULT_ROLE_PERMISSIONS[roleKey]]
       continue
     }
-    const validModules = rawModules.filter((moduleKey) => MODULE_KEYS.includes(moduleKey))
+    const allowedModules = ROLE_MODULE_KEYS[roleKey] || MODULE_KEYS
+    const validModules = rawModules.filter((moduleKey) => allowedModules.includes(moduleKey))
     normalized[roleKey] = validModules
   }
 
@@ -100,4 +101,5 @@ module.exports = {
   normalizeEnabledModules,
   DEFAULT_ROLE_PERMISSIONS,
   normalizeRolePermissions,
+  ROLE_MODULE_KEYS,
 }

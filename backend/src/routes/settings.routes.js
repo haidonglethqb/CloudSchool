@@ -4,7 +4,7 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize, invalidateSettingsCache } = require('../middleware/auth')
 const { body, param, validationResult } = require('express-validator')
 const { AppError } = require('../middleware/errorHandler')
-const { MODULE_KEYS } = require('../constants/module-registry')
+const { MODULE_KEYS, ROLE_MODULE_KEYS } = require('../constants/module-registry')
 const { requireFeature, requireRolePermission, DEFAULT_ROLE_PERMISSIONS, normalizeRolePermissions } = require('../middleware/feature-flags')
 const { getTenantPlanUsage, getTenantPlanLimits } = require('../utils/subscription-limits')
 
@@ -182,7 +182,6 @@ router.put('/role-permissions', authorize('SUPER_ADMIN'), [
 
     const { permissions } = req.body
     const allowedRoles = ['STAFF', 'TEACHER']
-    const allowedModules = MODULE_KEYS
 
     // Validate structure
     for (const [role, modules] of Object.entries(permissions)) {
@@ -192,6 +191,7 @@ router.put('/role-permissions', authorize('SUPER_ADMIN'), [
       if (!Array.isArray(modules)) {
         throw new AppError(`Permissions for ${role} must be an array`, 400, 'INVALID_FORMAT')
       }
+      const allowedModules = ROLE_MODULE_KEYS[role] || MODULE_KEYS
       for (const mod of modules) {
         if (!allowedModules.includes(mod)) {
           throw new AppError(`Invalid module: ${mod}`, 400, 'INVALID_MODULE')
@@ -203,8 +203,8 @@ router.put('/role-permissions', authorize('SUPER_ADMIN'), [
       where: { tenantId: req.tenantId },
       data: {
         rolePermissions: {
-          STAFF: permissions.STAFF || DEFAULT_ROLE_PERMISSIONS.STAFF,
-          TEACHER: permissions.TEACHER || DEFAULT_ROLE_PERMISSIONS.TEACHER,
+          STAFF: (permissions.STAFF || DEFAULT_ROLE_PERMISSIONS.STAFF).filter((mod) => ROLE_MODULE_KEYS.STAFF.includes(mod)),
+          TEACHER: (permissions.TEACHER || DEFAULT_ROLE_PERMISSIONS.TEACHER).filter((mod) => ROLE_MODULE_KEYS.TEACHER.includes(mod)),
         }
       }
     })

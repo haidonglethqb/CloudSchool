@@ -49,7 +49,7 @@ graph TD
 | `/tenants/:id/scores`  | ❌             | ✅          | ✅    | ❌      | ❌      | ❌     |
 
 ✅ = Full CRUD | ✅ R = Read only | ✅ R/W = Read + Write | ❌ = No access
-`*` = giới hạn theo phân công giáo viên hoặc module permission của tenant
+`*` = giới hạn theo module permission và, nếu có phân công, theo phạm vi lớp/môn.
 
 ## UI Menu Visibility
 
@@ -82,6 +82,13 @@ Tenant modules dùng 2 lớp:
 2. `requireRolePermission(moduleKey)` kiểm tra `tenant_settings.rolePermissions` cho `STAFF`/`TEACHER`.
 
 `SUPER_ADMIN` và `PLATFORM_ADMIN` bypass `requireRolePermission`, nhưng vẫn đi qua feature flag.
+
+Teacher chỉ có thể được cấp các module backend hỗ trợ thật:
+`student-lookup`, `classes`, `subjects`, `scores`, `reports`.
+
+STAFF có thể được phân công theo cặp lớp+môn. Nếu STAFF có ít nhất một phân công,
+dữ liệu lớp, học sinh, môn, điểm, báo cáo, xuất dữ liệu sẽ bị giới hạn theo phân công.
+STAFF chưa có phân công giữ phạm vi theo module như trước.
 
 Parent/Student chỉ dùng self-service endpoints:
 - `GET /api/parents/my-children`

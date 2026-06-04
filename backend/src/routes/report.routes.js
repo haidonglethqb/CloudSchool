@@ -4,6 +4,7 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
+const { getUserAssignmentScope, ensureClassAccess } = require('../utils/assignment-scope')
 
 function calcWeightedAverage(scores) {
   let weightedSum = 0
@@ -18,26 +19,9 @@ function calcWeightedAverage(scores) {
 
 const buildAcademicYearLabel = (academicYear) => `${academicYear.startYear}-${academicYear.endYear}`
 
-const getTeacherClassIds = async (req, subjectId = null) => {
-  if (req.user.role !== 'TEACHER') return null
-  const assignments = await prisma.teacherAssignment.findMany({
-    where: {
-      tenantId: req.tenantId,
-      teacherId: req.user.id,
-      ...(subjectId ? { subjectId } : {})
-    },
-    select: { classId: true }
-  })
-  return [...new Set(assignments.map((item) => item.classId))]
-}
-
-const ensureTeacherClassAccess = async (req, classId) => {
-  if (req.user.role !== 'TEACHER') return
-  const assignment = await prisma.teacherAssignment.findFirst({
-    where: { tenantId: req.tenantId, teacherId: req.user.id, classId },
-    select: { id: true }
-  })
-  if (!assignment) throw new AppError('Not assigned to this class', 403, 'FORBIDDEN')
+const getScopedClassIds = async (req, subjectId = null) => {
+  const scope = await getUserAssignmentScope(prisma, req, subjectId)
+  return scope ? scope.classIds : null
 }
 
 const getSemesterClassFilter = async (tenantId, semesterId) => {
@@ -94,7 +78,7 @@ router.get('/subject-summary', async (req, res, next) => {
     if (!settings) throw new AppError('Tenant settings not configured', 400, 'SETTINGS_NOT_FOUND')
 
     const yearFilter = await getSemesterClassFilter(req.tenantId, semesterId)
-    const teacherClassIds = await getTeacherClassIds(req, subjectId)
+    const teacherClassIds = await getScopedClassIds(req, subjectId)
     const classes = await prisma.class.findMany({
       where: {
         tenantId: req.tenantId,
@@ -178,7 +162,7 @@ router.get('/class-promotion-summary', async (req, res, next) => {
     const { classId, semesterId } = req.query
     if (!classId || !semesterId) throw new AppError('classId and semesterId are required', 400, 'MISSING_PARAMS')
 
-    await ensureTeacherClassAccess(req, classId)
+    await ensureClassAccess(prisma, req, classId)
 
     const classInfo = await prisma.class.findFirst({
       where: { id: classId, tenantId: req.tenantId },
@@ -225,7 +209,7 @@ router.get('/semester-promotion-summary', async (req, res, next) => {
     const semester = await prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId } })
     if (!semester) throw new AppError('Semester not found', 404, 'NOT_FOUND')
 
-    const teacherClassIds = await getTeacherClassIds(req)
+    const teacherClassIds = await getScopedClassIds(req)
     const promotions = await prisma.promotion.findMany({
       where: {
         tenantId: req.tenantId,
@@ -297,7 +281,7 @@ router.get('/year-promotion-summary', async (req, res, next) => {
     if (year.semesters.length === 0) throw new AppError('Academic year has no semesters', 400, 'NO_SEMESTERS')
 
     const finalSemester = year.semesters[year.semesters.length - 1]
-    const teacherClassIds = await getTeacherClassIds(req)
+    const teacherClassIds = await getScopedClassIds(req)
     const promotions = await prisma.promotion.findMany({
       where: {
         tenantId: req.tenantId,
@@ -380,10 +364,10 @@ router.get('/dashboard', async (req, res, next) => {
       }
     }
 
-    if (req.user.role === 'TEACHER') {
-      const teacherClassIds = await getTeacherClassIds(req)
-      classWhere.id = { in: teacherClassIds }
-      studentWhere.classId = { in: teacherClassIds }
+    const scopedClassIds = await getScopedClassIds(req)
+    if (scopedClassIds) {
+      classWhere.id = { in: scopedClassIds }
+      studentWhere.classId = { in: scopedClassIds }
     }
 
     const [totalStudents, totalClasses, totalSubjects, recentStudents, gradeDistribution] = await Promise.all([
@@ -480,17 +464,19 @@ router.get('/graduation-summary', authorize('SUPER_ADMIN', 'STAFF'), async (req,
     const graduations = await prisma.graduationArchive.findMany({
       where: { tenantId: req.tenantId, academicYearId },
       include: {
-        student: { select: { id: true, fullName: true, studentCode: true, admissionDate: true } },
+        student: { select: { id: true, fullName: true, studentCode: true, gender: true, dateOfBirth: true, admissionDate: true } },
         sourceClass: { select: { id: true, name: true } }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: [{ sourceClass: { name: 'asc' } }, { student: { fullName: 'asc' } }]
     })
 
     const graduates = graduations.map((item) => {
       const admissionYear = item.student?.admissionDate ? new Date(item.student.admissionDate).getFullYear() : null
       const startYear = Number.isFinite(admissionYear) ? admissionYear : (academicYear.endYear - 3)
+      const birthYear = item.student?.dateOfBirth ? new Date(item.student.dateOfBirth).getFullYear() : null
       return {
         ...item,
+        age: birthYear ? academicYear.endYear - birthYear : null,
         courseLabel: `${startYear}-${academicYear.endYear}`
       }
     })

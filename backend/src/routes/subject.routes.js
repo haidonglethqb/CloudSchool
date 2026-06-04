@@ -5,6 +5,7 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
+const { getUserAssignmentScope } = require('../utils/assignment-scope')
 
 router.use(authenticate, requireFeature('subjects'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'))
 
@@ -15,14 +16,8 @@ router.get('/', async (req, res, next) => {
     const where = { tenantId: req.tenantId }
     if (!includeInactive) where.isActive = true
 
-    if (req.user.role === 'TEACHER') {
-      const assignments = await prisma.teacherAssignment.findMany({
-        where: { teacherId: req.user.id, tenantId: req.tenantId },
-        select: { subjectId: true },
-        distinct: ['subjectId'],
-      })
-      where.id = { in: assignments.map((a) => a.subjectId) }
-    }
+    const scope = await getUserAssignmentScope(prisma, req)
+    if (scope) where.id = { in: scope.subjectIds }
 
     const subjects = await prisma.subject.findMany({
       where,
@@ -39,11 +34,9 @@ router.get('/', async (req, res, next) => {
 // GET /subjects/:id
 router.get('/:id', async (req, res, next) => {
   try {
-    if (req.user.role === 'TEACHER') {
-      const assignment = await prisma.teacherAssignment.findFirst({
-        where: { teacherId: req.user.id, tenantId: req.tenantId, subjectId: req.params.id }
-      })
-      if (!assignment) throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
+    const scope = await getUserAssignmentScope(prisma, req)
+    if (scope && !scope.subjectIds.includes(req.params.id)) {
+      throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
     }
 
     const subject = await prisma.subject.findFirst({

@@ -164,9 +164,34 @@ model GraduationArchive {
 }
 ```
 
+## PromotionPlacementHistory
+
+Stores year-end placement timeline entries for failed/passed students.
+
+```prisma
+model PromotionPlacementHistory {
+  id             String   @id @default(uuid())
+  tenantId       String
+  promotionId    String?
+  studentId      String
+  academicYearId String?
+  action         String
+  fromClassId    String?
+  toClassId      String?
+  reason         String?
+  actorId        String?
+  actorName      String
+  actorRole      String
+  metadata       Json?
+  createdAt      DateTime @default(now())
+}
+```
+
+Actions include `EVALUATED`, `DRAFT_TARGET`, `ASSIGNED`, `INACTIVE`, `GRADUATED`, and `CREATE_TARGET_CLASS`.
+
 ## TeacherAssignment
 
-Maps teachers to class-subject combinations.
+Maps teachers and assigned staff to class-subject combinations.
 
 ```prisma
 model TeacherAssignment {

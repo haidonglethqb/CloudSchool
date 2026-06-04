@@ -96,7 +96,11 @@ export default function StudentDetailPage() {
   const [transferring, setTransferring] = useState(false)
   const [allClasses, setAllClasses] = useState<Array<{ id: string; name: string; grade: { name: string } }>>([])
   const [transferHistory, setTransferHistory] = useState<Array<{
-    id: string; reason: string | null; createdAt: string;
+    id: string; reason: string | null; createdAt: string; actorName?: string | null;
+    fromClass: { name: string } | null; toClass: { name: string } | null;
+  }>>([])
+  const [placementHistory, setPlacementHistory] = useState<Array<{
+    id: string; action: string; reason: string | null; actorName: string; createdAt: string;
     fromClass: { name: string } | null; toClass: { name: string } | null;
   }>>([])
 
@@ -113,14 +117,16 @@ export default function StudentDetailPage() {
   useEffect(() => {
     const fetchStudent = async () => {
       try {
-        const [response, historyRes, semRes, ayRes] = await Promise.all([
+        const [response, historyRes, placementRes, semRes, ayRes] = await Promise.all([
           studentApi.get(id as string),
           studentApi.getTransferHistory(id as string).catch(() => ({ data: { data: [] } })),
+          studentApi.getPromotionPlacementHistory(id as string).catch(() => ({ data: { data: [] } })),
           subjectApi.getSemesters().catch(() => ({ data: { data: [] } })),
           academicYearApi.list().catch(() => ({ data: { data: [] } })),
         ])
         setStudent(response.data.data)
         setTransferHistory(historyRes.data.data || [])
+        setPlacementHistory(placementRes.data.data || [])
         const sems = semRes.data.data || []
         setSemesters(sems)
         const defaultSemester = pickDefaultSemester(sems)
@@ -238,6 +244,17 @@ export default function StudentDetailPage() {
   const subjectScores = scoreData?.subjectScores || []
   const passedCount = subjectScores.filter(s => s.isPassed).length
   const failedCount = subjectScores.filter(s => !s.isPassed && s.average !== null).length
+  const getPlacementActionLabel = (action: string) => {
+    const labels: Record<string, string> = {
+      EVALUATED: 'Chạy xét',
+      DRAFT_TARGET: 'Chọn lớp dự kiến',
+      ASSIGNED: 'Phân lớp',
+      INACTIVE: 'Inactive',
+      GRADUATED: 'Tốt nghiệp',
+      CREATE_TARGET_CLASS: 'Tạo lớp đích',
+    }
+    return labels[action] || action
+  }
 
   // Collect all unique score component names across all subjects for consistent columns
   const allComponentNames = (() => {
@@ -453,6 +470,35 @@ export default function StudentDetailPage() {
                         <span className="font-medium">{h.toClass?.name || '?'}</span>
                       </p>
                       {h.reason && <p className="text-xs text-gray-500">{h.reason}</p>}
+                      {h.actorName && <p className="text-xs text-gray-400">Thực hiện: {h.actorName}</p>}
+                    </div>
+                    <span className="text-xs text-gray-400">{formatDate(h.createdAt)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {placementHistory.length > 0 && (
+            <div className="card overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <History className="w-5 h-5 text-primary" />
+                  Lịch sử phân lớp xét lên lớp
+                </h3>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {placementHistory.map(h => (
+                  <div key={h.id} className="px-6 py-3 flex items-center gap-3">
+                    <ArrowRightLeft className="w-4 h-4 text-amber-500 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm">
+                        <span className="font-medium">{getPlacementActionLabel(h.action)}</span>
+                        {h.fromClass?.name && <span> từ {h.fromClass.name}</span>}
+                        {h.toClass?.name && <span> đến {h.toClass.name}</span>}
+                      </p>
+                      {h.reason && <p className="text-xs text-gray-500">{h.reason}</p>}
+                      <p className="text-xs text-gray-400">Thực hiện: {h.actorName}</p>
                     </div>
                     <span className="text-xs text-gray-400">{formatDate(h.createdAt)}</span>
                   </div>

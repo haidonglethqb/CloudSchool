@@ -6,6 +6,7 @@ const { authenticate, authorize, tenantGuard } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { getTenantPlanUsage, getTenantPlanLimits } = require('../utils/subscription-limits')
+const { getUserAssignmentScope, ensureClassAccess } = require('../utils/assignment-scope')
 
 router.use(authenticate, requireFeature('classes'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('classes'))
 
@@ -42,17 +43,6 @@ const getActiveSemesterWithAcademicYear = async (tenantId, tx) => {
   return activeSemester
 }
 
-const ensureTeacherClassAccess = async (req, classId) => {
-  if (req.user.role !== 'TEACHER') return
-  const assignment = await prisma.teacherAssignment.findFirst({
-    where: { tenantId: req.tenantId, teacherId: req.user.id, classId },
-    select: { id: true }
-  })
-  if (!assignment) {
-    throw new AppError('Not assigned to this class', 403, 'FORBIDDEN')
-  }
-}
-
 // GET /classes/grades - Get grades with classes
 router.get('/grades', tenantGuard, async (req, res, next) => {
   try {
@@ -60,15 +50,8 @@ router.get('/grades', tenantGuard, async (req, res, next) => {
       academicYear: req.query.academicYear,
       academicYearId: req.query.academicYearId
     })
-    let teacherClassFilter = {}
-    if (req.user.role === 'TEACHER') {
-      const assignments = await prisma.teacherAssignment.findMany({
-        where: { teacherId: req.user.id, tenantId: req.tenantId },
-        select: { classId: true }
-      })
-      const classIds = [...new Set(assignments.map((item) => item.classId))]
-      teacherClassFilter = { id: { in: classIds } }
-    }
+    const scope = await getUserAssignmentScope(prisma, req)
+    const assignmentClassFilter = scope ? { id: { in: scope.classIds } } : {}
 
     const grades = await prisma.grade.findMany({
       where: { tenantId: req.tenantId },
@@ -78,7 +61,7 @@ router.get('/grades', tenantGuard, async (req, res, next) => {
             tenantId: req.tenantId,
             isActive: true,
             ...yearFilter,
-            ...teacherClassFilter
+            ...assignmentClassFilter
           },
           include: { _count: { select: { students: true } } },
           orderBy: { name: 'asc' }
@@ -105,15 +88,8 @@ router.get('/', async (req, res, next) => {
       ...yearFilter
     }
 
-    // Teacher only sees assigned classes
-    if (req.user.role === 'TEACHER') {
-      const assignments = await prisma.teacherAssignment.findMany({
-        where: { teacherId: req.user.id, tenantId: req.tenantId },
-        select: { classId: true }
-      })
-      const classIds = [...new Set(assignments.map((item) => item.classId))]
-      where.id = { in: classIds }
-    }
+    const scope = await getUserAssignmentScope(prisma, req)
+    if (scope) where.id = { in: scope.classIds }
 
     const classes = await prisma.class.findMany({
       where,
@@ -139,7 +115,7 @@ router.get('/', async (req, res, next) => {
 // GET /classes/:id
 router.get('/:id', async (req, res, next) => {
   try {
-    await ensureTeacherClassAccess(req, req.params.id)
+    await ensureClassAccess(prisma, req, req.params.id)
 
     const classInfo = await prisma.class.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },
@@ -331,11 +307,11 @@ router.post('/:id/assign-teacher', authorize('SUPER_ADMIN'), [
     // Verify class, teacher, and subject belong to current tenant
     const [cls, teacher, subject] = await Promise.all([
       prisma.class.findFirst({ where: { id: req.params.id, tenantId: req.tenantId } }),
-      prisma.user.findFirst({ where: { id: teacherId, tenantId: req.tenantId, role: 'TEACHER' } }),
+      prisma.user.findFirst({ where: { id: teacherId, tenantId: req.tenantId, role: { in: ['TEACHER', 'STAFF'] } } }),
       prisma.subject.findFirst({ where: { id: subjectId, tenantId: req.tenantId } })
     ])
     if (!cls) throw new AppError('Class not found', 404, 'NOT_FOUND')
-    if (!teacher) throw new AppError('Teacher not found', 404, 'NOT_FOUND')
+    if (!teacher) throw new AppError('Teacher/staff not found', 404, 'NOT_FOUND')
     if (!subject) throw new AppError('Subject not found', 404, 'NOT_FOUND')
 
     const assignment = await prisma.teacherAssignment.create({
@@ -377,7 +353,7 @@ router.delete('/:id/assign-teacher/:assignmentId', authorize('SUPER_ADMIN'), asy
 // GET /classes/:id/students
 router.get('/:id/students', async (req, res, next) => {
   try {
-    await ensureTeacherClassAccess(req, req.params.id)
+    await ensureClassAccess(prisma, req, req.params.id)
 
     const students = await prisma.student.findMany({
       where: { classId: req.params.id, tenantId: req.tenantId, isActive: true },

@@ -45,11 +45,11 @@
 | Method | Path | Description |
 |---|---|---|
 | GET | `/users` | List users (paginated, role/status filter) |
-| GET | `/users/:id` | User detail + teacher assignments |
+| GET | `/users/:id` | User detail + teacher/staff assignments |
 | POST | `/users` | Create user (SUPER_ADMIN, validates VN phone when `phone` is provided; enforces plan limits for STAFF/TEACHER) |
 | PUT | `/users/:id` | Update user (email duplicate check, self-disable guard, validates VN phone when `phone` is provided; enforces plan limits when role/status changes) |
 | PATCH | `/users/:id/disable` | Disable user |
-| PUT | `/users/:id/assignments` | Set teacher class/subject assignments |
+| PUT | `/users/:id/assignments` | Set teacher/staff class/subject assignments |
 | DELETE | `/users/:id` | Delete user (self-delete guard) |
 
 ## Students
@@ -62,21 +62,22 @@
 | PUT | `/students/:id` | Update student info (class change blocked — use transfer) |
 | DELETE | `/students/:id` | Delete student (dependency checks) |
 | POST | `/students/:id/transfer` | Transfer to another class + transfer history record; `reason` is required |
-| GET | `/students/:id/transfer-history` | Transfer history for one student |
+| GET | `/students/:id/transfer-history` | Transfer history for one student, including actor display when available |
+| GET | `/students/:id/promotion-placement-history` | Promotion placement timeline with actor snapshot |
 | GET | `/students/transfers/history` | Tenant-wide transfer history with student, old class, target class, reason, timestamp, and actor |
 
 ## Classes
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/classes` | List classes (`gradeId`, `academicYear`, `academicYearId`); defaults to active academic year; teacher is assignment-scoped and deduped by class |
-| GET | `/classes/grades` | Grades with nested classes + student counts; defaults to active academic year and teacher assignment scope |
+| GET | `/classes` | List classes; teacher and assigned staff are assignment-scoped and deduped by class |
+| GET | `/classes/grades` | Grades with nested classes + student counts; teacher and assigned staff scope applies |
 | GET | `/classes/:id` | Class detail + students + teacher assignments |
 | POST | `/classes` | Create class (capacity from settings; grade must be within current grade range; enforces plan class limit) |
 | PUT | `/classes/:id` | Update class (capacity must be within settings and `>=` current students; grade must be within current grade range) |
 | DELETE | `/classes/:id` | Delete class (no students/assignments/fees) |
-| POST | `/classes/:id/assign-teacher` | Assign teacher to class+subject |
-| DELETE | `/classes/:id/assign-teacher/:assignmentId` | Remove teacher assignment |
+| POST | `/classes/:id/assign-teacher` | Assign teacher/staff to class+subject |
+| DELETE | `/classes/:id/assign-teacher/:assignmentId` | Remove assignment |
 | GET | `/classes/:id/students` | Students in class |
 | POST | `/classes/:id/students` | Add student to class (capacity check, tx) |
 | DELETE | `/classes/:id/students/:studentId` | Remove student from class |
@@ -85,7 +86,7 @@
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/subjects` | List subjects (teacher-scoped to assignments) |
+| GET | `/subjects` | List subjects (teacher and assigned staff scoped to assignments) |
 | GET | `/subjects/:id` | Subject detail + score components |
 | POST | `/subjects` | Create subject (maxSubjects validation, code uniqueness) |
 | PUT | `/subjects/:id` | Update subject |
@@ -120,18 +121,19 @@
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/promotion/year-end/evaluate` | School-admin synchronous evaluation for final-year promotion |
-| GET | `/promotion/year-end/results` | Read PASS/FAIL groups after evaluation |
-| POST | `/promotion/year-end/execute` | Execute one-shot class assignment + archive grade-12 |
+| POST | `/promotion/year-end/evaluate` | School-admin synchronous evaluation; writes placement history |
+| GET | `/promotion/year-end/results` | Read PASS/FAIL groups, placement status, and placement history |
+| POST | `/promotion/year-end/execute` | Execute promotion; may require `confirmCreateMissingClasses` for missing target classes |
+| PATCH | `/promotion/year-end/failed/:promotionId` | Draft, assign, or inactive one failed student; inactive requires reason |
 
 ## Reports
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/reports/subject-summary` | Pass rates + averages per class for a subject; teacher is scoped to assigned classes/subject |
-| GET | `/reports/class-promotion-summary` | BM2 pass-rate by class with PASS/FAIL/RETAKE counts; teacher requires class assignment |
-| GET | `/reports/semester-promotion-summary` | BM3 pass-rate by semester with class breakdown; teacher scoped to assigned classes |
-| GET | `/reports/year-promotion-summary` | BM4 pass-rate by academic year with grade breakdown; teacher scoped to assigned classes |
+| GET | `/reports/subject-summary` | Pass rates + averages; teacher/assigned staff scoped by assignment |
+| GET | `/reports/class-promotion-summary` | BM2 pass-rate by class; teacher/assigned staff class scope applies |
+| GET | `/reports/semester-promotion-summary` | BM3 pass-rate by semester; teacher/assigned staff class scope applies |
+| GET | `/reports/year-promotion-summary` | BM4 pass-rate by academic year; teacher/assigned staff class scope applies |
 | GET | `/reports/dashboard` | School dashboard stats; supports `allYears=true` for report filters |
 | GET | `/reports/transfer-report` | Class transfer history report |
 

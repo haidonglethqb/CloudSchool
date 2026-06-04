@@ -109,6 +109,7 @@ model Tenant {
   academicYears     AcademicYear[]
   classEnrollments  ClassEnrollment[]
   graduationArchives GraduationArchive[]
+  promotionPlacementHistories PromotionPlacementHistory[]
 
   @@map("tenants")
 }
@@ -202,6 +203,8 @@ model Class {
   fees               Fee[]
   enrollments        ClassEnrollment[]
   graduationArchives GraduationArchive[] @relation("GraduationSourceClass")
+  placementHistoryFrom PromotionPlacementHistory[] @relation("PlacementFromClass")
+  placementHistoryTo PromotionPlacementHistory[] @relation("PlacementToClass")
 
   @@unique([tenantId, name, academicYear])
   @@index([tenantId, gradeId])
@@ -295,6 +298,10 @@ model Student {
   parentPhone   String?
   admissionDate DateTime  @default(now())
   isActive      Boolean  @default(true)
+  inactiveReason String?
+  inactiveAt     DateTime?
+  inactivatedBy  String?
+  inactivatedByName String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -305,6 +312,7 @@ model Student {
   studentFees StudentFee[]
   enrollments ClassEnrollment[]
   graduationArchives GraduationArchive[]
+  promotionPlacementHistories PromotionPlacementHistory[]
 
   @@unique([tenantId, studentCode])
   @@index([tenantId, classId])
@@ -417,11 +425,39 @@ model Promotion {
   note       String?
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
+  placementHistories PromotionPlacementHistory[]
 
   @@unique([studentId, classId, semesterId])
   @@index([tenantId, studentId, semesterId])
   @@index([classId, semesterId])
   @@map("promotions")
+}
+
+model PromotionPlacementHistory {
+  id             String     @id @default(uuid())
+  tenantId       String
+  tenant         Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  promotionId    String?
+  promotion      Promotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+  studentId      String
+  student        Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  academicYearId String?
+  action         String
+  fromClassId    String?
+  fromClass      Class?     @relation("PlacementFromClass", fields: [fromClassId], references: [id], onDelete: SetNull)
+  toClassId      String?
+  toClass        Class?     @relation("PlacementToClass", fields: [toClassId], references: [id], onDelete: SetNull)
+  reason         String?
+  actorId        String?
+  actorName      String
+  actorRole      String
+  metadata       Json?
+  createdAt      DateTime   @default(now())
+
+  @@index([tenantId, studentId, createdAt])
+  @@index([tenantId, academicYearId, action])
+  @@index([tenantId, promotionId])
+  @@map("promotion_placement_histories")
 }
 
 // ==================== TRANSFER HISTORY ====================

@@ -55,7 +55,7 @@ export default function UsersPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [allClasses, setAllClasses] = useState<ClassItem[]>([])
   const [allSubjects, setAllSubjects] = useState<SubjectItem[]>([])
-  const [newAssign, setNewAssign] = useState({ classId: '', subjectId: '', isHomeroom: false })
+  const [newAssign, setNewAssign] = useState({ classId: '', subjectIds: [] as string[], isHomeroom: false })
   const [savingAssign, setSavingAssign] = useState(false)
 
   const fetchUsers = useCallback(() => {
@@ -90,7 +90,7 @@ export default function UsersPage() {
   const openAssignments = async (u: UserItem) => {
     setAssignUserId(u.id)
     setAssignUserName(u.fullName)
-    setNewAssign({ classId: '', subjectId: '', isHomeroom: false })
+    setNewAssign({ classId: '', subjectIds: [], isHomeroom: false })
     try {
       const [userRes, classesRes, subjectsRes] = await Promise.all([
         userApi.get(u.id),
@@ -107,27 +107,31 @@ export default function UsersPage() {
   }
 
   const addAssignment = () => {
-    if (!newAssign.classId || !newAssign.subjectId) {
-      return toast.error('Chọn lớp và môn học')
+    if (!newAssign.classId || newAssign.subjectIds.length === 0) {
+      return toast.error('Chọn lớp và ít nhất một môn học')
     }
-    const exists = assignments.some(
-      a => a.classId === newAssign.classId && a.subjectId === newAssign.subjectId
-    )
-    if (exists) return toast.error('Phân công này đã tồn tại')
 
     const cls = allClasses.find(c => c.id === newAssign.classId)
-    const subj = allSubjects.find(s => s.id === newAssign.subjectId)
-    if (!cls || !subj) return
+    if (!cls) return
 
-    setAssignments(prev => [...prev, {
-      id: `new-${Date.now()}`,
-      classId: newAssign.classId,
-      subjectId: newAssign.subjectId,
-      isHomeroom: newAssign.isHomeroom,
-      class: cls,
-      subject: subj,
-    }])
-    setNewAssign({ classId: '', subjectId: '', isHomeroom: false })
+    const nextRows = newAssign.subjectIds
+      .filter(subjectId => !assignments.some(a => a.classId === newAssign.classId && a.subjectId === subjectId))
+      .map((subjectId, index) => {
+        const subj = allSubjects.find(s => s.id === subjectId)
+        if (!subj) return null
+        return {
+          id: `new-${Date.now()}-${index}`,
+          classId: newAssign.classId,
+          subjectId,
+          isHomeroom: newAssign.isHomeroom && index === 0,
+          class: cls,
+          subject: subj,
+        }
+      })
+      .filter(Boolean) as Assignment[]
+    if (nextRows.length === 0) return toast.error('Các phân công này đã tồn tại')
+    setAssignments(prev => [...prev, ...nextRows])
+    setNewAssign({ classId: '', subjectIds: [], isHomeroom: false })
   }
 
   const removeAssignment = (idx: number) => {
@@ -292,7 +296,7 @@ export default function UsersPage() {
                   </td>
                   <td className="table-cell text-right">
                     <div className="flex items-center justify-end gap-1">
-                      {u.role === 'TEACHER' && (
+                      {(u.role === 'TEACHER' || u.role === 'STAFF') && (
                         <button onClick={() => openAssignments(u)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Phân công giảng dạy">
                           <BookOpen className="w-4 h-4" />
                         </button>
@@ -424,11 +428,15 @@ export default function UsersPage() {
                     ))}
                   </select>
                   <select
-                    value={newAssign.subjectId}
-                    onChange={e => setNewAssign(p => ({ ...p, subjectId: e.target.value }))}
+                    value={newAssign.subjectIds}
+                    multiple
+                    size={Math.min(5, Math.max(3, allSubjects.length))}
+                    onChange={e => setNewAssign(p => ({
+                      ...p,
+                      subjectIds: Array.from(e.target.selectedOptions).map(option => option.value),
+                    }))}
                     className="input text-sm"
                   >
-                    <option value="">Chọn môn</option>
                     {allSubjects.map(s => (
                       <option key={s.id} value={s.id}>{s.name}</option>
                     ))}

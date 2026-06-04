@@ -125,6 +125,7 @@ export const studentApi = {
   transfer: (id: string, data: { classId: string; reason: string }) =>
     api.post(`/students/${id}/transfer`, data),
   getTransferHistory: (id: string) => api.get(`/students/${id}/transfer-history`),
+  getPromotionPlacementHistory: (id: string) => api.get(`/students/${id}/promotion-placement-history`),
   getAllTransferHistory: () => api.get('/students/transfers/history'),
 }
 
@@ -205,7 +206,10 @@ export const promotionApi = {
     academicYearId: string
     passAssignments?: Array<{ studentId: string; toClassId: string }>
     failAssignments?: Array<{ studentId: string; toClassId: string }>
+    confirmCreateMissingClasses?: boolean
   }) => api.post('/promotion/year-end/execute', data),
+  updateFailedPlacement: (promotionId: string, data: { action: 'draft' | 'assign' | 'inactive'; toClassId?: string; reason?: string }) =>
+    api.patch(`/promotion/year-end/failed/${promotionId}`, data),
 }
 
 // ==================== Reports ====================

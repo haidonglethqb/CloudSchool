@@ -5,6 +5,7 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
+const { getUserAssignmentScope, ensureClassSubjectAccess } = require('../utils/assignment-scope')
 
 router.use(authenticate, requireFeature('scores'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('scores'))
 
@@ -56,18 +57,9 @@ const getStudentIdsForClassAndSemester = async (tenantId, classId, semesterId) =
   return legacyStudents.map((student) => student.id)
 }
 
-const assertTeacherAssignmentForClassSubject = async (tenantId, teacherId, classId, subjectId) => {
-  const assignment = await prisma.teacherAssignment.findFirst({
-    where: { tenantId, teacherId, classId, subjectId },
-    select: { id: true }
-  })
-  if (!assignment) {
-    throw new AppError('Not assigned to this class/subject', 403, 'FORBIDDEN')
-  }
-}
-
-const assertTeacherCanAccessStudent = async (req, studentId) => {
-  if (req.user.role !== 'TEACHER') return
+const assertAssignedUserCanAccessStudent = async (req, studentId) => {
+  const scope = await getUserAssignmentScope(prisma, req)
+  if (!scope) return
   const student = await prisma.student.findFirst({
     where: { id: studentId, tenantId: req.tenantId },
     select: { classId: true }
@@ -75,11 +67,7 @@ const assertTeacherCanAccessStudent = async (req, studentId) => {
   if (!student) throw new AppError('Student not found', 404, 'NOT_FOUND')
   if (!student.classId) throw new AppError('Student has no class', 400, 'INVALID_STUDENT')
 
-  const assignment = await prisma.teacherAssignment.findFirst({
-    where: { tenantId: req.tenantId, teacherId: req.user.id, classId: student.classId },
-    select: { id: true }
-  })
-  if (!assignment) throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
+  if (!scope.classIds.includes(student.classId)) throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
 }
 
 const createActorSnapshot = (user) => ({
@@ -137,9 +125,7 @@ router.get('/history', async (req, res, next) => {
       throw new AppError('classId, subjectId and semesterId are required', 400, 'MISSING_PARAMS')
     }
 
-    if (req.user.role === 'TEACHER') {
-      await assertTeacherAssignmentForClassSubject(req.tenantId, req.user.id, classId, subjectId)
-    }
+    await ensureClassSubjectAccess(prisma, req, classId, subjectId)
 
     const skip = (Number(page) - 1) * Number(limit)
     const where = {
@@ -183,9 +169,7 @@ router.get('/class/:classId', async (req, res, next) => {
       throw new AppError('subjectId and semesterId are required', 400, 'MISSING_PARAMS')
     }
 
-    if (req.user.role === 'TEACHER') {
-      await assertTeacherAssignmentForClassSubject(req.tenantId, req.user.id, req.params.classId, subjectId)
-    }
+    await ensureClassSubjectAccess(prisma, req, req.params.classId, subjectId)
 
     // Validate classId belongs to this tenant
     const classCheck = await prisma.class.findFirst({ where: { id: req.params.classId, tenantId: req.tenantId } })
@@ -273,7 +257,7 @@ router.get('/student/:studentId', async (req, res, next) => {
   try {
     const { semesterId } = req.query
 
-    await assertTeacherCanAccessStudent(req, req.params.studentId)
+    await assertAssignedUserCanAccessStudent(req, req.params.studentId)
 
     const where = {
       studentId: req.params.studentId,
@@ -433,9 +417,7 @@ router.post('/', [
       throw new AppError('Student not assigned to a class in this semester', 400, 'INVALID_STUDENT')
     }
 
-    if (req.user.role === 'TEACHER') {
-      await assertTeacherAssignmentForClassSubject(req.tenantId, req.user.id, classId, subjectId)
-    }
+    await ensureClassSubjectAccess(prisma, req, classId, subjectId)
 
     const existingScore = await prisma.score.findUnique({
       where: {
@@ -609,7 +591,8 @@ router.post('/batch', async (req, res, next) => {
     })
     const classMap = new Map(classes.map((classItem) => [classItem.id, classItem]))
 
-    if (req.user.role === 'TEACHER') {
+    const scope = await getUserAssignmentScope(prisma, req)
+    if (scope) {
       // Batch validate all student+subject pairs at once
       const pairsToCheck = new Map()
       for (const s of scores) {
@@ -619,21 +602,15 @@ router.post('/batch', async (req, res, next) => {
         }
       }
 
-      const assignments = await prisma.teacherAssignment.findMany({
-        where: { teacherId: req.user.id, classId: { in: classIds }, tenantId: req.tenantId },
-        select: { classId: true, subjectId: true }
-      })
-      const assignmentSet = new Set(assignments.map(a => `${a.classId}::${a.subjectId}`))
-
       for (const { studentId, subjectId, semesterId } of pairsToCheck.values()) {
         const classId = classByStudentSemester.get(`${studentId}::${semesterId}`)
-        if (!classId || !assignmentSet.has(`${classId}::${subjectId}`)) {
+        if (!classId || !scope.pairSet.has(`${classId}::${subjectId}`)) {
           throw new AppError('Not assigned to this class/subject', 403, 'FORBIDDEN')
         }
       }
 
       const lockedScore = existingScores.find(s => s.isLocked)
-      if (lockedScore) {
+      if (lockedScore && req.user.role === 'TEACHER') {
         throw new AppError('One or more scores are locked. Only Admin/Staff can edit locked scores.', 403, 'SCORE_LOCKED')
       }
     }
@@ -821,6 +798,7 @@ router.post('/class/:classId/lock', authorize('SUPER_ADMIN', 'STAFF'), async (re
 
     const classCheck = await prisma.class.findFirst({ where: { id: req.params.classId, tenantId: req.tenantId }, select: { id: true, name: true } })
     if (!classCheck) throw new AppError('Class not found', 404, 'NOT_FOUND')
+    await ensureClassSubjectAccess(prisma, req, req.params.classId, subjectId)
 
     const studentIds = await getStudentIdsForClassAndSemester(req.tenantId, req.params.classId, semesterId)
 
@@ -896,6 +874,7 @@ router.post('/class/:classId/unlock', authorize('SUPER_ADMIN', 'STAFF'), async (
 
     const classCheck = await prisma.class.findFirst({ where: { id: req.params.classId, tenantId: req.tenantId }, select: { id: true, name: true } })
     if (!classCheck) throw new AppError('Class not found', 404, 'NOT_FOUND')
+    await ensureClassSubjectAccess(prisma, req, req.params.classId, subjectId)
 
     const studentIds = await getStudentIdsForClassAndSemester(req.tenantId, req.params.classId, semesterId)
 
@@ -1017,7 +996,7 @@ router.get('/student/:studentId/yearly', async (req, res, next) => {
     const { studentId } = req.params
     const { year } = req.query
 
-    await assertTeacherCanAccessStudent(req, studentId)
+    await assertAssignedUserCanAccessStudent(req, studentId)
 
     const student = await prisma.student.findFirst({
       where: { id: studentId, tenantId: req.tenantId },

@@ -8,6 +8,7 @@ const PDFDocument = require('pdfkit')
 const { authenticate, authorize } = require('../middleware/auth')
 const { requireFeature, requireAllFeatures, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
+const { getUserAssignmentScope, ensureClassSubjectAccess } = require('../utils/assignment-scope')
 
 const PDF_SECTION_KEYS = ['cover', 'filters', 'summary', 'table', 'students', 'signature']
 const DEFAULT_COMMON_SECTIONS = ['cover', 'filters', 'summary', 'table', 'signature']
@@ -465,6 +466,10 @@ router.get('/students', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), req
         lte: new Date(`${birthYear}-12-31T23:59:59.999Z`)
       }
     }
+    const scope = await getUserAssignmentScope(prisma, req)
+    if (scope) {
+      where.classId = classId ? { in: scope.classIds.filter((id) => id === classId) } : { in: scope.classIds }
+    }
 
     const students = await prisma.student.findMany({
       where,
@@ -532,6 +537,8 @@ router.get('/classes', authorize('SUPER_ADMIN', 'STAFF', 'PLATFORM_ADMIN'), requ
     const format = normalizeFormat(req.query.format)
     const where = {}
     if (req.user.role !== 'PLATFORM_ADMIN') where.tenantId = req.tenantId
+    const scope = await getUserAssignmentScope(prisma, req)
+    if (scope) where.id = { in: scope.classIds }
 
     const classes = await prisma.class.findMany({
       where,
@@ -595,12 +602,7 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADM
       throw new AppError('classId, subjectId, and semesterId are required', 400, 'MISSING_PARAMS')
     }
 
-    if (req.user.role === 'TEACHER') {
-      const assignment = await prisma.teacherAssignment.findFirst({
-        where: { teacherId: req.user.id, classId, subjectId, tenantId: req.tenantId }
-      })
-      if (!assignment) throw new AppError('Not assigned to this class/subject', 403, 'FORBIDDEN')
-    }
+    await ensureClassSubjectAccess(prisma, req, classId, subjectId)
 
     const [students, scoreComponents] = await Promise.all([
       prisma.student.findMany({
