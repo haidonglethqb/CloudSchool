@@ -282,16 +282,15 @@ router.delete('/:id', authenticate, requireFeature('student-lookup'), authorize(
     })
     if (!existingStudent) throw new AppError('Student not found', 404, 'NOT_FOUND')
 
-    const [scoreCount, promotionCount, feeCount, transferCount, parentCount, enrollmentCount] = await Promise.all([
+    const [scoreCount, promotionCount, transferCount, parentCount, enrollmentCount] = await Promise.all([
       prisma.score.count({ where: { studentId: req.params.id } }),
       prisma.promotion.count({ where: { studentId: req.params.id } }),
-      prisma.studentFee.count({ where: { studentId: req.params.id } }),
       prisma.transferHistory.count({ where: { studentId: req.params.id } }),
       prisma.parentStudent.count({ where: { studentId: req.params.id } }),
       prisma.classEnrollment.count({ where: { studentId: req.params.id } })
     ])
-    if (promotionCount > 0 || feeCount > 0 || transferCount > 0 || parentCount > 0 || enrollmentCount > 0) {
-      throw new AppError('Cannot delete student with existing records (promotions, fees, transfers, parent links, enrollments)', 400, 'HAS_RECORDS')
+    if (promotionCount > 0 || transferCount > 0 || parentCount > 0 || enrollmentCount > 0) {
+      throw new AppError('Cannot delete student with existing records (promotions, transfers, parent links, enrollments)', 400, 'HAS_RECORDS')
     }
     if (scoreCount > 0) {
       throw new AppError('Cannot delete student with score records', 400, 'HAS_SCORES')

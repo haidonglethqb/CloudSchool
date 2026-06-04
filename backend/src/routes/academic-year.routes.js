@@ -430,17 +430,15 @@ router.delete('/:id/semesters/:semesterId', authorize('SUPER_ADMIN', 'STAFF'), a
     })
     if (!semester) throw new AppError('Semester not found', 404, 'NOT_FOUND')
 
-    const [scoreCount, promoCount, feeCount, enrollmentCount, transferCount] = await Promise.all([
+    const [scoreCount, promoCount, enrollmentCount, transferCount] = await Promise.all([
       prisma.score.count({ where: { semesterId: semester.id } }),
       prisma.promotion.count({ where: { semesterId: semester.id } }),
-      prisma.fee.count({ where: { semesterId: semester.id } }),
       prisma.classEnrollment.count({ where: { semesterId: semester.id } }),
       prisma.transferHistory.count({ where: { semesterId: semester.id } })
     ])
 
     if (scoreCount > 0) throw new AppError('Cannot delete semester with existing scores', 400, 'HAS_SCORES')
     if (promoCount > 0) throw new AppError('Cannot delete semester with existing promotion records', 400, 'HAS_PROMOTIONS')
-    if (feeCount > 0) throw new AppError('Cannot delete semester with associated fees', 400, 'HAS_FEES')
     if (enrollmentCount > 0) throw new AppError('Cannot delete semester with class enrollments', 400, 'HAS_ENROLLMENTS')
     if (transferCount > 0) throw new AppError('Cannot delete semester with transfer history', 400, 'HAS_TRANSFERS')
 

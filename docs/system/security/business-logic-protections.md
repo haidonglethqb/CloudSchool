@@ -1,4 +1,4 @@
-# Business Logic Protections
+﻿# Business Logic Protections
 
 > Race condition prevention, delete guards, transaction wraps, cache invalidation.
 
@@ -19,8 +19,6 @@ await prisma.$transaction(async (tx) => {
 
 | Entity | Guard Condition | Error |
 |--------|----------------|-------|
-| **Student** | Has promotions, fees, transfers, parent links, enrollments, or scores | `409 Conflict` |
-| **Fee** | Has student payment records | `409 Conflict` |
 | **Class capacity** | Cannot reduce below current student count | `400 Bad Request` |
 
 ## Score Protection
@@ -63,8 +61,7 @@ if (!allowedRoles.includes(newRole)) throw new ForbiddenError("Role escalation n
 flowchart TD
   A[Request] --> B{Operation Type?}
   B -->|DELETE Student| C[Check dependents]
-  B -->|DELETE Fee| D[Check payment records]
-  B -->|PUT Class capacity| E[Verify ≥ current count]
+  B -->|PUT Class capacity| E[Verify â‰¥ current count]
   B -->|POST/PUT Academic Year| F[Check overlap]
   B -->|PUT User role| G[Check allowed roles]
   B -->|Batch Score| H[Verify tenant + component]
@@ -94,7 +91,6 @@ flowchart TD
 |-----------|--------|
 | Score batch create | Atomic score insertion |
 | User assignments | Role + tenant consistency |
-| Fee create | Fee + payment record atomicity |
 | Promotion calculate | Year-end promotion consistency |
 
 ## Cache Invalidation

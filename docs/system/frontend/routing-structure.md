@@ -1,38 +1,37 @@
-# Next.js App Router Structure
+﻿# Next.js App Router Structure
 
 ## Route Tree
 
 ```
 frontend/src/app/
-├── layout.tsx              # Root layout (Toaster, global CSS)
-├── login/page.tsx          # School/Platform Admin login
-├── register/page.tsx       # School registration
-└── (dashboard)/            # Route group — shared layout
-    ├── layout.tsx          # Auth guard + sidebar + menu
-    ├── dashboard/page.tsx  # Home dashboard
-    ├── admin/
-    │   ├── schools/page.tsx
-    │   ├── subscriptions/page.tsx
-    │   ├── monitoring/page.tsx
-    │   └── activity-logs/page.tsx
-    ├── users/page.tsx
-    ├── students/
-    │   ├── new/page.tsx
-    │   └── page.tsx        # Student search
-    ├── classes/page.tsx
-    ├── subjects/page.tsx
-    ├── scores/page.tsx
-    ├── promotion/page.tsx
-    ├── reports/page.tsx
-    ├── parents/page.tsx
-    ├── settings/
-    │   ├── page.tsx
-    │   ├── academic-years/page.tsx
-    │   └── permissions/page.tsx
-    ├── my-children/
-    │   ├── page.tsx
-    │   └── fees/page.tsx
-    └── my-scores/page.tsx
+â”œâ”€â”€ layout.tsx              # Root layout (Toaster, global CSS)
+â”œâ”€â”€ login/page.tsx          # School/Platform Admin login
+â”œâ”€â”€ register/page.tsx       # School registration
+â””â”€â”€ (dashboard)/            # Route group â€” shared layout
+    â”œâ”€â”€ layout.tsx          # Auth guard + sidebar + menu
+    â”œâ”€â”€ dashboard/page.tsx  # Home dashboard
+    â”œâ”€â”€ admin/
+    â”‚   â”œâ”€â”€ schools/page.tsx
+    â”‚   â”œâ”€â”€ subscriptions/page.tsx
+    â”‚   â”œâ”€â”€ monitoring/page.tsx
+    â”‚   â””â”€â”€ activity-logs/page.tsx
+    â”œâ”€â”€ users/page.tsx
+    â”œâ”€â”€ students/
+    â”‚   â”œâ”€â”€ new/page.tsx
+    â”‚   â””â”€â”€ page.tsx        # Student search
+    â”œâ”€â”€ classes/page.tsx
+    â”œâ”€â”€ subjects/page.tsx
+    â”œâ”€â”€ scores/page.tsx
+    â”œâ”€â”€ promotion/page.tsx
+    â”œâ”€â”€ reports/page.tsx
+    â”œâ”€â”€ parents/page.tsx
+    â”œâ”€â”€ settings/
+    â”‚   â”œâ”€â”€ page.tsx
+    â”‚   â”œâ”€â”€ academic-years/page.tsx
+    â”‚   â””â”€â”€ permissions/page.tsx
+    â”œâ”€â”€ my-children/
+    â”‚   â”œâ”€â”€ page.tsx
+    â””â”€â”€ my-scores/page.tsx
 ```
 
 ## Authentication Flow

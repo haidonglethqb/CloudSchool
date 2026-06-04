@@ -9,6 +9,7 @@ const { MODULE_KEYS, DEFAULT_ENABLED_MODULES } = require('../constants/module-re
 const { isValidVietnamPhone, normalizeVietnamPhone } = require('../utils/phone')
 const {
   getTenantPlanUsage,
+  getTenantPlanLimitValidationUsage,
   assertUsageWithinLimits
 } = require('../utils/subscription-limits')
 
@@ -344,7 +345,7 @@ router.put('/schools/:id', [
     if (planId !== undefined && planId) {
       const targetPlan = await prisma.subscriptionPlan.findUnique({ where: { id: planId } })
       if (!targetPlan) throw new AppError('Plan not found', 404, 'PLAN_NOT_FOUND')
-      const usage = await getTenantPlanUsage(prisma, req.params.id)
+      const usage = await getTenantPlanLimitValidationUsage(prisma, req.params.id)
       assertUsageWithinLimits(usage, {
         students: targetPlan.studentLimit,
         classes: targetPlan.classLimit,
@@ -482,7 +483,7 @@ router.put('/subscriptions/:id', async (req, res, next) => {
       teachers: teacherLimit ?? currentPlan.teacherLimit
     }
     for (const tenant of currentPlan.tenants) {
-      const usage = await getTenantPlanUsage(prisma, tenant.id)
+      const usage = await getTenantPlanLimitValidationUsage(prisma, tenant.id)
       assertUsageWithinLimits(usage, nextLimits, 'PLAN_LIMIT_TOO_LOW')
     }
 

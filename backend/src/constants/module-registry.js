@@ -11,10 +11,9 @@ const MODULE_KEYS = [
   'academic-calendar',
   'settings',
   'export',
-  'fees',
 ]
 
-const DEFAULT_ENABLED_MODULES = MODULE_KEYS.filter((key) => key !== 'fees')
+const DEFAULT_ENABLED_MODULES = [...MODULE_KEYS]
 
 const ROLE_MODULE_KEYS = {
   STAFF: MODULE_KEYS,

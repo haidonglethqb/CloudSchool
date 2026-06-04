@@ -1,12 +1,12 @@
-# Key Route Logic
+﻿# Key Route Logic
 
 > Source: `backend/src/routes/*.routes.js`
 
-## Student Admission (`POST /students`) — student.routes.js
+## Student Admission (`POST /students`) â€” student.routes.js
 
-1. **Age validation (QĐ1):** Computes age from `dateOfBirth`; must be within `settings.minAge`–`settings.maxAge`.
+1. **Age validation (QÄ1):** Computes age from `dateOfBirth`; must be within `settings.minAge`â€“`settings.maxAge`.
 2. **Class capacity check:** Inside `$transaction`, counts students in target class; rejects if `count >= capacity`.
-3. **studentCode generation:** `HS{YY}{NNNN}` — e.g. `HS260001`. Generated inside transaction to prevent race conditions.
+3. **studentCode generation:** `HS{YY}{NNNN}` â€” e.g. `HS260001`. Generated inside transaction to prevent race conditions.
 4. **ClassEnrollment:** If `classId` provided, auto-creates enrollment record for the active semester.
 
 ```js
@@ -17,33 +17,33 @@ const generateStudentCode = async (tenantId, tx) => {
 }
 ```
 
-## Score Entry (`POST /scores`, `POST /scores/batch`) — score.routes.js
+## Score Entry (`POST /scores`, `POST /scores/batch`) â€” score.routes.js
 
-1. **Score range (QĐ6):** Validates `value` within `settings.minScore`–`settings.maxScore`.
+1. **Score range (QÄ6):** Validates `value` within `settings.minScore`â€“`settings.maxScore`.
 2. **Lock check:** Locked scores block edits by `TEACHER` role only (403 `SCORE_LOCKED`).
 3. **Teacher assignment check:** `TeacherAssignment` lookup ensures teacher is assigned to the student's class + subject.
 4. **Semester activation:** Scores can be entered when `semester.isActive === true`; semester dates are informational for UI scheduling.
 5. **Audit snapshot:** Every create/update writes a `ScoreHistory` row with actor, student, class, subject, semester, score-component, and old/new values.
 6. **Upsert via `$transaction`:** Batch endpoint wraps score upserts and history inserts in one `prisma.$transaction()`.
 
-## Score History (`GET /scores/history`) — score.routes.js
+## Score History (`GET /scores/history`) â€” score.routes.js
 
 1. Requires `classId`, `subjectId`, and `semesterId`; `scoreComponentId` is optional.
 2. Teachers are limited to their own assigned `classId + subjectId` pairs.
 3. Returns newest-first paginated audit entries from `ScoreHistory`.
 4. Powers the score-entry history panel after save, lock, unlock, or delete actions.
 
-## Score Finalization (`PATCH /scores/:id/lock`, `PATCH /scores/:id/unlock`, class lock/unlock) — score.routes.js
+## Score Finalization (`PATCH /scores/:id/lock`, `PATCH /scores/:id/unlock`, class lock/unlock) â€” score.routes.js
 
 1. Staff and super admins can lock or unlock individual scores and whole class slices.
 2. Each lock/unlock action writes a `ScoreHistory` snapshot so the UI can show who finalized or reopened scores.
 
-## Semester Deletion (`DELETE /academic-years/:id/semesters/:semesterId`) — academic-year.routes.js
+## Semester Deletion (`DELETE /academic-years/:id/semesters/:semesterId`) â€” academic-year.routes.js
 
-1. Deletion is blocked when the semester still has scores, promotions, fees, enrollments, or transfer history.
+1. Deletion is blocked when the semester still has scores, promotions, enrollments, or transfer history.
 2. Successful deletion hard-removes the semester, so later `GET /academic-years/semesters` reads no longer return it.
 
-## Teacher Score Access — score.routes.js
+## Teacher Score Access â€” score.routes.js
 
 Teachers are scoped to their assigned class/subject pairs:
 
@@ -54,13 +54,13 @@ const assignment = await prisma.teacherAssignment.findFirst({
 if (!assignment) throw new AppError('Not assigned to this class/subject', 403, 'FORBIDDEN')
 ```
 
-## Promotion Calculation (`POST /promotion/calculate`) — promotion.routes.js
+## Promotion Calculation (`POST /promotion/calculate`) â€” promotion.routes.js
 
-1. **Weighted average per subject:** `Σ(score × weight) / Σ(weight)`.
+1. **Weighted average per subject:** `Î£(score Ã— weight) / Î£(weight)`.
 2. **Overall average:** Mean of all subject averages.
-3. **Result determination:** `PASS` if avg ≥ `passScore`; `FAIL` if avg < `passScore`; `RETAKE` if avg passes but any subject fails.
+3. **Result determination:** `PASS` if avg â‰¥ `passScore`; `FAIL` if avg < `passScore`; `RETAKE` if avg passes but any subject fails.
 4. **Upsert Promotion:** Uses `upsert` with unique key `{studentId, classId, semesterId}`.
-5. **Auto-deactivate (QĐ9):** Students exceeding `maxRetentions` FAIL counts are set `isActive: false` inside the same transaction.
+5. **Auto-deactivate (QÄ9):** Students exceeding `maxRetentions` FAIL counts are set `isActive: false` inside the same transaction.
 
 ```js
 await prisma.$transaction(async (tx) => {
@@ -75,27 +75,9 @@ await prisma.$transaction(async (tx) => {
 })
 ```
 
-## Fee Creation + Student Assignment (`POST /fees`) — fee.routes.js
+## Monitoring â€” monitoring.routes.js
 
-Fee creation and student assignment run in a single `$transaction`:
-
-```js
-const { fee, assignedCount } = await prisma.$transaction(async (tx) => {
-  const fee = await tx.fee.create({ data: { tenantId, name, amount, category, ... } })
-  const students = await tx.student.findMany({ where: { tenantId, isActive: true, classId/grade filter } })
-  if (students.length > 0) {
-    await tx.studentFee.createMany({
-      data: students.map(s => ({ tenantId, feeId: fee.id, studentId: s.id, amount: fee.amount })),
-      skipDuplicates: true
-    })
-  }
-  return { fee, assignedCount: students.length }
-})
-```
-
-## Monitoring — monitoring.routes.js
-
-**System stats:** Previously 24 sequential counts → now 9 parallel `Promise.all` counts + 2 raw SQL `GROUP BY` queries for 12-month growth arrays (zero-filled).
+**System stats:** Previously 24 sequential counts â†’ now 9 parallel `Promise.all` counts + 2 raw SQL `GROUP BY` queries for 12-month growth arrays (zero-filled).
 
 ```js
 const [schoolGrowthRaw, studentGrowthRaw] = await Promise.all([
@@ -106,7 +88,7 @@ const [schoolGrowthRaw, studentGrowthRaw] = await Promise.all([
 ])
 ```
 
-## Admin Dashboard — admin.routes.js
+## Admin Dashboard â€” admin.routes.js
 
 **Dashboard:** 12 parallel counts (schools, users, students, teachers, classes, plans) + 2 raw SQL `GROUP BY` queries for 6-month growth arrays.
 
@@ -118,7 +100,7 @@ const [totalSchools, activeSchools, ..., totalPlans] = await Promise.all([
 ])
 ```
 
-## Export PDF Hardening (`GET /export/*?format=pdf`) — export.routes.js
+## Export PDF Hardening (`GET /export/*?format=pdf`) â€” export.routes.js
 
 1. **Buffer-before-send:** PDF is generated to an in-memory buffer first, then response headers/body are sent only after successful render.
 2. **Header correctness:** `Content-Type`, `Content-Disposition`, and `Content-Length` are set only on success to avoid mismatched JSON body with PDF headers.
@@ -131,4 +113,4 @@ const [totalSchools, activeSchools, ..., totalPlans] = await Promise.all([
 
 - [API Endpoints](./api-endpoints.md)
 - [Middleware](./middleware.md)
-- Sources: `backend/src/routes/{student,score,promotion,fee,monitoring,admin,export}.routes.js`
+- Sources: `backend/src/routes/{student,score,promotion,monitoring,admin,export}.routes.js`

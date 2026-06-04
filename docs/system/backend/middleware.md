@@ -1,4 +1,4 @@
-# Backend Middleware
+﻿# Backend Middleware
 
 > Source: `backend/src/middleware/auth.js`
 
@@ -71,11 +71,11 @@ const tenantGuard = (req, res, next) => {
 
 ## requireRolePermission(moduleKey)
 
-Module-level permission cho `STAFF`/`TEACHER`, đọc từ `tenant_settings.rolePermissions`.
+Module-level permission cho `STAFF`/`TEACHER`, Ä‘á»c tá»« `tenant_settings.rolePermissions`.
 
 - `SUPER_ADMIN`/`PLATFORM_ADMIN`: bypass.
-- `STAFF`/`TEACHER`: phải có `moduleKey` trong role permissions (fallback `DEFAULT_ROLE_PERMISSIONS`).
-- Role khác (`PARENT`, `STUDENT`): không bị middleware này chặn trực tiếp, nhưng bị chặn bởi `authorize(...)` ở router.
+- `STAFF`/`TEACHER`: pháº£i cÃ³ `moduleKey` trong role permissions (fallback `DEFAULT_ROLE_PERMISSIONS`).
+- Role khÃ¡c (`PARENT`, `STUDENT`): khÃ´ng bá»‹ middleware nÃ y cháº·n trá»±c tiáº¿p, nhÆ°ng bá»‹ cháº·n bá»Ÿi `authorize(...)` á»Ÿ router.
 
 ```js
 router.use(
@@ -108,7 +108,7 @@ const invalidateSettingsCache = (tenantId) => settingsCache.delete(tenantId)
 | `SUPER_ADMIN` | Single tenant | Full school admin: users, students, scores, settings |
 | `STAFF` | Single tenant | Students, classes, scores, reports (limited by rolePermissions) |
 | `TEACHER` | Single tenant | Scores for assigned classes, class view, reports |
-| `PARENT` | Single tenant | View own children's scores and fees |
+| `PARENT` | Single tenant | View own children's scores |
 
 ## Related
 

@@ -73,9 +73,9 @@
 | GET | `/classes` | List classes; teacher and assigned staff are assignment-scoped and deduped by class |
 | GET | `/classes/grades` | Grades with nested classes + student counts; teacher and assigned staff scope applies |
 | GET | `/classes/:id` | Class detail + students + teacher assignments |
-| POST | `/classes` | Create class (capacity from settings; grade must be within current grade range; enforces plan class limit) |
+| POST | `/classes` | Create class (capacity from settings; grade must be within current grade range; enforces plan class limit per academic year) |
 | PUT | `/classes/:id` | Update class (capacity must be within settings and `>=` current students; grade must be within current grade range) |
-| DELETE | `/classes/:id` | Delete class (no students/assignments/fees) |
+| DELETE | `/classes/:id` | Delete class (no students/assignments) |
 | POST | `/classes/:id/assign-teacher` | Assign teacher/staff to class+subject |
 | DELETE | `/classes/:id/assign-teacher/:assignmentId` | Remove assignment |
 | GET | `/classes/:id/students` | Students in class |
@@ -184,19 +184,6 @@ Export note:
 | GET | `/monitoring/system-stats` | System health: schools, users, CPU, memory, DB |
 | GET | `/monitoring/activity-logs` | Activity log feed (paginated, filters) |
 | GET | `/monitoring/school-stats/:schoolId` | Detailed stats for a specific school |
-
-## Fees
-
-| Method | Path | Description |
-|---|---|---|
-| GET | `/fees` | List fees with payment stats |
-| GET | `/fees/:id` | Fee detail + student payments |
-| POST | `/fees` | Create fee + auto-assign students ($transaction) |
-| PUT | `/fees/:id` | Update fee |
-| DELETE | `/fees/:id` | Delete fee (no student fee records) |
-| PATCH | `/fees/:id/students/:studentId` | Update student payment status/amount |
-| POST | `/fees/:id/assign` | Manually assign fee to specific students |
-| GET | `/fees/parent/my-fees` | Parent's children fee list (PARENT role) |
 
 ## Academic Years
 

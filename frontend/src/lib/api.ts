@@ -302,21 +302,6 @@ export const monitoringApi = {
   schoolStats: (schoolId: string) => api.get(`/monitoring/school-stats/${schoolId}`),
 }
 
-// ==================== Fees ====================
-export const feeApi = {
-  list: (params?: { category?: string; isActive?: string }) =>
-    api.get('/fees', { params }),
-  get: (id: string) => api.get(`/fees/${id}`),
-  create: (data: Record<string, unknown>) => api.post('/fees', data),
-  update: (id: string, data: Record<string, unknown>) => api.put(`/fees/${id}`, data),
-  delete: (id: string) => api.delete(`/fees/${id}`),
-  updateStudentPayment: (feeId: string, studentId: string, data: { status?: string; paidAmount?: number; note?: string }) =>
-    api.patch(`/fees/${feeId}/students/${studentId}`, data),
-  assignStudents: (feeId: string, studentIds: string[]) =>
-    api.post(`/fees/${feeId}/assign`, { studentIds }),
-  getParentFees: () => api.get('/fees/parent/my-fees'),
-}
-
 // ==================== Helper: Download blob ====================
 export function downloadBlob(blob: Blob, filename: string) {
   const url = window.URL.createObjectURL(blob)

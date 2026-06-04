@@ -1,4 +1,4 @@
-const { PrismaClient } = require('@prisma/client')
+﻿const { PrismaClient } = require('@prisma/client')
 const bcrypt = require('bcryptjs')
 const { DEFAULT_ENABLED_MODULES } = require('../src/constants/module-registry')
 
@@ -31,49 +31,49 @@ const ACADEMIC_YEARS = [
 ]
 
 const GRADE_CONFIG = [
-  { level: 10, name: 'Khối 10' },
-  { level: 11, name: 'Khối 11' },
-  { level: 12, name: 'Khối 12' }
+  { level: 10, name: 'Khá»‘i 10' },
+  { level: 11, name: 'Khá»‘i 11' },
+  { level: 12, name: 'Khá»‘i 12' }
 ]
 
 const SUBJECT_CONFIG = [
-  { name: 'Toán', code: 'MATH', description: 'Môn Toán học' },
-  { name: 'Ngữ văn', code: 'LITERATURE', description: 'Môn Ngữ văn' },
-  { name: 'Tiếng Anh', code: 'ENGLISH', description: 'Môn Tiếng Anh' },
-  { name: 'Vật lý', code: 'PHYSICS', description: 'Môn Vật lý' },
-  { name: 'Hóa học', code: 'CHEMISTRY', description: 'Môn Hóa học' },
-  { name: 'Sinh học', code: 'BIOLOGY', description: 'Môn Sinh học' },
-  { name: 'Lịch sử', code: 'HISTORY', description: 'Môn Lịch sử' },
-  { name: 'Địa lý', code: 'GEOGRAPHY', description: 'Môn Địa lý' }
+  { name: 'ToÃ¡n', code: 'MATH', description: 'MÃ´n ToÃ¡n há»c' },
+  { name: 'Ngá»¯ vÄƒn', code: 'LITERATURE', description: 'MÃ´n Ngá»¯ vÄƒn' },
+  { name: 'Tiáº¿ng Anh', code: 'ENGLISH', description: 'MÃ´n Tiáº¿ng Anh' },
+  { name: 'Váº­t lÃ½', code: 'PHYSICS', description: 'MÃ´n Váº­t lÃ½' },
+  { name: 'HÃ³a há»c', code: 'CHEMISTRY', description: 'MÃ´n HÃ³a há»c' },
+  { name: 'Sinh há»c', code: 'BIOLOGY', description: 'MÃ´n Sinh há»c' },
+  { name: 'Lá»‹ch sá»­', code: 'HISTORY', description: 'MÃ´n Lá»‹ch sá»­' },
+  { name: 'Äá»‹a lÃ½', code: 'GEOGRAPHY', description: 'MÃ´n Äá»‹a lÃ½' }
 ]
 
 const SCORE_COMPONENT_CONFIG = [
-  { name: 'Kiểm tra miệng', weight: 10 },
-  { name: 'Kiểm tra 15 phút', weight: 20 },
-  { name: 'Kiểm tra 1 tiết', weight: 30 },
-  { name: 'Thi cuối kỳ', weight: 40 }
+  { name: 'Kiá»ƒm tra miá»‡ng', weight: 10 },
+  { name: 'Kiá»ƒm tra 15 phÃºt', weight: 20 },
+  { name: 'Kiá»ƒm tra 1 tiáº¿t', weight: 30 },
+  { name: 'Thi cuá»‘i ká»³', weight: 40 }
 ]
 
 const TEACHER_CONFIG = [
-  { email: 'teacher@demo.school.vn', password: 'teacher123', fullName: 'Nguyễn Văn Thầy', department: 'Toán', subjectCode: 'MATH' },
-  { email: 'teacher.literature@demo.school.vn', password: 'teacher123', fullName: 'Trần Thị Vân', department: 'Ngữ văn', subjectCode: 'LITERATURE' },
-  { email: 'teacher.english@demo.school.vn', password: 'teacher123', fullName: 'Lê Hoàng Anh', department: 'Tiếng Anh', subjectCode: 'ENGLISH' },
-  { email: 'teacher.physics@demo.school.vn', password: 'teacher123', fullName: 'Phạm Quốc Lý', department: 'Vật lý', subjectCode: 'PHYSICS' },
-  { email: 'teacher.chemistry@demo.school.vn', password: 'teacher123', fullName: 'Đỗ Thanh Hóa', department: 'Hóa học', subjectCode: 'CHEMISTRY' },
-  { email: 'teacher.biology@demo.school.vn', password: 'teacher123', fullName: 'Bùi Minh Sinh', department: 'Sinh học', subjectCode: 'BIOLOGY' },
-  { email: 'teacher.history@demo.school.vn', password: 'teacher123', fullName: 'Nguyễn Thị Sử', department: 'Lịch sử', subjectCode: 'HISTORY' },
-  { email: 'teacher.geography@demo.school.vn', password: 'teacher123', fullName: 'Đặng Thanh Địa', department: 'Địa lý', subjectCode: 'GEOGRAPHY' }
+  { email: 'teacher@demo.school.vn', password: 'teacher123', fullName: 'Nguyá»…n VÄƒn Tháº§y', department: 'ToÃ¡n', subjectCode: 'MATH' },
+  { email: 'teacher.literature@demo.school.vn', password: 'teacher123', fullName: 'Tráº§n Thá»‹ VÃ¢n', department: 'Ngá»¯ vÄƒn', subjectCode: 'LITERATURE' },
+  { email: 'teacher.english@demo.school.vn', password: 'teacher123', fullName: 'LÃª HoÃ ng Anh', department: 'Tiáº¿ng Anh', subjectCode: 'ENGLISH' },
+  { email: 'teacher.physics@demo.school.vn', password: 'teacher123', fullName: 'Pháº¡m Quá»‘c LÃ½', department: 'Váº­t lÃ½', subjectCode: 'PHYSICS' },
+  { email: 'teacher.chemistry@demo.school.vn', password: 'teacher123', fullName: 'Äá»— Thanh HÃ³a', department: 'HÃ³a há»c', subjectCode: 'CHEMISTRY' },
+  { email: 'teacher.biology@demo.school.vn', password: 'teacher123', fullName: 'BÃ¹i Minh Sinh', department: 'Sinh há»c', subjectCode: 'BIOLOGY' },
+  { email: 'teacher.history@demo.school.vn', password: 'teacher123', fullName: 'Nguyá»…n Thá»‹ Sá»­', department: 'Lá»‹ch sá»­', subjectCode: 'HISTORY' },
+  { email: 'teacher.geography@demo.school.vn', password: 'teacher123', fullName: 'Äáº·ng Thanh Äá»‹a', department: 'Äá»‹a lÃ½', subjectCode: 'GEOGRAPHY' }
 ]
 
-const LAST_NAMES = ['Nguyễn', 'Trần', 'Lê', 'Phạm', 'Hoàng', 'Võ', 'Đặng', 'Bùi', 'Đỗ', 'Lý']
-const MIDDLE_NAMES = ['Văn', 'Thị', 'Hữu', 'Minh', 'Quốc', 'Thanh', 'Ngọc', 'Gia']
-const FIRST_NAMES = ['An', 'Bình', 'Cường', 'Dung', 'Em', 'Giang', 'Hạnh', 'Khanh', 'Long', 'My', 'Nam', 'Oanh']
+const LAST_NAMES = ['Nguyá»…n', 'Tráº§n', 'LÃª', 'Pháº¡m', 'HoÃ ng', 'VÃµ', 'Äáº·ng', 'BÃ¹i', 'Äá»—', 'LÃ½']
+const MIDDLE_NAMES = ['VÄƒn', 'Thá»‹', 'Há»¯u', 'Minh', 'Quá»‘c', 'Thanh', 'Ngá»c', 'Gia']
+const FIRST_NAMES = ['An', 'BÃ¬nh', 'CÆ°á»ng', 'Dung', 'Em', 'Giang', 'Háº¡nh', 'Khanh', 'Long', 'My', 'Nam', 'Oanh']
 const ADDRESS_POOL = [
-  '123 Trần Hưng Đạo, Quận 1, TP.HCM',
-  '45 Nguyễn Trãi, Quận 5, TP.HCM',
-  '88 Võ Văn Tần, Quận 3, TP.HCM',
-  '22 Lê Văn Sỹ, Quận Phú Nhuận, TP.HCM',
-  '300 Phan Xích Long, Quận Phú Nhuận, TP.HCM'
+  '123 Tráº§n HÆ°ng Äáº¡o, Quáº­n 1, TP.HCM',
+  '45 Nguyá»…n TrÃ£i, Quáº­n 5, TP.HCM',
+  '88 VÃµ VÄƒn Táº§n, Quáº­n 3, TP.HCM',
+  '22 LÃª VÄƒn Sá»¹, Quáº­n PhÃº Nhuáº­n, TP.HCM',
+  '300 Phan XÃ­ch Long, Quáº­n PhÃº Nhuáº­n, TP.HCM'
 ]
 
 const getYearLabel = (startYear, endYear) => `${startYear}-${endYear}`
@@ -93,14 +93,14 @@ const getSemesterWindows = (yearRange) => {
   return [
     {
       semesterNum: 1,
-      name: 'Học kỳ 1',
+      name: 'Há»c ká»³ 1',
       startDate: new Date(`${yearRange.startYear}-09-01`),
       endDate: new Date(`${yearRange.endYear}-01-31`),
       year: label
     },
     {
       semesterNum: 2,
-      name: 'Học kỳ 2',
+      name: 'Há»c ká»³ 2',
       startDate: new Date(`${yearRange.endYear}-02-01`),
       endDate: new Date(`${yearRange.endYear}-06-30`),
       year: label
@@ -869,7 +869,7 @@ async function main () {
             tenantId: tenant.id,
             average: baseAverage,
             result,
-            note: result === 'PASS' ? 'Đủ điều kiện lên lớp' : result === 'RETAKE' ? 'Cần thi lại để xét lên lớp' : 'Chưa đủ điều kiện lên lớp'
+            note: result === 'PASS' ? 'Äá»§ Ä‘iá»u kiá»‡n lÃªn lá»›p' : result === 'RETAKE' ? 'Cáº§n thi láº¡i Ä‘á»ƒ xÃ©t lÃªn lá»›p' : 'ChÆ°a Ä‘á»§ Ä‘iá»u kiá»‡n lÃªn lá»›p'
           },
           create: {
             tenantId: tenant.id,
@@ -878,94 +878,13 @@ async function main () {
             semesterId: semester.id,
             average: baseAverage,
             result,
-            note: result === 'PASS' ? 'Đủ điều kiện lên lớp' : result === 'RETAKE' ? 'Cần thi lại để xét lên lớp' : 'Chưa đủ điều kiện lên lớp'
+            note: result === 'PASS' ? 'Äá»§ Ä‘iá»u kiá»‡n lÃªn lá»›p' : result === 'RETAKE' ? 'Cáº§n thi láº¡i Ä‘á»ƒ xÃ©t lÃªn lá»›p' : 'ChÆ°a Ä‘á»§ Ä‘iá»u kiá»‡n lÃªn lá»›p'
           }
         })
       }
     }
   }
   console.log('Promotion scenarios ready')
-
-  const ensureFee = async (data) => {
-    const existing = await prisma.fee.findFirst({
-      where: { tenantId: tenant.id, name: data.name }
-    })
-    if (existing) {
-      return prisma.fee.update({
-        where: { id: existing.id },
-        data
-      })
-    }
-    return prisma.fee.create({ data: { tenantId: tenant.id, ...data } })
-  }
-
-  const activeSemester = semesterByKey[`${ACTIVE_YEAR_LABEL}-${ACTIVE_SEMESTER_NUM}`]
-  const activeClass10A1 = classContexts.find((context) => context.academicYearLabel === ACTIVE_YEAR_LABEL && context.class.name === '10A1')?.class
-  const feeRows = await Promise.all([
-    ensureFee({
-      name: 'Học phí học kỳ 2',
-      description: 'Khoản học phí bắt buộc của học kỳ 2',
-      amount: 1800000,
-      category: 'TUITION',
-      isRequired: true,
-      dueDate: new Date(`${ACTIVE_YEAR_LABEL.split('-')[1]}-04-15`),
-      semesterId: activeSemester?.id,
-      isActive: true
-    }),
-    ensureFee({
-      name: 'Phí hoạt động ngoại khóa',
-      description: 'Dùng để kiểm thử trạng thái thanh toán một phần và miễn giảm',
-      amount: 350000,
-      category: 'ACTIVITY',
-      isRequired: false,
-      dueDate: new Date(`${ACTIVE_YEAR_LABEL.split('-')[1]}-05-10`),
-      classId: activeClass10A1?.id,
-      semesterId: activeSemester?.id,
-      isActive: true
-    })
-  ])
-
-  for (const [feeIndex, fee] of feeRows.entries()) {
-    for (const [index, student] of activeYearStudents.entries()) {
-      const statusCycle = ['PENDING', 'PAID', 'PARTIAL', 'OVERDUE', 'EXEMPT']
-      const status = statusCycle[(index + feeIndex) % statusCycle.length]
-      const paidAmount = status === 'PAID'
-        ? fee.amount
-        : status === 'PARTIAL'
-          ? Math.round(fee.amount / 2)
-          : status === 'EXEMPT'
-            ? 0
-            : 0
-
-      await prisma.studentFee.upsert({
-        where: {
-          feeId_studentId: {
-            feeId: fee.id,
-            studentId: student.id
-          }
-        },
-        update: {
-          tenantId: tenant.id,
-          amount: fee.amount,
-          paidAmount,
-          status,
-          paidAt: status === 'PAID' ? new Date() : null,
-          note: status === 'EXEMPT' ? 'Miễn giảm theo diện chính sách' : null
-        },
-        create: {
-          tenantId: tenant.id,
-          feeId: fee.id,
-          studentId: student.id,
-          amount: fee.amount,
-          paidAmount,
-          status,
-          paidAt: status === 'PAID' ? new Date() : null,
-          note: status === 'EXEMPT' ? 'Miễn giảm theo diện chính sách' : null
-        }
-      })
-    }
-  }
-  console.log('Fee scenarios ready')
 
   await prisma.transferHistory.deleteMany({
     where: {
@@ -975,8 +894,8 @@ async function main () {
   })
 
   const transferPairs = [
-    { from: '10A1', to: '10A2', studentIndex: 0, reason: '[seed] Chuyển lớp theo nguyện vọng gia đình' },
-    { from: '11A2', to: '11A3', studentIndex: 1, reason: '[seed] Điều chỉnh sĩ số giữa các lớp' }
+    { from: '10A1', to: '10A2', studentIndex: 0, reason: '[seed] Chuyá»ƒn lá»›p theo nguyá»‡n vá»ng gia Ä‘Ã¬nh' },
+    { from: '11A2', to: '11A3', studentIndex: 1, reason: '[seed] Äiá»u chá»‰nh sÄ© sá»‘ giá»¯a cÃ¡c lá»›p' }
   ]
   for (const item of transferPairs) {
     const fromClass = classContexts.find((context) => context.academicYearLabel === ACTIVE_YEAR_LABEL && context.class.name === item.from)
@@ -1014,7 +933,7 @@ async function main () {
       },
       update: {
         sourceClassId: item.classItem.id,
-        note: 'Tốt nghiệp trong dữ liệu mẫu',
+        note: 'Tá»‘t nghiá»‡p trong dá»¯ liá»‡u máº«u',
         createdBy: 'seed'
       },
       create: {
@@ -1022,7 +941,7 @@ async function main () {
         studentId: item.student.id,
         sourceClassId: item.classItem.id,
         academicYearId: graduationYear.id,
-        note: 'Tốt nghiệp trong dữ liệu mẫu',
+        note: 'Tá»‘t nghiá»‡p trong dá»¯ liá»‡u máº«u',
         createdBy: 'seed'
       }
     })

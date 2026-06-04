@@ -32,7 +32,7 @@ model SubscriptionPlan {
 | `studentLimit` | `Int` | Max students per tenant |
 | `staffLimit` | `Int` | Max staff users per tenant |
 | `teacherLimit` | `Int` | Max teachers per tenant |
-| `classLimit` | `Int` | Max classes per tenant |
+| `classLimit` | `Int` | Max classes per academic year |
 | `features` | `String[]` | Array of feature flags |
 
 ## Tenant

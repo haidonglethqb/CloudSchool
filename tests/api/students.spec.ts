@@ -1,4 +1,4 @@
-import { test, expect, APIRequestContext } from '@playwright/test';
+﻿import { test, expect, APIRequestContext } from '@playwright/test';
 import { createAuthContext, assertStatus } from '../helpers/api-client';
 
 let superAdminCtx: APIRequestContext;
@@ -41,7 +41,7 @@ test.describe('Students', () => {
     });
 
     test('list students with search filter', async () => {
-      const response = await superAdminCtx.get('/api/students?search=Nguyễn');
+      const response = await superAdminCtx.get('/api/students?search=Nguyá»…n');
       expect(response.status()).toBe(200);
 
       const body = await response.json();
@@ -147,7 +147,7 @@ test.describe('Students', () => {
     test('only SUPER_ADMIN can delete student', async () => {
       if (createdStudentId) {
         const response = await superAdminCtx.delete(`/api/students/${createdStudentId}`);
-        // May fail if student has scores/promotions/fees — that's expected behavior
+        // May fail if student has scores/promotions â€” that's expected behavior
         expect([200, 204, 400, 409]).toContain(response.status());
       }
     });

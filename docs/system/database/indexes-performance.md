@@ -1,4 +1,4 @@
-# Indexes and Performance
+﻿# Indexes and Performance
 
 > **Source:** `backend/prisma/schema.prisma` | All `@@index` and `@@unique` declarations
 
@@ -25,7 +25,6 @@
 | `Promotion` | `(studentId, classId, semesterId)` | One promotion per semester |
 | `ClassEnrollment` | `(studentId, semesterId)` | One enrollment per semester |
 | `AcademicYear` | `(tenantId, startYear, endYear)` | Unique year ranges |
-| `StudentFee` | `(feeId, studentId)` | One fee per student |
 
 ### Composite Indexes
 
@@ -50,12 +49,6 @@
 | `ActivityLog` | `(tenantId, createdAt)` | Audit trail by time range |
 | `AcademicYear` | `(tenantId)` | All academic years for tenant |
 | `ClassEnrollment` | `(tenantId, classId, semesterId)` | Enrollment roster |
-| `Fee` | `(tenantId, isActive)` | Active fees for tenant |
-| `Fee` | `(tenantId, gradeId)` | Fees for a grade |
-| `Fee` | `(tenantId, classId)` | Fees for a class |
-| `StudentFee` | `(tenantId, studentId)` | All fees for student |
-| `StudentFee` | `(tenantId, status)` | Fee status dashboard |
-| `StudentFee` | `(feeId, tenantId)` | Fee collection summary |
 
 ## Index Rationale
 
@@ -98,8 +91,8 @@ Database indexes work in concert with application-level caching:
 | Settings cache | 100 entries | 5 minutes | TenantSettings per tenant |
 
 **Interaction pattern:**
-1. Request arrives → check LRU cache first
-2. Cache miss → query database (uses indexes)
+1. Request arrives â†’ check LRU cache first
+2. Cache miss â†’ query database (uses indexes)
 3. Store result in cache for subsequent requests
 4. Cache invalidation on `UPDATE`/`DELETE` operations
 
@@ -108,13 +101,13 @@ Database indexes work in concert with application-level caching:
 ### Use `include` for relations
 
 ```ts
-// ❌ N+1: Fetches students then loops for classes
+// âŒ N+1: Fetches students then loops for classes
 const students = await prisma.student.findMany({ where: { classId } });
 for (const s of students) {
   const cls = await prisma.class.findUnique({ where: { id: s.classId } });
 }
 
-// ✅ Single query with include
+// âœ… Single query with include
 const students = await prisma.student.findMany({
   where: { classId },
   include: { class: true }
@@ -124,14 +117,14 @@ const students = await prisma.student.findMany({
 ### Batch score queries
 
 ```ts
-// ❌ N+1: One query per student
+// âŒ N+1: One query per student
 for (const student of students) {
   const scores = await prisma.score.findMany({
     where: { studentId: student.id, semesterId }
   });
 }
 
-// ✅ Single batch query
+// âœ… Single batch query
 const scores = await prisma.score.findMany({
   where: {
     studentId: { in: studentIds },

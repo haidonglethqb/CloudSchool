@@ -1,4 +1,4 @@
-# Multi-Tenant Model
+﻿# Multi-Tenant Model
 
 > How CloudSchool achieves tenant isolation in a shared database.
 
@@ -25,7 +25,7 @@ graph LR
 ### Row-Level Security
 Every business entity includes a `tenantId` foreign key:
 - Students, Classes, Subjects, Scores, Promotions
-- Users, ActivityLogs, Fees, TeacherAssignments
+- Users, ActivityLogs, TeacherAssignments
 - TransferHistories, ClassEnrollments
 
 ### TenantGuard Middleware
@@ -65,7 +65,7 @@ model Tenant {
   name        String       // School name
   code        String       @unique  // Login code (e.g., "THPT-DEMO")
   status      TenantStatus @default(ACTIVE)  // ACTIVE | SUSPENDED | INACTIVE
-  planId      String?      // FK → SubscriptionPlan
+  planId      String?      // FK â†’ SubscriptionPlan
   // Relations
   users             User[]
   students          Student[]
@@ -79,7 +79,7 @@ model Tenant {
 Each tenant has configurable settings:
 ```prisma
 model TenantSettings {
-  tenantId     String  @unique FK → Tenant
+  tenantId     String  @unique FK â†’ Tenant
   minAge       Int     @default(15)   // QD1
   maxAge       Int     @default(20)   // QD1
   maxClassSize Int     @default(40)   // QD2
@@ -96,7 +96,7 @@ Tenants are associated with subscription plans that define limits:
 ```prisma
 model SubscriptionPlan {
   id           String   @id
-  name         String   @unique  // "Cơ bản", "Nâng cao"
+  name         String   @unique  // "CÆ¡ báº£n", "NÃ¢ng cao"
   studentLimit Int      @default(100)
   teacherLimit Int      @default(20)
   classLimit   Int      @default(30)
@@ -104,6 +104,8 @@ model SubscriptionPlan {
   isActive     Boolean  @default(true)
 }
 ```
+
+`classLimit` is enforced per academic year. Usage displays the active academic year's class count; plan downgrade validation checks the largest class count in any academic year.
 
 ## Tenant Lifecycle
 

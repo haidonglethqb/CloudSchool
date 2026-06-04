@@ -1,4 +1,4 @@
-# Tenant Isolation Security
+﻿# Tenant Isolation Security
 
 > Every query scoped by `tenantId`. Row-level security enforced at application layer.
 
@@ -60,7 +60,6 @@ flowchart TD
 | Score CRUD | `{ where: { studentId, tenantId } }` |
 | Class CRUD | `{ where: { tenantId } }` |
 | Subject CRUD | `{ where: { tenantId } }` |
-| Fee CRUD | `{ where: { tenantId } }` |
 | Export routes | `tenantId` on all student/score/class/subject queries |
 
 ## Parent-Student Linking

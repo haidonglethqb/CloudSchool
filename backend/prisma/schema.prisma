@@ -39,21 +39,6 @@ enum PromotionResult {
   RETAKE
 }
 
-enum FeeCategory {
-  TUITION
-  ACTIVITY
-  FACILITY
-  OTHER
-}
-
-enum PaymentStatus {
-  PENDING
-  PAID
-  PARTIAL
-  OVERDUE
-  EXEMPT
-}
-
 // ==================== PLATFORM MODELS ====================
 
 model SubscriptionPlan {
@@ -104,8 +89,6 @@ model Tenant {
   teacherAssignments TeacherAssignment[]
   activityLogs      ActivityLog[]
   transferHistories TransferHistory[]
-  fees              Fee[]
-  studentFees       StudentFee[]
   academicYears     AcademicYear[]
   classEnrollments  ClassEnrollment[]
   graduationArchives GraduationArchive[]
@@ -171,7 +154,6 @@ model Grade {
   name      String
   level     Int
   classes   Class[]
-  fees      Fee[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -200,7 +182,6 @@ model Class {
   promotions         Promotion[]
   transfersFrom      TransferHistory[] @relation("TransferFrom")
   transfersTo        TransferHistory[] @relation("TransferTo")
-  fees               Fee[]
   enrollments        ClassEnrollment[]
   graduationArchives GraduationArchive[] @relation("GraduationSourceClass")
   placementHistoryFrom PromotionPlacementHistory[] @relation("PlacementFromClass")
@@ -268,7 +249,6 @@ model Semester {
   academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id])
   scores     Score[]
   promotions Promotion[]
-  fees       Fee[]
   enrollments ClassEnrollment[]
   transferHistories TransferHistory[]
 
@@ -309,7 +289,6 @@ model Student {
   parents    ParentStudent[]
   promotions Promotion[]
   transferHistories TransferHistory[]
-  studentFees StudentFee[]
   enrollments ClassEnrollment[]
   graduationArchives GraduationArchive[]
   promotionPlacementHistories PromotionPlacementHistory[]
@@ -567,54 +546,3 @@ model GraduationArchive {
 }
 
 // ==================== FEE MANAGEMENT ====================
-
-model Fee {
-  id          String      @id @default(uuid())
-  tenantId    String
-  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  amount      Float
-  category    FeeCategory @default(TUITION)
-  isRequired  Boolean     @default(true)
-  dueDate     DateTime?
-  isActive    Boolean     @default(true)
-  gradeId     String?
-  grade       Grade?      @relation(fields: [gradeId], references: [id])
-  classId     String?
-  class       Class?      @relation(fields: [classId], references: [id])
-  semesterId  String?
-  semester    Semester?   @relation(fields: [semesterId], references: [id])
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-
-  studentFees StudentFee[]
-
-  @@index([tenantId, isActive])
-  @@index([tenantId, gradeId])
-  @@index([tenantId, classId])
-  @@map("fees")
-}
-
-model StudentFee {
-  id         String        @id @default(uuid())
-  tenantId   String
-  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  feeId      String
-  fee        Fee           @relation(fields: [feeId], references: [id], onDelete: Cascade)
-  studentId  String
-  student    Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  amount     Float
-  paidAmount Float         @default(0)
-  status     PaymentStatus @default(PENDING)
-  paidAt     DateTime?
-  note       String?
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
-
-  @@unique([feeId, studentId])
-  @@index([tenantId, studentId])
-  @@index([tenantId, status])
-  @@index([feeId, tenantId])
-  @@map("student_fees")
-}

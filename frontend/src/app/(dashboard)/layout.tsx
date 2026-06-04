@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -40,68 +40,65 @@ interface MenuItem {
 
 // Platform Admin menu
 const platformAdminMenu: MenuItem[] = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
-  { href: '/admin/schools', icon: Building2, label: 'Quản lý trường' },
-  { href: '/admin/subscriptions', icon: CreditCard, label: 'Gói đăng ký' },
-  { href: '/admin/monitoring', icon: Activity, label: 'Giám sát hệ thống' },
-  { href: '/admin/activity-logs', icon: FileText, label: 'Nhật ký hoạt động' },
+  { href: '/dashboard', icon: LayoutDashboard, label: 'Tá»•ng quan' },
+  { href: '/admin/schools', icon: Building2, label: 'Quáº£n lÃ½ trÆ°á»ng' },
+  { href: '/admin/subscriptions', icon: CreditCard, label: 'GÃ³i Ä‘Äƒng kÃ½' },
+  { href: '/admin/monitoring', icon: Activity, label: 'GiÃ¡m sÃ¡t há»‡ thá»‘ng' },
+  { href: '/admin/activity-logs', icon: FileText, label: 'Nháº­t kÃ½ hoáº¡t Ä‘á»™ng' },
 ]
 
-// School Admin (SUPER_ADMIN) menu — full access, not filtered by permissions
+// School Admin (SUPER_ADMIN) menu â€” full access, not filtered by permissions
 const superAdminMenu: MenuItem[] = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
-  { href: '/settings/academic-years', icon: CalendarRange, label: 'Năm học', module: 'academic-calendar' },
-  { href: '/students/new', icon: UserPlus, label: 'Tiếp nhận HS', module: 'student-admission' },
-  { href: '/students', icon: Search, label: 'Tra cứu HS', module: 'student-lookup' },
-  { href: '/classes', icon: Users, label: 'Danh sách lớp', module: 'classes' },
-  { href: '/class-transfer', icon: ArrowUpDown, label: 'Chuyển lớp', module: 'class-transfer' },
-  { href: '/subjects', icon: BookOpen, label: 'Môn học', module: 'subjects' },
-  { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm', module: 'scores' },
-  { href: '/reports', icon: BarChart3, label: 'Báo cáo', module: 'reports' },
-  { href: '/promotion', icon: GraduationCap, label: 'Xét lên lớp', module: 'reports' },
-  { href: '/parents', icon: UserCheck, label: 'Quản lý Phụ huynh', module: 'parents' },
-  { href: '/fees', icon: CreditCard, label: 'Quản lý học phí', module: 'fees' },
-  { href: '/export', icon: Download, label: 'Xuất dữ liệu', module: 'export' },
-  { href: '/settings', icon: Settings, label: 'Quy định', module: 'settings' },
-  { href: '/settings/permissions', icon: Layers, label: 'Phân quyền' },
-  { href: '/users', icon: Shield, label: 'Quản lý người dùng' },
+  { href: '/dashboard', icon: LayoutDashboard, label: 'Tá»•ng quan' },
+  { href: '/settings/academic-years', icon: CalendarRange, label: 'NÄƒm há»c', module: 'academic-calendar' },
+  { href: '/students/new', icon: UserPlus, label: 'Tiáº¿p nháº­n HS', module: 'student-admission' },
+  { href: '/students', icon: Search, label: 'Tra cá»©u HS', module: 'student-lookup' },
+  { href: '/classes', icon: Users, label: 'Danh sÃ¡ch lá»›p', module: 'classes' },
+  { href: '/class-transfer', icon: ArrowUpDown, label: 'Chuyá»ƒn lá»›p', module: 'class-transfer' },
+  { href: '/subjects', icon: BookOpen, label: 'MÃ´n há»c', module: 'subjects' },
+  { href: '/scores', icon: ClipboardEdit, label: 'Nháº­p Ä‘iá»ƒm', module: 'scores' },
+  { href: '/reports', icon: BarChart3, label: 'BÃ¡o cÃ¡o', module: 'reports' },
+  { href: '/promotion', icon: GraduationCap, label: 'XÃ©t lÃªn lá»›p', module: 'reports' },
+  { href: '/parents', icon: UserCheck, label: 'Quáº£n lÃ½ Phá»¥ huynh', module: 'parents' },
+  { href: '/export', icon: Download, label: 'Xuáº¥t dá»¯ liá»‡u', module: 'export' },
+  { href: '/settings', icon: Settings, label: 'Quy Ä‘á»‹nh', module: 'settings' },
+  { href: '/settings/permissions', icon: Layers, label: 'PhÃ¢n quyá»n' },
+  { href: '/users', icon: Shield, label: 'Quáº£n lÃ½ ngÆ°á»i dÃ¹ng' },
 ]
 
-// Staff menu — filtered by permissions
+// Staff menu â€” filtered by permissions
 const staffMenu: MenuItem[] = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
-  { href: '/students/new', icon: UserPlus, label: 'Tiếp nhận HS', module: 'student-admission' },
-  { href: '/students', icon: Search, label: 'Tra cứu HS', module: 'student-lookup' },
-  { href: '/classes', icon: Users, label: 'Danh sách lớp', module: 'classes' },
-  { href: '/class-transfer', icon: ArrowUpDown, label: 'Chuyển lớp', module: 'class-transfer' },
-  { href: '/subjects', icon: BookOpen, label: 'Môn học', module: 'subjects' },
-  { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm', module: 'scores' },
-  { href: '/reports', icon: BarChart3, label: 'Báo cáo', module: 'reports' },
-  { href: '/parents', icon: UserCheck, label: 'Quản lý Phụ huynh', module: 'parents' },
-  { href: '/fees', icon: CreditCard, label: 'Quản lý học phí', module: 'fees' },
-  { href: '/export', icon: Download, label: 'Xuất dữ liệu', module: 'export' },
+  { href: '/dashboard', icon: LayoutDashboard, label: 'Tá»•ng quan' },
+  { href: '/students/new', icon: UserPlus, label: 'Tiáº¿p nháº­n HS', module: 'student-admission' },
+  { href: '/students', icon: Search, label: 'Tra cá»©u HS', module: 'student-lookup' },
+  { href: '/classes', icon: Users, label: 'Danh sÃ¡ch lá»›p', module: 'classes' },
+  { href: '/class-transfer', icon: ArrowUpDown, label: 'Chuyá»ƒn lá»›p', module: 'class-transfer' },
+  { href: '/subjects', icon: BookOpen, label: 'MÃ´n há»c', module: 'subjects' },
+  { href: '/scores', icon: ClipboardEdit, label: 'Nháº­p Ä‘iá»ƒm', module: 'scores' },
+  { href: '/reports', icon: BarChart3, label: 'BÃ¡o cÃ¡o', module: 'reports' },
+  { href: '/parents', icon: UserCheck, label: 'Quáº£n lÃ½ Phá»¥ huynh', module: 'parents' },
+  { href: '/export', icon: Download, label: 'Xuáº¥t dá»¯ liá»‡u', module: 'export' },
 ]
 
-// Teacher menu — filtered by permissions
+// Teacher menu â€” filtered by permissions
 const teacherMenu: MenuItem[] = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
-  { href: '/classes', icon: Users, label: 'Lớp của tôi', module: 'classes' },
-  { href: '/students', icon: Search, label: 'Tra cứu HS', module: 'student-lookup' },
-  { href: '/subjects', icon: BookOpen, label: 'Môn học', module: 'subjects' },
-  { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm', module: 'scores' },
-  { href: '/reports', icon: BarChart3, label: 'Báo cáo', module: 'reports' },
+  { href: '/dashboard', icon: LayoutDashboard, label: 'Tá»•ng quan' },
+  { href: '/classes', icon: Users, label: 'Lá»›p cá»§a tÃ´i', module: 'classes' },
+  { href: '/students', icon: Search, label: 'Tra cá»©u HS', module: 'student-lookup' },
+  { href: '/subjects', icon: BookOpen, label: 'MÃ´n há»c', module: 'subjects' },
+  { href: '/scores', icon: ClipboardEdit, label: 'Nháº­p Ä‘iá»ƒm', module: 'scores' },
+  { href: '/reports', icon: BarChart3, label: 'BÃ¡o cÃ¡o', module: 'reports' },
 ]
 
 // Student menu
 const studentMenu: MenuItem[] = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
-  { href: '/my-scores', icon: BookOpen, label: 'Xem điểm' },
+  { href: '/dashboard', icon: LayoutDashboard, label: 'Tá»•ng quan' },
+  { href: '/my-scores', icon: BookOpen, label: 'Xem Ä‘iá»ƒm' },
 ]
 
 // Parent menu
 const parentMenu: MenuItem[] = [
-  { href: '/my-children', icon: GraduationCap, label: 'Con em của tôi' },
-  { href: '/my-children/fees', icon: CreditCard, label: 'Học phí', module: 'fees' },
+  { href: '/my-children', icon: GraduationCap, label: 'Con em cá»§a tÃ´i' },
 ]
 
 export default function DashboardLayout({
@@ -204,7 +201,7 @@ export default function DashboardLayout({
             <div>
               <h1 className="text-white font-semibold text-lg">CloudSchool</h1>
               <p className="text-gray-400 text-xs truncate max-w-[140px]">
-                {user?.tenant?.name || 'Quản lý học sinh'}
+                {user?.tenant?.name || 'Quáº£n lÃ½ há»c sinh'}
               </p>
             </div>
             <button
@@ -259,7 +256,7 @@ export default function DashboardLayout({
               className="w-full flex items-center gap-2 px-3 py-2 text-gray-400 hover:text-white hover:bg-sidebar-light rounded-lg transition-colors"
             >
               <LogOut className="w-4 h-4" />
-              <span className="text-sm">Đăng xuất</span>
+              <span className="text-sm">ÄÄƒng xuáº¥t</span>
             </button>
           </div>
         </div>

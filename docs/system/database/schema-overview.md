@@ -1,4 +1,4 @@
-# Database Schema Overview
+﻿# Database Schema Overview
 
 > **Source:** `backend/prisma/schema.prisma` | **Database:** PostgreSQL | **ORM:** Prisma
 
@@ -20,8 +20,6 @@ erDiagram
     Tenant ||--o{ TeacherAssignment : "has"
     Tenant ||--o{ ActivityLog : "has"
     Tenant ||--o{ TransferHistory : "has"
-    Tenant ||--o{ Fee : "has"
-    Tenant ||--o{ StudentFee : "has"
     Tenant ||--o{ AcademicYear : "has"
     Tenant ||--o{ ClassEnrollment : "has"
     User ||--o{ ParentStudent : "is parent of"
@@ -31,28 +29,23 @@ erDiagram
     Student ||--o{ ParentStudent : "has parents"
     Student ||--o{ Promotion : "receives"
     Student ||--o{ TransferHistory : "has history"
-    Student ||--o{ StudentFee : "owes"
     Student ||--o{ ClassEnrollment : "enrolls in"
     Grade ||--o{ Class : "contains"
-    Grade ||--o{ Fee : "applies to"
     Class ||--o{ Student : "enrolls"
     Class ||--o{ TeacherAssignment : "has assignments"
     Class ||--o{ Promotion : "promotes from"
     Class ||--o{ TransferHistory : "transfer from/to"
-    Class ||--o{ Fee : "applies to"
     Class ||--o{ ClassEnrollment : "has enrollments"
     AcademicYear ||--o{ Semester : "contains"
     AcademicYear ||--o{ ClassEnrollment : "spans"
     AcademicYear ||--o{ Class : "organizes"
     Semester ||--o{ Score : "recorded in"
     Semester ||--o{ Promotion : "evaluated in"
-    Semester ||--o{ Fee : "applies to"
     Semester ||--o{ ClassEnrollment : "spans"
     Subject ||--o{ Score : "scored in"
     Subject ||--o{ ScoreComponent : "defines"
     Subject ||--o{ TeacherAssignment : "assigned to"
     ScoreComponent ||--o{ Score : "contributes to"
-    Fee ||--o{ StudentFee : "assigned to"
     ParentStudent }o--|| Student : "links"
 ```
 
@@ -76,8 +69,6 @@ erDiagram
 | **Scoring** | `ScoreComponent` | Scoring categories (exam, quiz) |
 | **Scoring** | `Score` | Individual score records |
 | **Scoring** | `Promotion` | Pass/fail results per semester |
-| **Fees** | `Fee` | Fee definitions by category |
-| **Fees** | `StudentFee` | Per-student fee tracking |
 | **Tracking** | `ActivityLog` | Audit trail for all actions |
 | **Tracking** | `TransferHistory` | Student class change records |
 
@@ -89,8 +80,6 @@ erDiagram
 | `Gender` | `MALE`, `FEMALE`, `OTHER` |
 | `TenantStatus` | `ACTIVE`, `SUSPENDED`, `INACTIVE` |
 | `PromotionResult` | `PASS`, `FAIL`, `RETAKE` |
-| `FeeCategory` | `TUITION`, `ACTIVITY`, `FACILITY`, `OTHER` |
-| `PaymentStatus` | `PENDING`, `PAID`, `PARTIAL`, `OVERDUE`, `EXEMPT` |
 
 ## Key Constraints
 
@@ -104,6 +93,5 @@ erDiagram
 - [User Models](./user-models.md)
 - [Academic Structure](./academic-structure.md)
 - [Scoring Models](./scoring-models.md)
-- [Fee Models](./fee-models.md)
 - [Tracking Models](./tracking-models.md)
 - [Indexes & Performance](./indexes-performance.md)

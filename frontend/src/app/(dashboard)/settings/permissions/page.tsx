@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { settingsApi } from '@/lib/api'
@@ -25,7 +25,6 @@ const MODULES = [
   { key: 'reports', label: getUiModuleLabel('reports') },
   { key: 'parents', label: getUiModuleLabel('parents') },
   { key: 'academic-calendar', label: getUiModuleLabel('academic-calendar') },
-  { key: 'fees', label: getUiModuleLabel('fees') },
   { key: 'export', label: getUiModuleLabel('export') },
   { key: 'settings', label: getUiModuleLabel('settings') },
 ]
@@ -61,7 +60,7 @@ export default function PermissionsPage() {
         setPermissions(res.data.data || {})
         setPermissionMeta(res.data.meta || {})
       })
-      .catch(() => toast.error('Không thể tải phân quyền.'))
+      .catch(() => toast.error('KhÃ´ng thá»ƒ táº£i phÃ¢n quyá»n.'))
       .finally(() => setLoading(false))
   }, [user, router])
 
@@ -88,9 +87,9 @@ export default function PermissionsPage() {
     try {
       setSaving(true)
       await settingsApi.updateRolePermissions(permissions)
-      toast.success('Lưu phân quyền thành công.')
+      toast.success('LÆ°u phÃ¢n quyá»n thÃ nh cÃ´ng.')
     } catch (error: any) {
-      toast.error(resolveUiErrorMessage(error, 'Lưu phân quyền thất bại.'))
+      toast.error(resolveUiErrorMessage(error, 'LÆ°u phÃ¢n quyá»n tháº¥t báº¡i.'))
     } finally {
       setSaving(false)
     }
@@ -111,8 +110,8 @@ export default function PermissionsPage() {
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Phân quyền vai trò</h1>
-          <p className="text-sm text-gray-600 mt-1">Bố trí quyền theo vai trò, giao diện gọn và dễ quan sát hơn.</p>
+          <h1 className="text-2xl font-bold text-gray-900">PhÃ¢n quyá»n vai trÃ²</h1>
+          <p className="text-sm text-gray-600 mt-1">Bá»‘ trÃ­ quyá»n theo vai trÃ², giao diá»‡n gá»n vÃ  dá»… quan sÃ¡t hÆ¡n.</p>
         </div>
       </div>
 
@@ -123,7 +122,7 @@ export default function PermissionsPage() {
             <p className="mt-1 text-2xl font-bold text-gray-900">
               {role.used}/{role.limit ?? '-'}
             </p>
-            <p className="mt-1 text-xs text-gray-500">Số người đang hoạt động theo giới hạn gói</p>
+            <p className="mt-1 text-xs text-gray-500">Sá»‘ ngÆ°á»i Ä‘ang hoáº¡t Ä‘á»™ng theo giá»›i háº¡n gÃ³i</p>
           </div>
         ))}
       </div>
@@ -157,11 +156,11 @@ export default function PermissionsPage() {
 
       <div className="card p-4 bg-gray-50 flex items-center justify-between gap-4">
         <p className="text-xs text-gray-500">
-          SUPER_ADMIN luôn có toàn quyền. Menu sidebar của STAFF/TEACHER sẽ đổi theo cấu hình này.
+          SUPER_ADMIN luÃ´n cÃ³ toÃ n quyá»n. Menu sidebar cá»§a STAFF/TEACHER sáº½ Ä‘á»•i theo cáº¥u hÃ¬nh nÃ y.
         </p>
         <button onClick={handleSave} disabled={saving} className="btn-primary shrink-0">
           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          Lưu phân quyền
+          LÆ°u phÃ¢n quyá»n
         </button>
       </div>
     </div>

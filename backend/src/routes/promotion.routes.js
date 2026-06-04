@@ -4,7 +4,7 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { requireFeature } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
-const { getTenantPlanUsage, getTenantPlanLimits } = require('../utils/subscription-limits')
+const { getClassCountForAcademicYear, getTenantPlanLimits } = require('../utils/subscription-limits')
 
 const formatDateVi = (dateValue) => {
   if (!dateValue) return ''
@@ -481,12 +481,16 @@ router.post('/year-end/execute', async (req, res, next) => {
       }
 
       if (uniqueMissingTargets.length > 0) {
-        const [usage, limits] = await Promise.all([
-          getTenantPlanUsage(prisma, req.tenantId),
+        const [classCountForNextYear, limits] = await Promise.all([
+          getClassCountForAcademicYear(prisma, req.tenantId, nextAcademicYear),
           getTenantPlanLimits(prisma, req.tenantId)
         ])
-        if (limits && usage.classes + uniqueMissingTargets.length > limits.classes) {
-          throw new AppError(`Cannot exceed subscription class limit (${limits.classes})`, 400, 'PLAN_LIMIT_EXCEEDED')
+        if (limits && classCountForNextYear + uniqueMissingTargets.length > limits.classes) {
+          throw new AppError(
+            `Cannot exceed subscription class limit (${limits.classes}) for academic year ${nextAcademicYearLabel}`,
+            400,
+            'PLAN_LIMIT_EXCEEDED'
+          )
         }
 
         const actor = createActorSnapshot(req.user)

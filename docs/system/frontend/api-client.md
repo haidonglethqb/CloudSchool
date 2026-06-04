@@ -1,4 +1,4 @@
-# Axios API Client
+﻿# Axios API Client
 
 ## Configuration
 
@@ -19,7 +19,7 @@ export const api = axios.create({
 
 ## Interceptors
 
-### Request — Auto-attach token
+### Request â€” Auto-attach token
 
 ```ts
 api.interceptors.request.use((config) => {
@@ -29,7 +29,7 @@ api.interceptors.request.use((config) => {
 })
 ```
 
-### Response — 401 handling + blob error parsing
+### Response â€” 401 handling + blob error parsing
 
 ```ts
 let isUnauthorizedHandling = false
@@ -66,7 +66,7 @@ api.interceptors.response.use(
 ```mermaid
 flowchart LR
     A[API Error] --> B{Type}
-    B -->|blob| C[Blob→JSON]
+    B -->|blob| C[Blobâ†’JSON]
     B -->|json| D[Pass through]
     C --> E{Status}
     D --> E
@@ -93,7 +93,6 @@ flowchart LR
 | `tenantApi` | current tenant, update, stats |
 | `exportApi` | export students/classes/scores/schools |
 | `monitoringApi` | system stats, activity logs |
-| `feeApi` | fees CRUD, payments, parent fees |
 | `academicYearApi` | academic years CRUD |
 
 ## Blob Download Helper
@@ -109,5 +108,5 @@ export function downloadBlob(blob: Blob, filename: string) {
 ```
 ## Related
 
-- [./state-management.md](./state-management.md) — AuthStore token source
-- [../authentication/overview.md](../authentication/overview.md) — Backend auth
+- [./state-management.md](./state-management.md) â€” AuthStore token source
+- [../authentication/overview.md](../authentication/overview.md) â€” Backend auth

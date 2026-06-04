@@ -15,7 +15,6 @@ const DEFAULT_ROLE_PERMISSIONS = {
     'academic-calendar',
     'settings',
     'export',
-    'fees',
   ],
   TEACHER: ['student-lookup', 'classes', 'subjects', 'scores', 'reports'],
 }

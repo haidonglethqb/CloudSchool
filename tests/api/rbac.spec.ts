@@ -44,11 +44,6 @@ test.describe('RBAC - Role-Based Access Control', () => {
       }
     });
 
-    test('TEACHER cannot manage fees', async () => {
-      const response = await teacherCtx.get('/api/fees');
-      expect(response.status()).toBe(403);
-    });
-
     test('TEACHER cannot update settings', async () => {
       const response = await teacherCtx.put('/api/settings', {
         data: { maxClassSize: 50 },
@@ -82,17 +77,6 @@ test.describe('RBAC - Role-Based Access Control', () => {
     test('PARENT cannot create subject', async () => {
       const response = await parentCtx.post('/api/subjects', {
         data: { name: 'Unauth Subject', code: 'UA' },
-      });
-      expect(response.status()).toBe(403);
-    });
-
-    test('PARENT cannot manage fees', async () => {
-      const response = await parentCtx.post('/api/fees', {
-        data: {
-          name: 'Unauth Fee',
-          amount: 100,
-          category: 'TUITION',
-        },
       });
       expect(response.status()).toBe(403);
     });
@@ -181,7 +165,6 @@ test.describe('RBAC - Role-Based Access Control', () => {
         '/api/classes',
         '/api/subjects',
         '/api/scores/class/fake-id',
-        '/api/fees',
         '/api/settings',
         '/api/reports/dashboard',
         '/api/users',

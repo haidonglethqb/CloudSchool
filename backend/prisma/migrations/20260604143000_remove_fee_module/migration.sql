@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS "student_fees";
+DROP TABLE IF EXISTS "fees";
+DROP TYPE IF EXISTS "PaymentStatus";
+DROP TYPE IF EXISTS "FeeCategory";

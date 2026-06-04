@@ -5,7 +5,7 @@ const prisma = require('../lib/prisma')
 const { authenticate, authorize, tenantGuard } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
-const { getTenantPlanUsage, getTenantPlanLimits } = require('../utils/subscription-limits')
+const { getClassCountForAcademicYear, getTenantPlanLimits } = require('../utils/subscription-limits')
 const { getUserAssignmentScope, ensureClassAccess } = require('../utils/assignment-scope')
 
 router.use(authenticate, requireFeature('classes'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('classes'))
@@ -177,14 +177,18 @@ router.post('/', authorize('SUPER_ADMIN', 'STAFF'), [
       )
     }
 
-    const [usage, limits] = await Promise.all([
-      getTenantPlanUsage(prisma, req.tenantId),
+    const [classCountForYear, limits] = await Promise.all([
+      getClassCountForAcademicYear(prisma, req.tenantId, targetAcademicYear),
       getTenantPlanLimits(prisma, req.tenantId)
     ])
-    if (limits && usage.classes + 1 > limits.classes) {
-      throw new AppError(`Cannot exceed subscription class limit (${limits.classes})`, 400, 'PLAN_LIMIT_EXCEEDED')
-    }
     const academicYearLabel = buildAcademicYearLabel(targetAcademicYear)
+    if (limits && classCountForYear + 1 > limits.classes) {
+      throw new AppError(
+        `Cannot exceed subscription class limit (${limits.classes}) for academic year ${academicYearLabel}`,
+        400,
+        'PLAN_LIMIT_EXCEEDED'
+      )
+    }
 
     const classInfo = await prisma.class.create({
       data: {
@@ -278,15 +282,9 @@ router.delete('/:id', authorize('SUPER_ADMIN'), async (req, res, next) => {
       throw new AppError('Cannot delete class with students', 400, 'CLASS_HAS_STUDENTS')
     }
 
-    const [assignmentCount, feeCount] = await Promise.all([
-      prisma.teacherAssignment.count({ where: { classId: req.params.id } }),
-      prisma.fee.count({ where: { classId: req.params.id } })
-    ])
+    const assignmentCount = await prisma.teacherAssignment.count({ where: { classId: req.params.id } })
     if (assignmentCount > 0) {
       throw new AppError('Cannot delete class with active teacher assignments', 400, 'HAS_ASSIGNMENTS')
-    }
-    if (feeCount > 0) {
-      throw new AppError('Cannot delete class with associated fees', 400, 'HAS_FEES')
     }
 
     await prisma.class.delete({ where: { id: req.params.id } })

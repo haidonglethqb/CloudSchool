@@ -1,14 +1,73 @@
 const { AppError } = require('../middleware/errorHandler')
 
+const buildAcademicYearLabel = (academicYear) => `${academicYear.startYear}-${academicYear.endYear}`
+
+const buildAcademicYearClassWhere = (tenantId, academicYear) => {
+  const label = typeof academicYear === 'string'
+    ? academicYear
+    : academicYear
+      ? buildAcademicYearLabel(academicYear)
+      : null
+
+  if (!academicYear && !label) return { tenantId }
+  if (typeof academicYear === 'object' && academicYear?.id) {
+    return {
+      tenantId,
+      OR: [
+        { academicYearId: academicYear.id },
+        { academicYear: label }
+      ]
+    }
+  }
+
+  return { tenantId, academicYear: label }
+}
+
+const getClassCountForAcademicYear = async (prisma, tenantId, academicYear) => prisma.class.count({
+  where: buildAcademicYearClassWhere(tenantId, academicYear)
+})
+
+const getActiveAcademicYearClassCount = async (prisma, tenantId) => {
+  const activeAcademicYear = await prisma.academicYear.findFirst({
+    where: { tenantId, isActive: true },
+    select: { id: true, startYear: true, endYear: true }
+  })
+
+  if (!activeAcademicYear) {
+    return prisma.class.count({ where: { tenantId } })
+  }
+
+  return getClassCountForAcademicYear(prisma, tenantId, activeAcademicYear)
+}
+
+const getMaxClassCountInAcademicYear = async (prisma, tenantId) => {
+  const counts = await prisma.class.groupBy({
+    by: ['academicYear'],
+    where: { tenantId },
+    _count: { _all: true }
+  })
+
+  return counts.reduce((max, row) => Math.max(max, row._count._all), 0)
+}
+
 const getTenantPlanUsage = async (prisma, tenantId) => {
   const [students, classes, staff, teachers] = await Promise.all([
     prisma.student.count({ where: { tenantId, isActive: true } }),
-    prisma.class.count({ where: { tenantId, isActive: true } }),
+    getActiveAcademicYearClassCount(prisma, tenantId),
     prisma.user.count({ where: { tenantId, role: 'STAFF', isActive: true } }),
     prisma.user.count({ where: { tenantId, role: 'TEACHER', isActive: true } })
   ])
 
   return { students, classes, staff, teachers }
+}
+
+const getTenantPlanLimitValidationUsage = async (prisma, tenantId) => {
+  const [usage, maxClassesInAcademicYear] = await Promise.all([
+    getTenantPlanUsage(prisma, tenantId),
+    getMaxClassCountInAcademicYear(prisma, tenantId)
+  ])
+
+  return { ...usage, classes: maxClassesInAcademicYear }
 }
 
 const getTenantPlanLimits = async (prisma, tenantId) => {
@@ -82,7 +141,10 @@ const assertRoleUserLimit = async (prisma, tenantId, role, excludeUserId = null)
 
 module.exports = {
   getTenantPlanUsage,
+  getTenantPlanLimitValidationUsage,
   getTenantPlanLimits,
+  getClassCountForAcademicYear,
+  getMaxClassCountInAcademicYear,
   assertUsageWithinLimits,
   assertTenantWithinCurrentPlan,
   assertRoleUserLimit

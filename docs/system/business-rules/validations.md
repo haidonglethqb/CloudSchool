@@ -1,4 +1,4 @@
-# Input & Business Logic Validations
+﻿# Input & Business Logic Validations
 
 > Defense-in-depth: express-validator (backend), Zod (frontend), Prisma (compile-time).
 
@@ -39,17 +39,16 @@ All routes use `express-validator` chains:
 
 | Check | Rule | Where |
 |-------|------|-------|
-| **Age** | `currentYear - birthYear ∈ [minAge, maxAge]` | `POST /students` |
+| **Age** | `currentYear - birthYear âˆˆ [minAge, maxAge]` | `POST /students` |
 | **Class capacity** | `count(students) < class.capacity`; settings reject lower `maxClassSize` than current class usage | Student create, add-to-class, transfer, settings update |
-| **Score range** | `0 ≤ value ≤ 10` | `POST /scores/*` |
-| **Score lock** | `isLocked === true` → block modify/delete | `PUT/DELETE /scores/*` |
-| **Weight sum** | `Σ component weights ≤ 100` per subject | Score component CRUD |
-| **Student delete guard** | Block if has promotions, fees, transfers, parent links, enrollments, or scores | `DELETE /students/:id` |
-| **Fee delete guard** | Block if fee has student payment records | `DELETE /fees/:id` |
+| **Score range** | `0 â‰¤ value â‰¤ 10` | `POST /scores/*` |
+| **Score lock** | `isLocked === true` â†’ block modify/delete | `PUT/DELETE /scores/*` |
+| **Weight sum** | `Î£ component weights â‰¤ 100` per subject | Score component CRUD |
+| **Student delete guard** | Block if has promotions, transfers, parent links, enrollments, or scores | `DELETE /students/:id` |
 | **Capacity guard** | Cannot reduce class `capacity < current student count` or above current `maxClassSize` | `PUT /classes/:id` |
 | **Academic year overlap** | No overlapping `[startDate, endDate]` ranges | `POST/PUT /academic-years` |
 | **Role escalation** | Only `SUPER_ADMIN`, `STAFF`, `TEACHER` via `PUT /users` | `PUT /users/:id` |
-| **PassScore range** | `passScore ∈ [minScore, maxScore]` | `PUT /settings` |
+| **PassScore range** | `passScore âˆˆ [minScore, maxScore]` | `PUT /settings` |
 | **Class creation order** | Must have active academic year (or valid `academicYearId`), valid grade range, and available plan class quota | `POST /classes` |
 | **Enrollment order** | Add-to-class / transfer require active semester with academicYearId; transfer requires non-empty reason | `POST /classes/:id/students`, `POST /students/:id/transfer` |
 | **Semester score window** | Score write only when semester active + configured + in date range | `POST /scores`, `POST /scores/batch` |
@@ -63,7 +62,6 @@ All routes use `express-validator` chains:
 // Block deletion if student has dependent records
 const checks = await prisma.$transaction([
   prisma.promotion.count({ where: { studentId } }),
-  prisma.studentFee.count({ where: { studentId } }),
   prisma.studentTransfer.count({ where: { studentId } }),
   prisma.student.count({ where: { parentId: student.id } }),
   prisma.enrollment.count({ where: { studentId } }),
