@@ -1,4 +1,4 @@
-﻿const { PrismaClient } = require('@prisma/client')
+const { PrismaClient } = require('@prisma/client')
 const bcrypt = require('bcryptjs')
 const { DEFAULT_ENABLED_MODULES } = require('../src/constants/module-registry')
 
@@ -885,6 +885,8 @@ async function main () {
     }
   }
   console.log('Promotion scenarios ready')
+
+  const activeSemester = semesterByKey[`${ACTIVE_YEAR_LABEL}-${ACTIVE_SEMESTER_NUM}`]
 
   await prisma.transferHistory.deleteMany({
     where: {
