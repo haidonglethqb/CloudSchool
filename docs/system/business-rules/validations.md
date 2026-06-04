@@ -60,6 +60,7 @@ All routes use `express-validator` chains:
 | **Promotion all-only** | Year-end promotion accepts `academicYearId` only, no `classId` filter | `/promotion/year-end/*` |
 | **Promotion readiness** | Every semester in the academic year needs schedule dates and must have ended before evaluation | `/promotion/year-end/evaluate`, `/promotion/year-end/execute` |
 | **Inactive components** | A removed component with historical scores is ignored by current averages/promotion calculations | Score reports, parent/student score views, promotion |
+| **Semester roster** | Score reports use `ClassEnrollment(classId, semesterId)` first, then fallback to current class students for legacy data | Reports, exports, score entry |
 | **Plan quotas** | Enforce student, class, staff, and teacher limits from the tenant subscription plan | Student/class/user create/update and platform plan changes |
 
 ## Student Delete Guard

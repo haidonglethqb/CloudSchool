@@ -249,11 +249,13 @@ export default function ScoresPage() {
       const response = await scoreApi.getByClass(selectedClass, selectedSubject, selectedSemester)
       const data = response.data.data
       setComponents(data.scoreComponents || [])
-      if (data.warning) toast.error(data.warning)
+      if (data.warning) toast(data.warning, { icon: '⚠️' })
       const rows = (data.students || data || []).map((item: any) => {
         const st = item.student || item
         const scoreMap: Record<string, ScoreEntry> = {}
         const rawScores = item.scores || []
+        // BE returns scores as object map {[componentId]: score} for class view
+        // or as array for other endpoints — handle both
         if (Array.isArray(rawScores)) {
           rawScores.forEach((s: any) => {
             scoreMap[s.scoreComponentId || s.scoreComponent?.id] = {
@@ -261,6 +263,18 @@ export default function ScoresPage() {
               scoreComponentId: s.scoreComponentId || s.scoreComponent?.id,
               value: s.value,
               isLocked: s.isLocked || false,
+            }
+          })
+        } else if (rawScores && typeof rawScores === 'object') {
+          // Object map format: { [componentId]: scoreObj | null }
+          Object.entries(rawScores).forEach(([compId, s]: [string, any]) => {
+            if (s) {
+              scoreMap[compId] = {
+                id: s.id,
+                scoreComponentId: s.scoreComponentId || compId,
+                value: s.value,
+                isLocked: s.isLocked || false,
+              }
             }
           })
         }
@@ -348,8 +362,15 @@ export default function ScoresPage() {
       return { ...st, scores: newScores, average: calcAverage(newScores) }
     }))
 
-    if (value !== '' && !isNaN(numValue)) {
-      const key = `${studentId}-${compId}`
+    const key = `${studentId}-${compId}`
+    if (value === '' || isNaN(numValue)) {
+      // Remove from editedScores when cleared — don't save empty values
+      setEditedScores(prev => {
+        const m = new Map(prev)
+        m.delete(key)
+        return m
+      })
+    } else {
       setEditedScores(prev => {
         const m = new Map(prev)
         m.set(key, { studentId, scoreComponentId: compId, value: numValue })

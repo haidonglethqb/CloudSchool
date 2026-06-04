@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { academicYearApi, classApi, studentApi } from '@/lib/api'
+import { academicYearApi, classApi, studentApi, subjectApi } from '@/lib/api'
 import { Loader2, ArrowRightLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -45,13 +45,17 @@ export default function ClassTransferPage() {
 
   const fetchData = async () => {
     try {
-      const [yearsRes, historyRes] = await Promise.all([
+      const [yearsRes, semestersRes, historyRes] = await Promise.all([
         academicYearApi.list(),
+        subjectApi.getSemesters(),
         studentApi.getAllTransferHistory(),
       ])
       const years = yearsRes.data.data || []
+      const semesters = semestersRes.data.data || []
+      const activeSemester = semesters.find((semester: { isActive: boolean; academicYearId?: string }) => semester.isActive)
       const activeYear = years.find((year: { id: string; isActive: boolean }) => year.isActive) || years[0]
-      const classRes = await classApi.list(activeYear?.id ? { academicYearId: activeYear.id } : undefined)
+      const academicYearId = activeSemester?.academicYearId || activeYear?.id
+      const classRes = await classApi.list(academicYearId ? { academicYearId } : undefined)
       setClasses(classRes.data.data || [])
       setHistory(historyRes.data.data || [])
     } catch {

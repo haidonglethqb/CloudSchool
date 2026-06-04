@@ -1,4 +1,4 @@
-﻿const express = require('express')
+const express = require('express')
 const router = express.Router()
 const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
@@ -210,7 +210,7 @@ const buildPromotionEvaluation = async (tenantId, academicYear) => {
     const subjects = subjectCache.get(classInfo.id)
 
     for (const subject of subjects) {
-      const semesterAverages = []
+      const semesterAverages = []  // must be inside subject loop to reset per-subject
       for (const semester of academicYear.semesters) {
         const componentKey = `${subject.id}::${semester.id}`
         if (!componentCache.has(componentKey)) {

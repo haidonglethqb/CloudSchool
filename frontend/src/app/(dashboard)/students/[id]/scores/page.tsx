@@ -23,6 +23,7 @@ interface Student {
   class: {
     id: string
     name: string
+    academicYearId?: string
     grade: { id: string; name: string }
   } | null
 }
@@ -156,7 +157,8 @@ export default function StudentScoreEditPage() {
 
         if (isTeacher && studentData.class) {
           try {
-            const classesRes = await classApi.list()
+            // Fetch classes scoped to student's academic year to avoid cross-year ambiguity
+            const classesRes = await classApi.list({ academicYearId: studentData.class.academicYearId || undefined })
             const classes = classesRes.data.data || []
             const studentClass = classes.find((c: any) => c.id === studentData.class?.id)
             if (studentClass?.teacherAssignments) {

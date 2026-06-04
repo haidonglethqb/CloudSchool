@@ -680,6 +680,12 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADM
     const { headers, rows } = buildRowsFromColumns(rowModels, selectedColumns)
     const filename = `scores_${new Date().toISOString().split('T')[0]}`
 
+    const [classInfoForExport, subjectInfoForExport, semesterInfoForExport] = await Promise.all([
+      prisma.class.findFirst({ where: { id: classId, tenantId: req.tenantId }, include: { grade: true } }),
+      prisma.subject.findFirst({ where: { id: subjectId, tenantId: req.tenantId }, select: { name: true } }),
+      prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId }, select: { name: true, year: true } })
+    ])
+
     if (format === 'xlsx') {
       await sendExcel(res, `${filename}.xlsx`, [{ name: 'Bảng điểm', headers, rows }])
       return
@@ -693,9 +699,10 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADM
         schoolName,
         sections,
         filters: [
-          { label: 'Lớp', value: classId },
-          { label: 'Môn', value: subjectId },
-          { label: 'Học kỳ', value: semesterId }
+          { label: 'Lớp', value: classInfoForExport?.name || classId },
+          { label: 'Khối', value: classInfoForExport?.grade?.name || '' },
+          { label: 'Môn', value: subjectInfoForExport?.name || subjectId },
+          { label: 'Học kỳ', value: semesterInfoForExport ? `${semesterInfoForExport.name} (${semesterInfoForExport.year || ''})` : semesterId }
         ],
         summary: [{ label: 'Số học sinh', value: fallbackStudents.length }],
         table: { title: 'Bảng điểm chi tiết', headers, rows }
@@ -821,6 +828,7 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
       })
       const grouped = new Map()
       for (const item of promotions) {
+        if (!item.class?.grade?.id) continue  // skip orphaned records
         if (!grouped.has(item.class.gradeId)) grouped.set(item.class.gradeId, { gradeName: item.class.grade.name, gradeLevel: item.class.grade.level, total: 0, pass: 0 })
         const bucket = grouped.get(item.class.gradeId)
         bucket.total += 1
@@ -864,7 +872,21 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
         where: { tenantId: req.tenantId, isActive: true, ...classYearFilter },
         include: { students: { where: { isActive: true } }, grade: true }
       })
-      const allStudentIds = classes.flatMap((cls) => cls.students.map((student) => student.id))
+      const classIds = classes.map((cls) => cls.id)
+      const enrollments = classIds.length
+        ? await prisma.classEnrollment.findMany({
+            where: { tenantId: req.tenantId, semesterId, classId: { in: classIds }, student: { isActive: true } },
+            select: { classId: true, studentId: true }
+          })
+        : []
+      const enrollmentClassIds = new Set(enrollments.map((item) => item.classId))
+      const studentIdsByClass = new Map(classes.map((cls) => [
+        cls.id,
+        enrollmentClassIds.has(cls.id)
+          ? enrollments.filter((item) => item.classId === cls.id).map((item) => item.studentId)
+          : cls.students.map((student) => student.id)
+      ]))
+      const allStudentIds = [...new Set(Array.from(studentIdsByClass.values()).flat())]
       const scores = allStudentIds.length
         ? await prisma.score.findMany({
             where: { tenantId: req.tenantId, subjectId, semesterId, studentId: { in: allStudentIds } },
@@ -878,9 +900,10 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
       }
 
       tableRows = classes.map((cls) => {
+        const studentIds = studentIdsByClass.get(cls.id) || []
         let pass = 0
-        for (const student of cls.students) {
-          const values = scoreMap.get(student.id) || []
+        for (const studentId of studentIds) {
+          const values = scoreMap.get(studentId) || []
           let weightedSum = 0
           let totalWeight = 0
           for (const value of values) {
@@ -895,9 +918,9 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
         return {
           className: cls.name,
           gradeName: cls.grade?.name || '',
-          total: cls.students.length,
+          total: studentIds.length,
           pass,
-          rate: cls.students.length > 0 ? `${Math.round((pass / cls.students.length) * 10000) / 100}%` : '0%'
+          rate: studentIds.length > 0 ? `${Math.round((pass / studentIds.length) * 10000) / 100}%` : '0%'
         }
       })
       summaryRows = [

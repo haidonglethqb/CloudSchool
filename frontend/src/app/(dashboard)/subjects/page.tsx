@@ -99,6 +99,7 @@ export default function SubjectsPage() {
     [components]
   )
 
+  // Stable fetch — only run once on mount; individual state changes are handled by their own effects
   const fetchBaseData = useCallback(async () => {
     setLoading(true)
     try {
@@ -118,18 +119,26 @@ export default function SubjectsPage() {
       setSemesters(nextSemesters)
       setMaxSubjects(settingRes.data.data?.maxSubjects || 9)
 
-      const activeYear = nextYears.find((item: AcademicYear) => item.isActive) || nextYears[0]
-      const activeSemester = nextSemesters.find((item: Semester) => item.isActive) || nextSemesters[0]
-      if (!selectedYearId && activeYear) setSelectedYearId(activeYear.id)
-      if (!scopeSubjectId && nextSubjects[0]) setScopeSubjectId(nextSubjects[0].id)
-      if (!componentSubjectId && nextSubjects[0]) setComponentSubjectId(nextSubjects[0].id)
-      if (!componentSemesterId && activeSemester) setComponentSemesterId(activeSemester.id)
+      // Only set defaults if not already set (prevent overwriting user selections on re-fetch)
+      setSelectedYearId((prev) => {
+        if (prev) return prev
+        const activeYear = nextYears.find((item: AcademicYear) => item.isActive) || nextYears[0]
+        return activeYear?.id || ''
+      })
+      setScopeSubjectId((prev) => prev || nextSubjects[0]?.id || '')
+      setComponentSubjectId((prev) => prev || nextSubjects[0]?.id || '')
+      setComponentSemesterId((prev) => {
+        if (prev) return prev
+        const activeSemester = nextSemesters.find((item: Semester) => item.isActive) || nextSemesters[0]
+        return activeSemester?.id || ''
+      })
     } catch (error: any) {
       toast.error(error.response?.data?.error?.message || 'Lỗi tải dữ liệu')
     } finally {
       setLoading(false)
     }
-  }, [componentSemesterId, componentSubjectId, scopeSubjectId, selectedYearId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // empty deps — only runs on mount; state defaults are set with functional updaters
 
   useEffect(() => { fetchBaseData() }, [fetchBaseData])
 
@@ -254,7 +263,11 @@ export default function SubjectsPage() {
         semesterId: componentSemesterId,
         components: components.map((item, index) => ({ ...item, displayOrder: index + 1 }))
       })
-      toast.success(res.data.warning || 'Đã lưu thành phần điểm')
+      if (res.data.warning) {
+        toast('Đã lưu thành phần điểm. ⚠️ ' + res.data.warning, { icon: '⚠️' })
+      } else {
+        toast.success('Đã lưu thành phần điểm')
+      }
       fetchComponents()
     } catch (error: any) {
       toast.error(error.response?.data?.error?.message || 'Lỗi lưu thành phần điểm')

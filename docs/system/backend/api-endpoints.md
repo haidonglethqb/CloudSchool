@@ -102,9 +102,9 @@
 | PUT | `/score-component-sets` | Create/update full component set for `subjectId + semesterId` |
 | POST | `/score-component-sets/clone` | Clone component set from one semester to another |
 | GET | `/score-components` | Compatibility list endpoint; with `subjectId + semesterId`, returns set components |
-| POST | `/score-components` | Create component (weight 1-100, total ≤ 100% per subject) |
-| PUT | `/score-components/:id` | Update component (weight re-validation, duplicate name check) |
-| DELETE | `/score-components/:id` | Delete component (no existing scores) |
+| POST | `/score-components` | Legacy write blocked with `410 USE_SCORE_COMPONENT_SETS` |
+| PUT | `/score-components/:id` | Legacy write blocked with `410 USE_SCORE_COMPONENT_SETS` |
+| DELETE | `/score-components/:id` | Legacy write blocked with `410 USE_SCORE_COMPONENT_SETS` |
 
 ## Scores
 

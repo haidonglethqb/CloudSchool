@@ -335,11 +335,11 @@ router.get('/student/:studentId', async (req, res, next) => {
 
     const subjectScores = subjects.map(subject => {
       const subjectData = scores.filter(s => s.subjectId === subject.id)
+      const activeSubjectData = subjectData.filter((s) => s.scoreComponent && s.scoreComponent.isActive !== false)
 
       let weightedSum = 0
       let totalWeight = 0
-      for (const s of subjectData) {
-        if (!s.scoreComponent || s.scoreComponent.isActive === false) continue
+      for (const s of activeSubjectData) {
         weightedSum += s.value * s.scoreComponent.weight
         totalWeight += s.scoreComponent.weight
       }
@@ -348,7 +348,7 @@ router.get('/student/:studentId', async (req, res, next) => {
 
       return {
         subject,
-        scores: subjectData,
+        scores: activeSubjectData,
         average,
         isPassed: average !== null && average >= settings.passScore
       }
@@ -1104,12 +1104,10 @@ router.get('/student/:studentId/yearly', async (req, res, next) => {
     })
 
     // Support dynamic number of semesters (not just 1 and 2)
-    const semesterMap = {}
+    const semesterNumToId = {}
     for (const sem of semesters) {
-      semesterMap[sem.semesterNum] = sem
+      semesterNumToId[sem.semesterNum] = sem
     }
-    const sem1 = semesterMap[1]
-    const sem2 = semesterMap[2]
 
     const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
 
@@ -1148,17 +1146,25 @@ router.get('/student/:studentId/yearly', async (req, res, next) => {
     }
 
     const subjects = Object.values(subjectMap).map(({ subject, semesters: semScores }) => {
-      const semester1Average = calcWeightedAvg(semScores[1] || [])
-      const semester2Average = calcWeightedAvg(semScores[2] || [])
-      
+      // Build dynamic semester averages (supports 1, 2, 3+ semesters)
+      const semesterAverages = {}
+      for (const semesterNum of Object.keys(semScores)) {
+        semesterAverages[semesterNum] = calcWeightedAvg(semScores[semesterNum] || [])
+      }
+
+      // Keep backward-compat fields for 2-semester schools
+      const semester1Average = semesterAverages[1] ?? null
+      const semester2Average = semesterAverages[2] ?? null
+
       // Calculate yearly average from all available semesters
-      const allSemAvgs = Object.values(semScores).map(scores => calcWeightedAvg(scores)).filter(v => v != null)
+      const allSemAvgs = Object.values(semesterAverages).filter((v) => v != null)
       const yearlyAverage = allSemAvgs.length > 0
         ? Math.round((allSemAvgs.reduce((a, b) => a + b, 0) / allSemAvgs.length) * 100) / 100
         : null
-      
+
       return {
         subject: { id: subject.id, name: subject.name },
+        semesterAverages,
         semester1Average,
         semester2Average,
         yearlyAverage,
