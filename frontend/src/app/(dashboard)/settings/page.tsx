@@ -164,7 +164,7 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Thay đổi quy định</h1>
-        <p className="text-gray-600 text-sm mt-1">Bố trí gọn 2 cột để dễ thao tác và dễ quan sát hơn.</p>
+        <p className="text-gray-600 text-sm mt-1">Thay đổi quy định một cách linh hoạt và dễ dàng.</p>
       </div>
 
       <div className="card">
