@@ -501,7 +501,7 @@ export default function StudentScoreEditPage() {
             <span>Điểm: 0 - 10</span>
             {isTeacher && (
               <span className="flex items-center gap-1">
-                <Lock className="w-3 h-3 text-yellow-500" /> Điểm đã khóa (chỉ Admin/Staff sửa được)
+                <Lock className="w-3 h-3 text-yellow-500" /> Điểm đã khóa (chỉ Quản trị viên/Nhân viên sửa được)
               </span>
             )}
             <span>(chỉ xem) = Môn không được phân công</span>

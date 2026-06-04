@@ -77,7 +77,7 @@ export default function ActivityLogsPage() {
         </div>
         <div className="relative flex-1">
           <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input type="text" className="input pl-10" placeholder="Lọc theo đối tượng (Student, Score...)"
+          <input type="text" className="input pl-10" placeholder="Lọc theo đối tượng (Học sinh, Điểm...)"
             value={entityFilter} onChange={e => { setEntityFilter(e.target.value); setPage(1) }} />
         </div>
       </div>

@@ -26,6 +26,26 @@ const BANNED_PHRASES = [
   ['Ho ten', 'Họ tên'],
   ['Chua co', 'Chưa có'],
   ['Can bo tri', 'Cần bố trí'],
+  ['Platform Admin', 'Quản trị nền tảng'],
+  ['Super Admin', 'Quản trị trường'],
+  ['Parent Portal', 'Cổng phụ huynh'],
+  ['tenant code', 'mã định danh'],
+  ['Export PDF/Excel', 'Xuất PDF/Excel'],
+  ['Backup hang ngay', 'Sao lưu hằng ngày'],
+  ['Dedicated support', 'Hỗ trợ riêng'],
+  ['Custom deployment', 'Triển khai tùy chỉnh'],
+  ['Inactive hoc sinh', 'Ngừng học sinh'],
+  ['ly do inactive', 'lý do ngừng học'],
+  ['Admin/Staff', 'Quản trị viên/Nhân viên'],
+  ['Student, Score', 'Học sinh, Điểm'],
+]
+
+const MOJIBAKE_PATTERNS = [
+  [/Ã|Â|Ä|Æ/, 'Chuỗi có dấu hiệu UTF-8 bị đọc sai encoding'],
+  [/á[º»]/, 'Chuỗi tiếng Việt bị mojibake'],
+  [/â[€œ„†‡ˆŠ‹ŒŽ™š›œžŸ]/, 'Ký tự dấu câu bị mojibake'],
+  [/[\u0080-\u009F]/, 'Ký tự điều khiển không hợp lệ trong UI text'],
+  [/�/, 'Ký tự replacement do lỗi encoding'],
 ]
 
 function walkDir(dirPath) {
@@ -69,6 +89,18 @@ function findViolations(filePath) {
           lineNumber: index + 1,
           badPhrase,
           goodPhrase,
+          line: line.trim(),
+        })
+      }
+    }
+
+    for (const [pattern, reason] of MOJIBAKE_PATTERNS) {
+      if (pattern.test(line)) {
+        violations.push({
+          filePath,
+          lineNumber: index + 1,
+          badPhrase: pattern.toString(),
+          goodPhrase: reason,
           line: line.trim(),
         })
       }

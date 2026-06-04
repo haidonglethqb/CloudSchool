@@ -104,7 +104,7 @@ function PlatformAdminDashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Platform Admin</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Quản trị nền tảng</h1>
           <p className="text-gray-600 mt-1">Tổng quan hệ thống CloudSchool</p>
         </div>
       </div>

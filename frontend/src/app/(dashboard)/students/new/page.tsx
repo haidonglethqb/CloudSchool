@@ -13,7 +13,10 @@ import Link from 'next/link'
 
 const studentSchema = z.object({
   fullName: z.string().min(2, 'Họ tên ít nhất 2 ký tự'),
-  gender: z.enum(['MALE', 'FEMALE', 'OTHER'], { required_error: 'Chọn giới tính' }),
+  gender: z.preprocess(
+    (val) => (val === '' ? undefined : val),
+    z.enum(['MALE', 'FEMALE', 'OTHER'], { required_error: 'Vui lòng chọn giới tính' })
+  ) as z.ZodType<'MALE' | 'FEMALE' | 'OTHER'>,
   dateOfBirth: z.string().min(1, 'Chọn ngày sinh'),
   address: z.string().min(5, 'Địa chỉ ít nhất 5 ký tự'),
   email: z.string().email('Email không hợp lệ').optional().or(z.literal('')),

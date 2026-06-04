@@ -160,7 +160,7 @@ export default function SubscriptionsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Gói dịch vụ</h1>
-          <p className="text-gray-600 mt-1">Quản lý các gói subscription</p>
+          <p className="text-gray-600 mt-1">Quản lý các gói dịch vụ đăng ký</p>
         </div>
         <button onClick={openCreate} className="btn-primary">
           <Plus className="w-4 h-4 mr-2" /> Thêm gói
@@ -237,7 +237,7 @@ export default function SubscriptionsPage() {
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
               <div>
                 <label className="label">Tên gói *</label>
-                <input className="input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="VD: Basic, Pro, Enterprise" />
+                <input className="input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="VD: Miễn phí, Chuyên nghiệp, Doanh nghiệp" />
               </div>
               <div>
                 <label className="label">Mô tả</label>
@@ -245,19 +245,19 @@ export default function SubscriptionsPage() {
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
-                  <label className="label">Max HS</label>
+                  <label className="label">Tối đa HS</label>
                   <input type="number" className="input" value={form.maxStudents} onChange={e => setForm({ ...form, maxStudents: +e.target.value })} />
                 </div>
                 <div>
-                  <label className="label">Max NVGV</label>
+                  <label className="label">Tối đa NVGV</label>
                   <input type="number" className="input" value={form.maxStaff} onChange={e => setForm({ ...form, maxStaff: +e.target.value })} />
                 </div>
                 <div>
-                  <label className="label">Max GV</label>
+                  <label className="label">Tối đa GV</label>
                   <input type="number" className="input" value={form.maxTeachers} onChange={e => setForm({ ...form, maxTeachers: +e.target.value })} />
                 </div>
                 <div>
-                  <label className="label">Max Lớp</label>
+                  <label className="label">Tối đa lớp</label>
                   <input type="number" className="input" value={form.maxClasses} onChange={e => setForm({ ...form, maxClasses: +e.target.value })} />
                 </div>
               </div>

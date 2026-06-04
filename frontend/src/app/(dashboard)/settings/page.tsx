@@ -299,7 +299,7 @@ export default function SettingsPage() {
 
       {!isAdmin ? (
         <div className="card p-4 bg-amber-50 border-amber-200">
-          <p className="text-sm text-amber-800">Chỉ SUPER_ADMIN mới có thể thay đổi quy định.</p>
+          <p className="text-sm text-amber-800">Chỉ Quản trị viên trường mới có thể thay đổi quy định.</p>
         </div>
       ) : null}
     </div>

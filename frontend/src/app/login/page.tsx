@@ -93,7 +93,7 @@ export default function LoginPage() {
               }`}
             >
               <Shield className="w-3 h-3" />
-              {isPlatformAdmin ? 'Platform Admin' : 'Trường học'}
+              {isPlatformAdmin ? 'Quản trị nền tảng' : 'Trường học'}
             </button>
           </div>
 

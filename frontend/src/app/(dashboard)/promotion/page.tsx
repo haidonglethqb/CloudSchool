@@ -81,7 +81,7 @@ export default function PromotionPage() {
       PENDING: 'Chờ phân lớp',
       DRAFTED: 'Đã chọn dự kiến',
       ASSIGNED: 'Đã phân lớp',
-      INACTIVE: 'Đã inactive',
+      INACTIVE: 'Đã ngừng học',
       GRADUATED: 'Tốt nghiệp',
     }
     return labels[status || 'PENDING'] || status || 'Chờ phân lớp'
@@ -168,7 +168,7 @@ export default function PromotionPage() {
     const toClassId = failAssignments[item.studentId] || item.latestPlacementHistory?.toClassId || ''
     const reason = inactiveReasons[item.id] || ''
     if ((action === 'draft' || action === 'assign') && !toClassId) return toast.error('Vui lòng chọn lớp đích.')
-    if (action === 'inactive' && !reason.trim()) return toast.error('Vui lòng nhập lý do inactive.')
+    if (action === 'inactive' && !reason.trim()) return toast.error('Vui lòng nhập lý do ngừng học.')
 
     try {
       setProcessingPlacementId(`${item.id}-${action}`)
@@ -177,7 +177,7 @@ export default function PromotionPage() {
         toClassId: action === 'inactive' ? undefined : toClassId,
         reason: action === 'inactive' ? reason : undefined,
       })
-      toast.success(action === 'inactive' ? 'Đã inactive học sinh.' : action === 'assign' ? 'Đã phân lớp.' : 'Đã lưu lớp dự kiến.')
+      toast.success(action === 'inactive' ? 'Đã ngừng học sinh.' : action === 'assign' ? 'Đã phân lớp.' : 'Đã lưu lớp dự kiến.')
       await refreshResults()
     } catch (error: any) {
       toast.error(resolveUiErrorMessage(error, 'Không thể cập nhật phân lớp.'))
@@ -312,11 +312,11 @@ export default function PromotionPage() {
                       <option value="">Chưa bố trí lại lớp</option>
                       {getAllowedFailClasses(item).map((row: any) => <option key={row.id} value={row.id}>{row.name} ({row.grade?.name})</option>)}
                     </select>
-                    <input className="input" placeholder="Lý do inactive nếu cần" value={inactiveReasons[item.id] || ''} onChange={(e) => setInactiveReasons((prev) => ({ ...prev, [item.id]: e.target.value }))} />
+                    <input className="input" placeholder="Lý do ngừng học nếu cần" value={inactiveReasons[item.id] || ''} onChange={(e) => setInactiveReasons((prev) => ({ ...prev, [item.id]: e.target.value }))} />
                     <div className="flex gap-2">
                       <button className="btn-outline" disabled={!!processingPlacementId} onClick={() => saveFailedPlacement(item, 'draft')}>Lưu chọn</button>
                       <button className="btn-primary" disabled={!!processingPlacementId} onClick={() => saveFailedPlacement(item, 'assign')}>Phân lớp</button>
-                      <button className="px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50" disabled={!!processingPlacementId} onClick={() => saveFailedPlacement(item, 'inactive')} title="Inactive học sinh">
+                      <button className="px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50" disabled={!!processingPlacementId} onClick={() => saveFailedPlacement(item, 'inactive')} title="Ngừng học sinh">
                         <UserX className="h-4 w-4" />
                       </button>
                     </div>

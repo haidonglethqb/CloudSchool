@@ -225,7 +225,7 @@ const testimonials = [
     school: "THPT Marie Curie"
   },
   {
-    quote: "Báo cáo trực quan giúp họp hội đồng sư phạm nhanh hơn. Số liệu chính xác, cập nhật real-time.",
+    quote: "Báo cáo trực quan giúp họp hội đồng sư phạm nhanh hơn. Số liệu chính xác, cập nhật theo thời gian thực.",
     name: "Đỗ Quang Minh",
     role: "Hiệu phó",
     school: "THPT Chu Văn An"
@@ -249,8 +249,8 @@ const faqs = [
   { q: "Dữ liệu của trường tôi có bảo mật không?", a: "Tuyệt đối bảo mật. Kiến trúc multi-tenant cách ly hoàn toàn dữ liệu giữa các trường. Hệ thống sử dụng mã hóa JWT, bcrypt và tuân thủ tiêu chuẩn bảo mật quốc tế." },
   { q: "Tôi có thể dùng thử trước khi mua không?", a: "Có! Gói Miễn phí cho phép tối đa 200 học sinh với đầy đủ tính năng. Gói Chuyên nghiệp có 14 ngày dùng thử miễn phí, không cần thẻ tín dụng." },
   { q: "Phụ huynh có cần trả phí để xem điểm không?", a: "Không. Tài khoản phụ huynh hoàn toàn miễn phí, được tạo tự động khi nhà trường thêm thông tin học sinh vào hệ thống." },
-  { q: "Hệ thống có hỗ trợ mobile không?", a: "Có. CloudSchool tương thích hoàn toàn với điện thoại, máy tính bảng. Phụ huynh và giáo viên có thể sử dụng mọi tính năng trên mobile." },
-  { q: "Tôi có thể xuất báo cáo ra Excel/PDF không?", a: "Gói Chuyên nghiệp và Enterprise hỗ trợ xuất báo cáo đa định dạng (Excel, PDF, CSV). Gói Miễn phí hỗ trợ xem trực tuyến." },
+  { q: "Hệ thống có hỗ trợ thiết bị di động không?", a: "Có. CloudSchool tương thích hoàn toàn với điện thoại, máy tính bảng. Phụ huynh và giáo viên có thể sử dụng mọi tính năng trên thiết bị di động." },
+  { q: "Tôi có thể xuất báo cáo ra Excel/PDF không?", a: "Gói Chuyên nghiệp và Doanh nghiệp hỗ trợ xuất báo cáo đa định dạng (Excel, PDF, CSV). Gói Miễn phí hỗ trợ xem trực tuyến." },
 ]
 
 // ==================== MAIN PAGE ====================
@@ -537,7 +537,7 @@ export default function LandingPage() {
               { icon: BookOpen, title: 'Nhập điểm môn học', description: 'Nhập điểm 15 phút, 1 tiết, cuối kỳ. Tính trung bình theo hệ số tùy chỉnh. Kiểm tra 0-10.', tag: 'BM4', gradient: 'from-emerald-500 to-green-600', iconCls: 'bg-emerald-50 text-emerald-600', tagCls: 'bg-emerald-50 text-emerald-600' },
               { icon: BarChart3, title: 'Báo cáo tổng kết', description: 'Báo cáo tổng kết môn học và học kỳ. Tỉ lệ đạt/không đạt theo lớp, thống kê trực quan.', tag: 'BM5', gradient: 'from-orange-500 to-amber-500', iconCls: 'bg-orange-50 text-orange-600', tagCls: 'bg-orange-50 text-orange-600' },
               { icon: Settings, title: 'Tùy chỉnh quy định', description: 'Cấu hình độ tuổi cho phép, sĩ số tối đa, điểm đạt, hệ số điểm, môn học và học kỳ.', tag: 'QD1-QD6', gradient: 'from-rose-500 to-pink-600', iconCls: 'bg-rose-50 text-rose-600', tagCls: 'bg-rose-50 text-rose-600' },
-              { icon: Shield, title: 'Tài khoản phụ huynh', description: 'Phụ huynh đăng nhập xem điểm con em. Liên kết nhiều học sinh, bảo mật theo trường.', tag: 'Parent Portal', gradient: 'from-teal-500 to-cyan-600', iconCls: 'bg-teal-50 text-teal-600', tagCls: 'bg-teal-50 text-teal-600' },
+              { icon: Shield, title: 'Tài khoản phụ huynh', description: 'Phụ huynh đăng nhập xem điểm con em. Liên kết nhiều học sinh, bảo mật theo trường.', tag: 'Cổng phụ huynh', gradient: 'from-teal-500 to-cyan-600', iconCls: 'bg-teal-50 text-teal-600', tagCls: 'bg-teal-50 text-teal-600' },
             ].map((feature, i) => (
               <div
                 key={feature.title}
@@ -624,9 +624,9 @@ export default function LandingPage() {
               <ul className="space-y-4">
                 {[
                   'Dữ liệu cách ly hoàn toàn theo trường',
-                  'Mỗi trường có mã tenant code riêng',
+                  'Mỗi trường có mã định danh riêng',
                   'Tùy chỉnh quy định và cấu hình độc lập',
-                  'Phân quyền 4 vai trò: Admin, Giáo viên, Phụ huynh, Super Admin',
+                  'Phân quyền 4 vai trò: Quản trị viên, Giáo viên, Phụ huynh, Quản trị trường',
                 ].map((item, i) => (
                   <li
                     key={item}
@@ -712,8 +712,8 @@ export default function LandingPage() {
           <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
             {[
               { name: 'Miễn phí', price: '0', unit: 'đ/mãi mãi', description: 'Dùng thử đầy đủ tính năng', features: ['Tối đa 200 học sinh', 'Tối đa 10 lớp', 'Quản lý điểm & báo cáo', 'Tài khoản phụ huynh', 'Email hỗ trợ'], cta: 'Bắt đầu miễn phí', highlighted: false },
-              { name: 'Chuyên nghiệp', price: '500K', unit: 'đ/tháng', description: 'Cho trường quy mô trung bình', features: ['Tối đa 2,000 học sinh', 'Không giới hạn lớp', 'Tất cả tính năng miễn phí', 'Export PDF/Excel', 'Hỗ trợ ưu tiên 24/7', 'Backup hàng ngày'], cta: 'Dùng thử 14 ngày', highlighted: true },
-              { name: 'Enterprise', price: 'Liên hệ', unit: '', description: 'Cho hệ thống trường lớn', features: ['Không giới hạn học sinh', 'Không giới hạn lớp', 'Tất cả tính năng Pro', 'API tích hợp', 'Dedicated support', 'Custom deployment'], cta: 'Liên hệ tư vấn', highlighted: false },
+              { name: 'Chuyên nghiệp', price: '500K', unit: 'đ/tháng', description: 'Cho trường quy mô trung bình', features: ['Tối đa 2,000 học sinh', 'Không giới hạn lớp', 'Tất cả tính năng miễn phí', 'Xuất PDF/Excel', 'Hỗ trợ ưu tiên 24/7', 'Sao lưu hằng ngày'], cta: 'Dùng thử 14 ngày', highlighted: true },
+              { name: 'Doanh nghiệp', price: 'Liên hệ', unit: '', description: 'Cho hệ thống trường lớn', features: ['Không giới hạn học sinh', 'Không giới hạn lớp', 'Tất cả tính năng Chuyên nghiệp', 'API tích hợp', 'Hỗ trợ riêng', 'Triển khai tùy chỉnh'], cta: 'Liên hệ tư vấn', highlighted: false },
             ].map((plan, i) => (
               <div
                 key={plan.name}

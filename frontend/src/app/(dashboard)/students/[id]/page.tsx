@@ -249,7 +249,7 @@ export default function StudentDetailPage() {
       EVALUATED: 'Chạy xét',
       DRAFT_TARGET: 'Chọn lớp dự kiến',
       ASSIGNED: 'Phân lớp',
-      INACTIVE: 'Inactive',
+      INACTIVE: 'Ngừng học',
       GRADUATED: 'Tốt nghiệp',
       CREATE_TARGET_CLASS: 'Tạo lớp đích',
     }

@@ -161,7 +161,7 @@ export default function PermissionsPage() {
 
       <div className="card p-4 bg-gray-50 flex items-center justify-between gap-4">
         <p className="text-xs text-gray-500">
-          SUPER_ADMIN luôn có toàn quyền. Menu sidebar của STAFF/TEACHER sẽ đổi theo cấu hình này.
+          Quản trị viên trường luôn có toàn quyền. Menu sidebar của Nhân viên giáo vụ và Giáo viên sẽ đổi theo cấu hình này.
         </p>
         <button onClick={handleSave} disabled={saving} className="btn-primary shrink-0">
           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
