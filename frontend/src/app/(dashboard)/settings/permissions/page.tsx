@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { settingsApi } from '@/lib/api'
@@ -15,7 +15,9 @@ const ROLES = [
   { key: 'TEACHER', label: getUiRoleLabel('TEACHER'), usageKey: 'teachers' },
 ] as const
 
-const MODULES = [
+// Phải đồng bộ với backend/src/constants/module-registry.js (MODULE_KEYS & ROLE_MODULE_KEYS)
+const ALL_MODULES = [
+  { key: 'users', label: getUiModuleLabel('users') },
   { key: 'student-admission', label: getUiModuleLabel('student-admission') },
   { key: 'student-lookup', label: getUiModuleLabel('student-lookup') },
   { key: 'classes', label: getUiModuleLabel('classes') },
@@ -25,13 +27,16 @@ const MODULES = [
   { key: 'reports', label: getUiModuleLabel('reports') },
   { key: 'parents', label: getUiModuleLabel('parents') },
   { key: 'academic-calendar', label: getUiModuleLabel('academic-calendar') },
-  { key: 'export', label: getUiModuleLabel('export') },
   { key: 'settings', label: getUiModuleLabel('settings') },
+  { key: 'export', label: getUiModuleLabel('export') },
 ]
 
-const ROLE_MODULES: Record<string, typeof MODULES> = {
-  STAFF: MODULES,
-  TEACHER: MODULES.filter((module) => ['student-lookup', 'classes', 'subjects', 'scores', 'reports'].includes(module.key)),
+// Chỉ hiển thị các module mà role đó được phép cấu hình (khớp với ROLE_MODULE_KEYS ở backend)
+const ROLE_MODULES: Record<string, typeof ALL_MODULES> = {
+  STAFF: ALL_MODULES, // STAFF có thể được cấp tất cả modules
+  TEACHER: ALL_MODULES.filter((m) =>
+    ['student-lookup', 'classes', 'subjects', 'scores', 'reports'].includes(m.key)
+  ), // TEACHER chỉ có 5 modules phù hợp
 }
 
 type Permissions = Record<string, string[]>
@@ -60,7 +65,7 @@ export default function PermissionsPage() {
         setPermissions(res.data.data || {})
         setPermissionMeta(res.data.meta || {})
       })
-      .catch(() => toast.error('KhÃ´ng thá»ƒ táº£i phÃ¢n quyá»n.'))
+      .catch(() => toast.error('Không thể tải phân quyền.'))
       .finally(() => setLoading(false))
   }, [user, router])
 
@@ -87,9 +92,9 @@ export default function PermissionsPage() {
     try {
       setSaving(true)
       await settingsApi.updateRolePermissions(permissions)
-      toast.success('LÆ°u phÃ¢n quyá»n thÃ nh cÃ´ng.')
+      toast.success('Lưu phân quyền thành công.')
     } catch (error: any) {
-      toast.error(resolveUiErrorMessage(error, 'LÆ°u phÃ¢n quyá»n tháº¥t báº¡i.'))
+      toast.error(resolveUiErrorMessage(error, 'Lưu phân quyền thất bại.'))
     } finally {
       setSaving(false)
     }
@@ -110,8 +115,8 @@ export default function PermissionsPage() {
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">PhÃ¢n quyá»n vai trÃ²</h1>
-          <p className="text-sm text-gray-600 mt-1">Bá»‘ trÃ­ quyá»n theo vai trÃ², giao diá»‡n gá»n vÃ  dá»… quan sÃ¡t hÆ¡n.</p>
+          <h1 className="text-2xl font-bold text-gray-900">Phân quyền vai trò</h1>
+          <p className="text-sm text-gray-600 mt-1">Bố trí quyền theo vai trò, giao diện gọn và dễ quan sát hơn.</p>
         </div>
       </div>
 
@@ -122,7 +127,7 @@ export default function PermissionsPage() {
             <p className="mt-1 text-2xl font-bold text-gray-900">
               {role.used}/{role.limit ?? '-'}
             </p>
-            <p className="mt-1 text-xs text-gray-500">Sá»‘ ngÆ°á»i Ä‘ang hoáº¡t Ä‘á»™ng theo giá»›i háº¡n gÃ³i</p>
+            <p className="mt-1 text-xs text-gray-500">Số người đang hoạt động theo giới hạn gói</p>
           </div>
         ))}
       </div>
@@ -135,7 +140,7 @@ export default function PermissionsPage() {
               <h2 className="font-semibold text-gray-900">{role.label}</h2>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {(ROLE_MODULES[role.key] || MODULES).map((module) => {
+              {(ROLE_MODULES[role.key] || ALL_MODULES).map((module) => {
                 const checked = (permissions[role.key] || []).includes(module.key)
                 return (
                   <label key={module.key} className="flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2 hover:bg-gray-50">
@@ -156,11 +161,11 @@ export default function PermissionsPage() {
 
       <div className="card p-4 bg-gray-50 flex items-center justify-between gap-4">
         <p className="text-xs text-gray-500">
-          SUPER_ADMIN luÃ´n cÃ³ toÃ n quyá»n. Menu sidebar cá»§a STAFF/TEACHER sáº½ Ä‘á»•i theo cáº¥u hÃ¬nh nÃ y.
+          SUPER_ADMIN luôn có toàn quyền. Menu sidebar của STAFF/TEACHER sẽ đổi theo cấu hình này.
         </p>
         <button onClick={handleSave} disabled={saving} className="btn-primary shrink-0">
           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          LÆ°u phÃ¢n quyá»n
+          Lưu phân quyền
         </button>
       </div>
     </div>
