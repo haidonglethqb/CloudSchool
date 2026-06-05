@@ -89,6 +89,17 @@ const ensureYearEndReady = (academicYear) => {
 
 const toAcademicYearLabel = (year) => `${year.startYear}-${year.endYear}`
 
+const getActiveStudentCountsByClass = async (client, tenantId, classIds) => {
+  const ids = [...new Set((classIds || []).filter(Boolean))]
+  if (ids.length === 0) return new Map()
+  const counts = await client.student.groupBy({
+    by: ['classId'],
+    where: { tenantId, isActive: true, classId: { in: ids } },
+    _count: { _all: true }
+  })
+  return new Map(counts.map((item) => [item.classId, item._count._all]))
+}
+
 const parseClassSuffix = (className = '') => {
   const trimmed = String(className).trim()
   const match = trimmed.match(/^(\d+)([A-Za-z].*)$/)
@@ -601,7 +612,8 @@ router.post('/year-end/execute', async (req, res, next) => {
       where: { tenantId: req.tenantId, id: { in: allTargetClassIds } },
       include: { grade: true, _count: { select: { students: true } } }
     })
-    const classStateMap = new Map(classes.map((item) => [item.id, { classInfo: item, capacity: item.capacity, current: item._count.students }]))
+    const activeCountByClass = await getActiveStudentCountsByClass(prisma, req.tenantId, allTargetClassIds)
+    const classStateMap = new Map(classes.map((item) => [item.id, { classInfo: item, capacity: item.capacity, current: activeCountByClass.get(item.id) || 0 }]))
 
     const promoted = []
     const archived = []
@@ -910,7 +922,8 @@ router.patch('/year-end/failed/:promotionId', async (req, res, next) => {
       include: { grade: true, _count: { select: { students: true } } }
     })
     if (!targetClass) throw new AppError('Target class not found', 404, 'NOT_FOUND')
-    if (targetClass._count.students >= targetClass.capacity) throw new AppError('Target class is full', 400, 'CLASS_FULL')
+    const targetActiveCount = (await getActiveStudentCountsByClass(prisma, req.tenantId, [targetClass.id])).get(targetClass.id) || 0
+    if (targetActiveCount >= targetClass.capacity) throw new AppError('Target class is full', 400, 'CLASS_FULL')
     const isInNextYear = targetClass.academicYearId === nextAcademicYear.id || targetClass.academicYear === toAcademicYearLabel(nextAcademicYear)
     if (!isInNextYear) throw new AppError('Lớp đích phải thuộc năm học kế tiếp', 400, 'INVALID_TARGET_YEAR')
     if ((targetClass.grade?.level || 0) > (promotion.class?.grade?.level || 0)) {

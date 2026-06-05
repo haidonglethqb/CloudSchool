@@ -43,6 +43,32 @@ const getActiveSemesterWithAcademicYear = async (tenantId, tx) => {
   return activeSemester
 }
 
+const attachActiveStudentCounts = async (tenantId, classes) => {
+  const rows = Array.isArray(classes) ? classes : []
+  if (rows.length === 0) return rows
+  const counts = await prisma.student.groupBy({
+    by: ['classId'],
+    where: {
+      tenantId,
+      isActive: true,
+      classId: { in: rows.map((item) => item.id) }
+    },
+    _count: { _all: true }
+  })
+  const countMap = new Map(counts.map((item) => [item.classId, item._count._all]))
+  return rows.map((item) => ({
+    ...item,
+    _count: {
+      ...(item._count || {}),
+      students: countMap.get(item.id) || 0
+    }
+  }))
+}
+
+const countActiveStudentsInClass = (client, tenantId, classId) => client.student.count({
+  where: { tenantId, classId, isActive: true }
+})
+
 // GET /classes/grades - Get grades with classes
 router.get('/grades', tenantGuard, async (req, res, next) => {
   try {
@@ -69,7 +95,11 @@ router.get('/grades', tenantGuard, async (req, res, next) => {
       },
       orderBy: { level: 'asc' }
     })
-    res.json({ data: grades })
+    const gradeRows = await Promise.all(grades.map(async (grade) => ({
+      ...grade,
+      classes: await attachActiveStudentCounts(req.tenantId, grade.classes)
+    })))
+    res.json({ data: gradeRows })
   } catch (error) {
     next(error)
   }
@@ -106,7 +136,7 @@ router.get('/', async (req, res, next) => {
       orderBy: { name: 'asc' }
     })
 
-    res.json({ data: classes })
+    res.json({ data: await attachActiveStudentCounts(req.tenantId, classes) })
   } catch (error) {
     next(error)
   }
@@ -136,7 +166,8 @@ router.get('/:id', async (req, res, next) => {
     })
 
     if (!classInfo) throw new AppError('Class not found', 404, 'NOT_FOUND')
-    res.json({ data: classInfo })
+    const [classWithCount] = await attachActiveStudentCounts(req.tenantId, [classInfo])
+    res.json({ data: classWithCount })
   } catch (error) {
     next(error)
   }
@@ -235,18 +266,16 @@ router.put('/:id', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => 
 
     // Validate capacity is not less than current student count
     if (capacity !== undefined) {
-      const cls = await prisma.class.findFirst({
-        where: { id: req.params.id, tenantId: req.tenantId },
-        include: { _count: { select: { students: true } } }
-      })
+      const cls = await prisma.class.findFirst({ where: { id: req.params.id, tenantId: req.tenantId } })
       if (!cls) throw new AppError('Class not found', 404, 'NOT_FOUND')
+      const activeStudentCount = await countActiveStudentsInClass(prisma, req.tenantId, req.params.id)
       const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
       if (!settings) throw new AppError('Tenant settings not configured', 404, 'SETTINGS_NOT_FOUND')
       if (capacity > settings.maxClassSize) {
         throw new AppError(`Capacity cannot exceed max class size (${settings.maxClassSize})`, 400, 'CAPACITY_EXCEEDS_SETTINGS')
       }
-      if (capacity < cls._count.students) {
-        throw new AppError(`Capacity (${capacity}) cannot be less than current student count (${cls._count.students})`, 400, 'CAPACITY_TOO_LOW')
+      if (capacity < activeStudentCount) {
+        throw new AppError(`Capacity (${capacity}) cannot be less than current student count (${activeStudentCount})`, 400, 'CAPACITY_TOO_LOW')
       }
     }
 
@@ -278,7 +307,8 @@ router.delete('/:id', authorize('SUPER_ADMIN'), async (req, res, next) => {
 
     if (!classInfo) throw new AppError('Class not found', 404, 'NOT_FOUND')
 
-    if (classInfo._count.students > 0) {
+    const activeStudentCount = await countActiveStudentsInClass(prisma, req.tenantId, req.params.id)
+    if (activeStudentCount > 0) {
       throw new AppError('Cannot delete class with students', 400, 'CLASS_HAS_STUDENTS')
     }
 
@@ -388,12 +418,10 @@ router.post('/:id/student-deletions/:logId/revert', authorize('SUPER_ADMIN', 'ST
       if (log.restoredAt) throw new AppError('Student already restored', 400, 'ALREADY_RESTORED')
       if (log.terminatedAt) throw new AppError('Student was permanently deleted', 400, 'ALREADY_TERMINATED')
 
-      const cls = await tx.class.findFirst({
-        where: { id: req.params.id, tenantId: req.tenantId },
-        include: { _count: { select: { students: true } } }
-      })
+      const cls = await tx.class.findFirst({ where: { id: req.params.id, tenantId: req.tenantId } })
       if (!cls) throw new AppError('Class not found', 404, 'NOT_FOUND')
-      if (cls._count.students >= cls.capacity) throw new AppError('Class is full', 400, 'CLASS_FULL')
+      const activeStudentCount = await countActiveStudentsInClass(tx, req.tenantId, req.params.id)
+      if (activeStudentCount >= cls.capacity) throw new AppError('Class is full', 400, 'CLASS_FULL')
 
       const student = await tx.student.findFirst({
         where: { id: log.studentId, tenantId: req.tenantId }
@@ -496,12 +524,10 @@ router.post('/:id/students', authorize('SUPER_ADMIN', 'STAFF'), async (req, res,
     const student = await prisma.$transaction(async (tx) => {
       const activeSemester = await getActiveSemesterWithAcademicYear(req.tenantId, tx)
 
-      const cls = await tx.class.findFirst({
-        where: { id: req.params.id, tenantId: req.tenantId },
-        include: { _count: { select: { students: true } } }
-      })
+      const cls = await tx.class.findFirst({ where: { id: req.params.id, tenantId: req.tenantId } })
       if (!cls) throw new AppError('Class not found', 404, 'NOT_FOUND')
-      if (cls._count.students >= cls.capacity) {
+      const activeStudentCount = await countActiveStudentsInClass(tx, req.tenantId, req.params.id)
+      if (activeStudentCount >= cls.capacity) {
         throw new AppError('Class is full', 400, 'CLASS_FULL')
       }
 

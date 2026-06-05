@@ -40,7 +40,7 @@ All routes use `express-validator` chains:
 | Check | Rule | Where |
 |-------|------|-------|
 | **Age** | `currentYear - birthYear âˆˆ [minAge, maxAge]` | `POST /students` |
-| **Class capacity** | `count(students) < class.capacity`; settings reject lower `maxClassSize` than current class usage | Student create, add-to-class, transfer, settings update |
+| **Class capacity** | `count(active students) < class.capacity`; deactivated students do not count toward visible class size or capacity | Student create, add-to-class, transfer, promotion, settings update |
 | **Score range** | `minScore ≤ value ≤ maxScore`; settings cannot shrink range below existing scores | `POST /scores/*`, `PUT /settings` |
 | **Score lock** | `isLocked === true` â†’ block modify/delete | `PUT/DELETE /scores/*` |
 | **Weight sum** | `Σ component weights ≤ 100` per subject+semester component set | Score component set CRUD |
