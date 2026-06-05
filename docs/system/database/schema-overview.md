@@ -23,6 +23,7 @@ erDiagram
     Tenant ||--o{ AcademicYear : "has"
     Tenant ||--o{ ClassEnrollment : "has"
     Tenant ||--o{ StudentImportBatch : "has"
+    Tenant ||--o{ StudentDeletionLog : "has"
     User ||--o{ ParentStudent : "is parent of"
     User ||--o{ TeacherAssignment : "teaches"
     User ||--o| Student : "linked profile"
@@ -63,6 +64,7 @@ erDiagram
 | **Users** | `ParentStudent` | Parent-student relationships |
 | **Users** | `StudentImportBatch` | CSV/XLSX admission import summary |
 | **Users** | `StudentImportRow` | Parsed import row, status, class assignment, and row error |
+| **Users** | `StudentDeletionLog` | Soft-delete audit log with restore/terminate state |
 | **Academic** | `Grade` | Grade levels (10, 11, 12) |
 | **Academic** | `Class` | Class groups within grades |
 | **Academic** | `Subject` | Academic subjects |

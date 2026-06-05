@@ -45,7 +45,7 @@ All routes use `express-validator` chains:
 | **Score lock** | `isLocked === true` â†’ block modify/delete | `PUT/DELETE /scores/*` |
 | **Weight sum** | `Σ component weights ≤ 100` per subject+semester component set | Score component set CRUD |
 | **Component names/order** | Component names are unique per subject+semester set; order is normalized from payload order | Score component set CRUD |
-| **Student delete guard** | Block if has promotions, transfers, parent links, enrollments, or scores | `DELETE /students/:id` |
+| **Student delete guard** | `DELETE /students/:id` soft-deletes and records `StudentDeletionLog`; class changelog can revert or permanently terminate the student | `DELETE /students/:id`, `/classes/:id/student-deletions/*` |
 | **Capacity guard** | Cannot reduce class `capacity < current student count` or above current `maxClassSize` | `PUT /classes/:id` |
 | **Academic year overlap** | No overlapping `[startDate, endDate]` ranges | `POST/PUT /academic-years` |
 | **Role escalation** | Only `SUPER_ADMIN`, `STAFF`, `TEACHER` via `PUT /users` | `PUT /users/:id` |

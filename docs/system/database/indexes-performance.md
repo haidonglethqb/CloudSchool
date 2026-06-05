@@ -52,6 +52,8 @@
 | `StudentImportBatch` | `(tenantId, createdAt)` | Import history by newest batch |
 | `StudentImportRow` | `(tenantId, batchId)` | Rows inside one import batch |
 | `StudentImportRow` | `(tenantId, status)` | Commit and row status filters |
+| `StudentDeletionLog` | `(tenantId, classId, createdAt)` | Class-level student delete changelog |
+| `StudentDeletionLog` | `(tenantId, studentId)` | Restore/terminate lookup by student |
 
 ## Index Rationale
 

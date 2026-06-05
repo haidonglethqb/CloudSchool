@@ -155,6 +155,10 @@ export const classApi = {
     api.delete(`/classes/${classId}/assign-teacher/${assignmentId}`),
   // Class students
   getStudents: (classId: string) => api.get(`/classes/${classId}/students`),
+  getStudentDeletions: (classId: string) => api.get(`/classes/${classId}/student-deletions`),
+  revertStudentDeletion: (classId: string, logId: string) => api.post(`/classes/${classId}/student-deletions/${logId}/revert`),
+  terminateStudentDeletion: (classId: string, logId: string) => api.delete(`/classes/${classId}/student-deletions/${logId}/terminate`),
+  deleteStudent: (studentId: string) => api.delete(`/students/${studentId}`),
   addStudent: (classId: string, studentId: string) =>
     api.post(`/classes/${classId}/students`, { studentId }),
   removeStudent: (classId: string, studentId: string) =>

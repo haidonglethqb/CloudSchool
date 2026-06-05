@@ -86,6 +86,9 @@
 | POST | `/classes/:id/assign-teacher` | Assign teacher/staff to class+subject |
 | DELETE | `/classes/:id/assign-teacher/:assignmentId` | Remove assignment |
 | GET | `/classes/:id/students` | Students in class |
+| GET | `/classes/:id/student-deletions` | Student delete changelog for the class |
+| POST | `/classes/:id/student-deletions/:logId/revert` | Restore a soft-deleted student to the class |
+| DELETE | `/classes/:id/student-deletions/:logId/terminate` | Permanently delete a soft-deleted student from its changelog |
 | POST | `/classes/:id/students` | Add student to class (capacity check, tx) |
 | DELETE | `/classes/:id/students/:studentId` | Remove student from class |
 

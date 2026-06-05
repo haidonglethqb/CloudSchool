@@ -854,29 +854,57 @@ router.put('/:id', authenticate, requireFeature('student-lookup'), authorize('SU
 })
 
 // DELETE /students/:id
-router.delete('/:id', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN'), requireRolePermission('student-lookup'), async (req, res, next) => {
+router.delete('/:id', authenticate, requireFeature('student-lookup'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('student-lookup'), async (req, res, next) => {
   try {
     const existingStudent = await prisma.student.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId }
     })
     if (!existingStudent) throw new AppError('Student not found', 404, 'NOT_FOUND')
 
-    const [scoreCount, promotionCount, transferCount, parentCount, enrollmentCount] = await Promise.all([
-      prisma.score.count({ where: { studentId: req.params.id } }),
-      prisma.promotion.count({ where: { studentId: req.params.id } }),
-      prisma.transferHistory.count({ where: { studentId: req.params.id } }),
-      prisma.parentStudent.count({ where: { studentId: req.params.id } }),
-      prisma.classEnrollment.count({ where: { studentId: req.params.id } })
-    ])
-    if (promotionCount > 0 || transferCount > 0 || parentCount > 0 || enrollmentCount > 0) {
-      throw new AppError('Cannot delete student with existing records (promotions, transfers, parent links, enrollments)', 400, 'HAS_RECORDS')
-    }
-    if (scoreCount > 0) {
-      throw new AppError('Cannot delete student with score records', 400, 'HAS_SCORES')
-    }
+    await prisma.$transaction(async (tx) => {
+      const student = await tx.student.findFirst({
+        where: { id: req.params.id, tenantId: req.tenantId },
+        include: { class: { include: { grade: true } } }
+      })
+      if (!student) throw new AppError('Student not found', 404, 'NOT_FOUND')
+      if (!student.isActive) throw new AppError('Student already deleted', 400, 'ALREADY_DELETED')
 
-    await prisma.student.delete({ where: { id: req.params.id } })
-    res.json({ data: { message: 'Student deleted' } })
+      await tx.studentDeletionLog.create({
+        data: {
+          tenantId: req.tenantId,
+          studentId: student.id,
+          studentCode: student.studentCode,
+          fullName: student.fullName,
+          gender: student.gender,
+          dateOfBirth: student.dateOfBirth,
+          email: student.email,
+          address: student.address,
+          phone: student.phone,
+          parentName: student.parentName,
+          parentPhone: student.parentPhone,
+          classId: student.classId,
+          className: student.class?.name || null,
+          gradeName: student.class?.grade?.name || null,
+          deletedBy: req.user?.id || null,
+          deletedByName: req.user?.fullName || req.user?.email || null,
+          deletedByRole: req.user?.role || null,
+          reason: req.body?.reason ? String(req.body.reason).trim() : null
+        }
+      })
+
+      await tx.student.update({
+        where: { id: student.id },
+        data: {
+          isActive: false,
+          inactiveReason: 'DELETED',
+          inactiveAt: new Date(),
+          inactivatedBy: req.user?.id || null,
+          inactivatedByName: req.user?.fullName || req.user?.email || null,
+          classId: null
+        }
+      })
+    })
+    res.json({ data: { message: 'Student deleted', mode: 'SOFT_DELETE' } })
   } catch (error) {
     next(error)
   }

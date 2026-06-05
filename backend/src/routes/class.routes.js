@@ -361,6 +361,132 @@ router.get('/:id/students', async (req, res, next) => {
   }
 })
 
+// GET /classes/:id/student-deletions - Student delete changelog for this class
+router.get('/:id/student-deletions', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+  try {
+    await ensureClassAccess(prisma, req, req.params.id)
+    const logs = await prisma.studentDeletionLog.findMany({
+      where: { tenantId: req.tenantId, classId: req.params.id },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    })
+    res.json({ data: logs })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /classes/:id/student-deletions/:logId/revert - Restore soft-deleted student
+router.post('/:id/student-deletions/:logId/revert', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
+  try {
+    await ensureClassAccess(prisma, req, req.params.id)
+    const result = await prisma.$transaction(async (tx) => {
+      const log = await tx.studentDeletionLog.findFirst({
+        where: { id: req.params.logId, tenantId: req.tenantId, classId: req.params.id }
+      })
+      if (!log) throw new AppError('Deletion log not found', 404, 'NOT_FOUND')
+      if (log.restoredAt) throw new AppError('Student already restored', 400, 'ALREADY_RESTORED')
+      if (log.terminatedAt) throw new AppError('Student was permanently deleted', 400, 'ALREADY_TERMINATED')
+
+      const cls = await tx.class.findFirst({
+        where: { id: req.params.id, tenantId: req.tenantId },
+        include: { _count: { select: { students: true } } }
+      })
+      if (!cls) throw new AppError('Class not found', 404, 'NOT_FOUND')
+      if (cls._count.students >= cls.capacity) throw new AppError('Class is full', 400, 'CLASS_FULL')
+
+      const student = await tx.student.findFirst({
+        where: { id: log.studentId, tenantId: req.tenantId }
+      })
+      if (!student) throw new AppError('Student not found', 404, 'STUDENT_NOT_FOUND')
+
+      const activeSemester = await getActiveSemesterWithAcademicYear(req.tenantId, tx)
+      const restoredStudent = await tx.student.update({
+        where: { id: student.id },
+        data: {
+          isActive: true,
+          inactiveReason: null,
+          inactiveAt: null,
+          inactivatedBy: null,
+          inactivatedByName: null,
+          classId: req.params.id
+        }
+      })
+
+      await tx.classEnrollment.upsert({
+        where: {
+          studentId_semesterId: {
+            studentId: student.id,
+            semesterId: activeSemester.id
+          }
+        },
+        create: {
+          tenantId: req.tenantId,
+          studentId: student.id,
+          classId: req.params.id,
+          semesterId: activeSemester.id,
+          academicYearId: activeSemester.academicYearId
+        },
+        update: {
+          classId: req.params.id,
+          academicYearId: activeSemester.academicYearId
+        }
+      })
+
+      await tx.studentDeletionLog.update({
+        where: { id: log.id },
+        data: {
+          restoredAt: new Date(),
+          restoredBy: req.user?.id || null,
+          restoredByName: req.user?.fullName || req.user?.email || null
+        }
+      })
+
+      return restoredStudent
+    })
+    res.json({ data: result })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// DELETE /classes/:id/student-deletions/:logId/terminate - Permanently delete a soft-deleted student
+router.delete('/:id/student-deletions/:logId/terminate', authorize('SUPER_ADMIN'), async (req, res, next) => {
+  try {
+    await ensureClassAccess(prisma, req, req.params.id)
+    await prisma.$transaction(async (tx) => {
+      const log = await tx.studentDeletionLog.findFirst({
+        where: { id: req.params.logId, tenantId: req.tenantId, classId: req.params.id }
+      })
+      if (!log) throw new AppError('Deletion log not found', 404, 'NOT_FOUND')
+      if (log.restoredAt) throw new AppError('Cannot terminate restored student', 400, 'ALREADY_RESTORED')
+      if (log.terminatedAt) throw new AppError('Student already terminated', 400, 'ALREADY_TERMINATED')
+
+      const student = await tx.student.findFirst({
+        where: { id: log.studentId, tenantId: req.tenantId, isActive: false }
+      })
+      if (!student) throw new AppError('Student not found or not deleted', 404, 'STUDENT_NOT_DELETED')
+
+      await tx.studentImportRow.updateMany({
+        where: { tenantId: req.tenantId, studentId: student.id },
+        data: { studentId: null, status: 'INVALID', errorMessage: 'Hoc sinh da bi xoa vinh vien' }
+      })
+      await tx.student.delete({ where: { id: student.id } })
+      await tx.studentDeletionLog.update({
+        where: { id: log.id },
+        data: {
+          terminatedAt: new Date(),
+          terminatedBy: req.user?.id || null,
+          terminatedByName: req.user?.fullName || req.user?.email || null
+        }
+      })
+    })
+    res.json({ data: { message: 'Student permanently deleted' } })
+  } catch (error) {
+    next(error)
+  }
+})
+
 // POST /classes/:id/students - Add student to class
 router.post('/:id/students', authorize('SUPER_ADMIN', 'STAFF'), async (req, res, next) => {
   try {
