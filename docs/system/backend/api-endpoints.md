@@ -194,7 +194,7 @@ Export note:
 | GET | `/academic-years/:id` | Academic year detail |
 | POST | `/academic-years` | Create academic year (overlap check, startYear < endYear) |
 | PUT | `/academic-years/:id` | Update academic year |
-| PATCH | `/academic-years/:id/activate` | Set active academic year (single active) |
+| PATCH | `/academic-years/:id/activate` | Set active academic year; clears old active semesters and opens the first semester in that year when available |
 | GET | `/academic-years/:id/semesters` | List semesters in one academic year |
 | POST | `/academic-years/:id/semesters` | Create semester in academic year (date window + maxSemesters) |
 | PATCH | `/academic-years/:id/semesters/:semesterId` | Update semester in academic year |

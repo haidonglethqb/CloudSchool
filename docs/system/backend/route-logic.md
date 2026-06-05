@@ -43,6 +43,12 @@ const generateStudentCode = async (tenantId, tx) => {
 1. Deletion is blocked when the semester still has scores, promotions, enrollments, or transfer history.
 2. Successful deletion hard-removes the semester, so later `GET /academic-years/semesters` reads no longer return it.
 
+## Academic Year Activation (`PATCH /academic-years/:id/activate`) â€” academic-year.routes.js
+
+1. Exactly one `AcademicYear` is active per tenant.
+2. Activating a year clears all old active semesters, then opens the first semester in the activated year when one exists.
+3. Student score lookup defaults to semesters in the active year so stale semester flags do not show a previous year as current.
+
 ## Teacher Score Access â€” score.routes.js
 
 Teachers are scoped to their assigned class/subject pairs:

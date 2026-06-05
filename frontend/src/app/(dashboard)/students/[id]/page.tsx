@@ -68,6 +68,7 @@ interface Semester {
   id: string
   name: string
   isActive: boolean
+  academicYearId?: string | null
   year?: string
   semesterNum?: number
 }
@@ -111,7 +112,7 @@ export default function StudentDetailPage() {
   const [scoreView, setScoreView] = useState<'semester' | 'yearly'>('semester')
   const [yearlyData, setYearlyData] = useState<any>(null)
   const [loadingYearly, setLoadingYearly] = useState(false)
-  const [academicYears, setAcademicYears] = useState<Array<{ id: string; startYear: number; endYear: number }>>([])
+  const [academicYears, setAcademicYears] = useState<Array<{ id: string; startYear: number; endYear: number; isActive?: boolean }>>([])
   const [selectedYear, setSelectedYear] = useState('')
 
   useEffect(() => {
@@ -127,13 +128,18 @@ export default function StudentDetailPage() {
         setStudent(response.data.data)
         setTransferHistory(historyRes.data.data || [])
         setPlacementHistory(placementRes.data.data || [])
-        const sems = semRes.data.data || []
-        setSemesters(sems)
-        const defaultSemester = pickDefaultSemester(sems)
-        if (defaultSemester) setSelectedSemester(defaultSemester.id)
         const ays = ayRes.data.data || []
         setAcademicYears(ays)
-        if (ays.length > 0) setSelectedYear(`${ays[0].startYear}-${ays[0].endYear}`)
+        const defaultYear = ays.find((ay: { isActive?: boolean }) => ay.isActive) || ays[0]
+        if (defaultYear) setSelectedYear(`${defaultYear.startYear}-${defaultYear.endYear}`)
+        const sems = semRes.data.data || []
+        setSemesters(sems)
+        const activeYearLabel = defaultYear ? `${defaultYear.startYear}-${defaultYear.endYear}` : ''
+        const activeYearSemesters = defaultYear
+          ? sems.filter((semester: Semester) => semester.academicYearId === defaultYear.id || semester.year === activeYearLabel)
+          : []
+        const defaultSemester = pickDefaultSemester(activeYearSemesters.length > 0 ? activeYearSemesters : sems)
+        if (defaultSemester) setSelectedSemester(defaultSemester.id)
       } catch (error: any) {
         console.error('Failed to fetch student:', error)
         if (error.response?.status === 404) {
@@ -711,7 +717,7 @@ export default function StudentDetailPage() {
                 >
                   {academicYears.map(ay => (
                     <option key={ay.id} value={`${ay.startYear}-${ay.endYear}`}>
-                      {ay.startYear}-{ay.endYear}
+                      {ay.startYear}-{ay.endYear}{ay.isActive ? ' - Hiện tại' : ''}
                     </option>
                   ))}
                 </select>

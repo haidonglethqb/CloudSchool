@@ -231,6 +231,24 @@ router.patch('/:id/activate', authorize('SUPER_ADMIN', 'STAFF'), async (req, res
         where: { tenantId: req.tenantId },
         data: { isActive: false }
       })
+
+      await tx.semester.updateMany({
+        where: { tenantId: req.tenantId },
+        data: { isActive: false }
+      })
+
+      const activeSemester = await tx.semester.findFirst({
+        where: { tenantId: req.tenantId, academicYearId: req.params.id },
+        orderBy: [{ semesterNum: 'asc' }, { startDate: 'asc' }]
+      })
+
+      if (activeSemester) {
+        await tx.semester.update({
+          where: { id: activeSemester.id },
+          data: { isActive: true }
+        })
+      }
+
       return tx.academicYear.update({
         where: { id: req.params.id },
         data: { isActive: true }
