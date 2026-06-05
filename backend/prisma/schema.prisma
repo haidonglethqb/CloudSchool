@@ -42,20 +42,20 @@ enum PromotionResult {
 // ==================== PLATFORM MODELS ====================
 
 model SubscriptionPlan {
-  id            String   @id @default(uuid())
-  name          String   @unique
-  price         Float    @default(0)
-  studentLimit  Int      @default(100)
-  staffLimit    Int      @default(10)
-  teacherLimit  Int      @default(20)
-  classLimit    Int      @default(30)
-  description   String?
-  features      String[] @default([])
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(uuid())
+  name         String   @unique
+  price        Float    @default(0)
+  studentLimit Int      @default(100)
+  staffLimit   Int      @default(10)
+  teacherLimit Int      @default(20)
+  classLimit   Int      @default(30)
+  description  String?
+  features     String[] @default([])
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  tenants       Tenant[]
+  tenants Tenant[]
 
   @@map("subscription_plans")
 }
@@ -63,59 +63,61 @@ model SubscriptionPlan {
 // ==================== MULTI-TENANT MODELS ====================
 
 model Tenant {
-  id          String       @id @default(uuid())
-  name        String
-  code        String       @unique
-  address     String?
-  phone       String?
-  email       String?
-  status      TenantStatus @default(ACTIVE)
-  planId      String?
-  plan        SubscriptionPlan? @relation(fields: [planId], references: [id])
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id        String            @id @default(uuid())
+  name      String
+  code      String            @unique
+  address   String?
+  phone     String?
+  email     String?
+  status    TenantStatus      @default(ACTIVE)
+  planId    String?
+  plan      SubscriptionPlan? @relation(fields: [planId], references: [id])
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 
-  users             User[]
-  students          Student[]
-  classes           Class[]
-  grades            Grade[]
-  subjects          Subject[]
-  semesters         Semester[]
-  scores            Score[]
-  scoreHistories    ScoreHistory[]
-  scoreComponents   ScoreComponent[]
-  promotions        Promotion[]
-  settings          TenantSettings?
-  teacherAssignments TeacherAssignment[]
-  activityLogs      ActivityLog[]
-  transferHistories TransferHistory[]
-  academicYears     AcademicYear[]
-  classEnrollments  ClassEnrollment[]
-  graduationArchives GraduationArchive[]
+  users                       User[]
+  students                    Student[]
+  classes                     Class[]
+  grades                      Grade[]
+  subjects                    Subject[]
+  subjectVersions             SubjectVersion[]
+  semesters                   Semester[]
+  scores                      Score[]
+  scoreHistories              ScoreHistory[]
+  scoreComponentSets          ScoreComponentSet[]
+  scoreComponents             ScoreComponent[]
+  promotions                  Promotion[]
+  settings                    TenantSettings?
+  teacherAssignments          TeacherAssignment[]
+  activityLogs                ActivityLog[]
+  transferHistories           TransferHistory[]
+  academicYears               AcademicYear[]
+  classEnrollments            ClassEnrollment[]
+  graduationArchives          GraduationArchive[]
   promotionPlacementHistories PromotionPlacementHistory[]
 
   @@map("tenants")
 }
 
 model TenantSettings {
-  id           String  @id @default(uuid())
-  tenantId     String  @unique
-  tenant       Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  minAge         Int     @default(15)
-  maxAge         Int     @default(20)
-  maxClassSize   Int     @default(40)
-  passScore      Float   @default(5.0)
-  minGradeLevel  Int     @default(10)
-  maxGradeLevel  Int     @default(12)
-  maxSubjects    Int     @default(9)
-  minScore       Float   @default(0)
-  maxScore       Float   @default(10)
-  maxSemesters   Int     @default(2)
-  maxRetentions  Int     @default(3)
-  enabledModules Json?
-  rolePermissions Json? @default("{}")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(uuid())
+  tenantId        String   @unique
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  minAge          Int      @default(15)
+  maxAge          Int      @default(20)
+  maxClassSize    Int      @default(40)
+  passScore       Float    @default(5.0)
+  minGradeLevel   Int      @default(10)
+  maxGradeLevel   Int      @default(12)
+  maxSubjects     Int      @default(9)
+  minScore        Float    @default(0)
+  maxScore        Float    @default(10)
+  maxSemesters    Int      @default(2)
+  maxRetentions   Int      @default(3)
+  enabledModules  Json?
+  rolePermissions Json?    @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@map("tenant_settings")
 }
@@ -123,22 +125,22 @@ model TenantSettings {
 // ==================== USER MODEL ====================
 
 model User {
-  id          String   @id @default(uuid())
-  tenantId    String?
-  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  email       String
-  password    String
-  fullName    String
-  role        UserRole @default(TEACHER)
-  phone       String?
-  department  String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(uuid())
+  tenantId   String?
+  tenant     Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email      String
+  password   String
+  fullName   String
+  role       UserRole @default(TEACHER)
+  phone      String?
+  department String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   children           ParentStudent[]
   teacherAssignments TeacherAssignment[]
-  studentProfile     Student?         @relation("StudentUser")
+  studentProfile     Student?            @relation("StudentUser")
 
   @@unique([tenantId, email])
   @@index([tenantId, role])
@@ -148,14 +150,15 @@ model User {
 // ==================== ACADEMIC MODELS ====================
 
 model Grade {
-  id        String   @id @default(uuid())
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name      String
-  level     Int
-  classes   Class[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                   String                @id @default(uuid())
+  tenantId             String
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name                 String
+  level                Int
+  classes              Class[]
+  subjectVersionGrades SubjectVersionGrade[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
   @@unique([tenantId, level])
   @@index([tenantId])
@@ -163,29 +166,30 @@ model Grade {
 }
 
 model Class {
-  id           String   @id @default(uuid())
-  tenantId     String
-  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  gradeId      String
-  grade        Grade    @relation(fields: [gradeId], references: [id], onDelete: Cascade)
-  name         String
-  academicYear String   @default("2024-2025")
-  academicYearId String?
+  id              String        @id @default(uuid())
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  gradeId         String
+  grade           Grade         @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  name            String
+  academicYear    String        @default("2024-2025")
+  academicYearId  String?
   academicYearRef AcademicYear? @relation(fields: [academicYearId], references: [id])
-  capacity     Int      @default(40)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  capacity        Int           @default(40)
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
-  students           Student[]
-  teacherAssignments TeacherAssignment[]
-  promotions         Promotion[]
-  transfersFrom      TransferHistory[] @relation("TransferFrom")
-  transfersTo        TransferHistory[] @relation("TransferTo")
-  enrollments        ClassEnrollment[]
-  graduationArchives GraduationArchive[] @relation("GraduationSourceClass")
-  placementHistoryFrom PromotionPlacementHistory[] @relation("PlacementFromClass")
-  placementHistoryTo PromotionPlacementHistory[] @relation("PlacementToClass")
+  students              Student[]
+  teacherAssignments    TeacherAssignment[]
+  promotions            Promotion[]
+  subjectVersionClasses SubjectVersionClass[]
+  transfersFrom         TransferHistory[]           @relation("TransferFrom")
+  transfersTo           TransferHistory[]           @relation("TransferTo")
+  enrollments           ClassEnrollment[]
+  graduationArchives    GraduationArchive[]         @relation("GraduationSourceClass")
+  placementHistoryFrom  PromotionPlacementHistory[] @relation("PlacementFromClass")
+  placementHistoryTo    PromotionPlacementHistory[] @relation("PlacementToClass")
 
   @@unique([tenantId, name, academicYear])
   @@index([tenantId, gradeId])
@@ -194,18 +198,18 @@ model Class {
 }
 
 model TeacherAssignment {
-  id        String   @id @default(uuid())
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  teacherId String
-  teacher   User     @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  classId   String
-  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
-  subjectId String
-  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  isHomeroom Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(uuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teacherId  String
+  teacher    User     @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  classId    String
+  class      Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subjectId  String
+  subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  isHomeroom Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@unique([teacherId, classId, subjectId])
   @@index([tenantId, teacherId])
@@ -225,6 +229,8 @@ model Subject {
   updatedAt   DateTime @updatedAt
 
   scores             Score[]
+  subjectVersions    SubjectVersion[]
+  scoreComponentSets ScoreComponentSet[]
   scoreComponents    ScoreComponent[]
   teacherAssignments TeacherAssignment[]
 
@@ -245,12 +251,13 @@ model Semester {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  academicYearId String?
-  academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id])
-  scores     Score[]
-  promotions Promotion[]
-  enrollments ClassEnrollment[]
-  transferHistories TransferHistory[]
+  academicYearId     String?
+  academicYear       AcademicYear?       @relation(fields: [academicYearId], references: [id])
+  scores             Score[]
+  scoreComponentSets ScoreComponentSet[]
+  promotions         Promotion[]
+  enrollments        ClassEnrollment[]
+  transferHistories  TransferHistory[]
 
   @@unique([tenantId, year, semesterNum])
   @@index([tenantId, isActive])
@@ -260,37 +267,37 @@ model Semester {
 // ==================== STUDENT MODEL ====================
 
 model Student {
-  id          String   @id @default(uuid())
-  tenantId    String
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  classId     String?
-  class       Class?   @relation(fields: [classId], references: [id], onDelete: SetNull)
-  userId      String?  @unique
-  user        User?    @relation("StudentUser", fields: [userId], references: [id])
-  studentCode   String
-  fullName      String
-  gender        Gender
-  dateOfBirth   DateTime
-  email         String?
-  address       String?
-  phone         String?
-  parentName    String?
-  parentPhone   String?
-  admissionDate DateTime  @default(now())
-  isActive      Boolean  @default(true)
-  inactiveReason String?
-  inactiveAt     DateTime?
-  inactivatedBy  String?
+  id                String    @id @default(uuid())
+  tenantId          String
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  classId           String?
+  class             Class?    @relation(fields: [classId], references: [id], onDelete: SetNull)
+  userId            String?   @unique
+  user              User?     @relation("StudentUser", fields: [userId], references: [id])
+  studentCode       String
+  fullName          String
+  gender            Gender
+  dateOfBirth       DateTime
+  email             String?
+  address           String?
+  phone             String?
+  parentName        String?
+  parentPhone       String?
+  admissionDate     DateTime  @default(now())
+  isActive          Boolean   @default(true)
+  inactiveReason    String?
+  inactiveAt        DateTime?
+  inactivatedBy     String?
   inactivatedByName String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  scores     Score[]
-  parents    ParentStudent[]
-  promotions Promotion[]
-  transferHistories TransferHistory[]
-  enrollments ClassEnrollment[]
-  graduationArchives GraduationArchive[]
+  scores                      Score[]
+  parents                     ParentStudent[]
+  promotions                  Promotion[]
+  transferHistories           TransferHistory[]
+  enrollments                 ClassEnrollment[]
+  graduationArchives          GraduationArchive[]
   promotionPlacementHistories PromotionPlacementHistory[]
 
   @@unique([tenantId, studentCode])
@@ -316,42 +323,70 @@ model ParentStudent {
 // ==================== SCORE MODELS ====================
 
 model ScoreComponent {
-  id        String   @id @default(uuid())
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  subjectId String
-  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  name      String
-  weight    Int
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                  String             @id @default(uuid())
+  tenantId            String
+  tenant              Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subjectId           String
+  subject             Subject            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  scoreComponentSetId String?
+  scoreComponentSet   ScoreComponentSet? @relation(fields: [scoreComponentSetId], references: [id], onDelete: Cascade)
+  name                String
+  weight              Int
+  displayOrder        Int                @default(0)
+  isActive            Boolean            @default(true)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
-  scores    Score[]
+  scores Score[]
 
-  @@unique([tenantId, subjectId, name])
+  @@unique([scoreComponentSetId, displayOrder])
+  @@index([tenantId, subjectId])
+  @@index([tenantId, scoreComponentSetId])
   @@map("score_components")
 }
 
+model ScoreComponentSet {
+  id         String   @id @default(uuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subjectId  String
+  subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  semesterId String
+  semester   Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  components ScoreComponent[]
+
+  @@unique([tenantId, subjectId, semesterId])
+  @@index([tenantId, semesterId])
+  @@index([tenantId, subjectId])
+  @@map("score_component_sets")
+}
+
 model Score {
-  id               String         @id @default(uuid())
+  id               String          @id @default(uuid())
   tenantId         String
-  tenant           Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant           Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   studentId        String
-  student          Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student          Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
   subjectId        String
-  subject          Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subject          Subject         @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subjectVersionId String?
+  subjectVersion   SubjectVersion? @relation(fields: [subjectVersionId], references: [id], onDelete: SetNull)
   semesterId       String
-  semester         Semester       @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  semester         Semester        @relation(fields: [semesterId], references: [id], onDelete: Cascade)
   scoreComponentId String
-  scoreComponent   ScoreComponent @relation(fields: [scoreComponentId], references: [id], onDelete: Cascade)
+  scoreComponent   ScoreComponent  @relation(fields: [scoreComponentId], references: [id], onDelete: Cascade)
   value            Float
-  isLocked         Boolean        @default(false)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  isLocked         Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   @@unique([studentId, subjectId, semesterId, scoreComponentId])
   @@index([tenantId, subjectId, semesterId])
+  @@index([tenantId, subjectVersionId])
   @@index([studentId, subjectId, semesterId])
   @@index([tenantId, studentId])
   @@map("scores")
@@ -390,20 +425,20 @@ model ScoreHistory {
 // ==================== PROMOTION MODEL ====================
 
 model Promotion {
-  id         String          @id @default(uuid())
-  tenantId   String
-  tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  studentId  String
-  student    Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  classId    String
-  class      Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
-  semesterId String
-  semester   Semester        @relation(fields: [semesterId], references: [id], onDelete: Cascade)
-  average    Float
-  result     PromotionResult
-  note       String?
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  id                 String                      @id @default(uuid())
+  tenantId           String
+  tenant             Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId          String
+  student            Student                     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId            String
+  class              Class                       @relation(fields: [classId], references: [id], onDelete: Cascade)
+  semesterId         String
+  semester           Semester                    @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  average            Float
+  result             PromotionResult
+  note               String?
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
   placementHistories PromotionPlacementHistory[]
 
   @@unique([studentId, classId, semesterId])
@@ -442,20 +477,20 @@ model PromotionPlacementHistory {
 // ==================== TRANSFER HISTORY ====================
 
 model TransferHistory {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   tenantId      String
-  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   studentId     String
-  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student       Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
   fromClassId   String
-  fromClass     Class    @relation("TransferFrom", fields: [fromClassId], references: [id], onDelete: Cascade)
+  fromClass     Class     @relation("TransferFrom", fields: [fromClassId], references: [id], onDelete: Cascade)
   toClassId     String
-  toClass       Class    @relation("TransferTo", fields: [toClassId], references: [id], onDelete: Cascade)
+  toClass       Class     @relation("TransferTo", fields: [toClassId], references: [id], onDelete: Cascade)
   semesterId    String?
   semester      Semester? @relation(fields: [semesterId], references: [id])
   reason        String?
   transferredBy String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime  @default(now())
 
   @@index([tenantId, studentId])
   @@index([semesterId, tenantId])
@@ -483,20 +518,21 @@ model ActivityLog {
 // ==================== ACADEMIC YEAR ====================
 
 model AcademicYear {
-  id          String   @id @default(uuid())
-  tenantId    String
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  startYear   Int
-  endYear     Int
-  startDate   DateTime?
-  endDate     DateTime?
-  isActive    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String    @id @default(uuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  startYear Int
+  endYear   Int
+  startDate DateTime?
+  endDate   DateTime?
+  isActive  Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  semesters   Semester[]
-  enrollments ClassEnrollment[]
-  classes     Class[]
+  semesters          Semester[]
+  subjectVersions    SubjectVersion[]
+  enrollments        ClassEnrollment[]
+  classes            Class[]
   graduationArchives GraduationArchive[]
 
   @@unique([tenantId, startYear, endYear])
@@ -504,21 +540,72 @@ model AcademicYear {
   @@map("academic_years")
 }
 
+model SubjectVersion {
+  id             String       @id @default(uuid())
+  tenantId       String
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subjectId      String
+  subject        Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  versionName    String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  gradeScopes SubjectVersionGrade[]
+  classScopes SubjectVersionClass[]
+  scores      Score[]
+
+  @@unique([tenantId, subjectId, academicYearId])
+  @@index([tenantId, academicYearId])
+  @@index([tenantId, subjectId])
+  @@map("subject_versions")
+}
+
+model SubjectVersionGrade {
+  id               String         @id @default(uuid())
+  tenantId         String
+  subjectVersionId String
+  subjectVersion   SubjectVersion @relation(fields: [subjectVersionId], references: [id], onDelete: Cascade)
+  gradeId          String
+  grade            Grade          @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  createdAt        DateTime       @default(now())
+
+  @@unique([subjectVersionId, gradeId])
+  @@index([tenantId, gradeId])
+  @@map("subject_version_grades")
+}
+
+model SubjectVersionClass {
+  id               String         @id @default(uuid())
+  tenantId         String
+  subjectVersionId String
+  subjectVersion   SubjectVersion @relation(fields: [subjectVersionId], references: [id], onDelete: Cascade)
+  classId          String
+  class            Class          @relation(fields: [classId], references: [id], onDelete: Cascade)
+  createdAt        DateTime       @default(now())
+
+  @@unique([subjectVersionId, classId])
+  @@index([tenantId, classId])
+  @@map("subject_version_classes")
+}
+
 // ==================== CLASS ENROLLMENT ====================
 
 model ClassEnrollment {
-  id              String       @id @default(uuid())
-  tenantId        String
-  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  studentId       String
-  student         Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  classId         String
-  class           Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
-  semesterId      String
-  semester        Semester     @relation(fields: [semesterId], references: [id], onDelete: Cascade)
-  academicYearId  String
-  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-  createdAt       DateTime     @default(now())
+  id             String       @id @default(uuid())
+  tenantId       String
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId        String
+  class          Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  semesterId     String
+  semester       Semester     @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
 
   @@unique([studentId, semesterId])
   @@index([tenantId, classId, semesterId])
@@ -526,19 +613,19 @@ model ClassEnrollment {
 }
 
 model GraduationArchive {
-  id              String       @id @default(uuid())
-  tenantId        String
-  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  studentId       String
-  student         Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  sourceClassId   String?
-  sourceClass     Class?       @relation("GraduationSourceClass", fields: [sourceClassId], references: [id], onDelete: SetNull)
-  academicYearId  String
-  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-  promotedAt      DateTime     @default(now())
-  note            String?
-  createdBy       String?
-  createdAt       DateTime     @default(now())
+  id             String       @id @default(uuid())
+  tenantId       String
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  sourceClassId  String?
+  sourceClass    Class?       @relation("GraduationSourceClass", fields: [sourceClassId], references: [id], onDelete: SetNull)
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  promotedAt     DateTime     @default(now())
+  note           String?
+  createdBy      String?
+  createdAt      DateTime     @default(now())
 
   @@unique([tenantId, studentId, academicYearId])
   @@index([tenantId, promotedAt])

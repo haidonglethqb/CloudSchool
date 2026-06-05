@@ -57,6 +57,7 @@ router.put('/', authorize('SUPER_ADMIN'), [
   body('minScore').optional().isFloat({ min: 0, max: 100 }),
   body('maxScore').optional().isFloat({ min: 0, max: 100 }),
   body('maxSemesters').optional().isInt({ min: 1, max: 4 }),
+  body('maxRetentions').optional().isInt({ min: 0, max: 20 }),
 ], async (req, res, next) => {
   try {
     const errors = validationResult(req)
@@ -67,7 +68,7 @@ router.put('/', authorize('SUPER_ADMIN'), [
     const {
       minAge, maxAge, maxClassSize, passScore,
       minGradeLevel, maxGradeLevel, maxSubjects,
-      minScore, maxScore, maxSemesters
+      minScore, maxScore, maxSemesters, maxRetentions
     } = req.body
 
     const current = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
@@ -121,12 +122,59 @@ router.put('/', authorize('SUPER_ADMIN'), [
       }
     }
 
+    if (maxSubjects !== undefined) {
+      const activeSubjectCount = await prisma.subject.count({
+        where: { tenantId: req.tenantId, isActive: true }
+      })
+      if (activeSubjectCount > maxSubjects) {
+        throw new AppError(
+          `Không thể đặt số môn tối đa là ${maxSubjects} vì hiện có ${activeSubjectCount} môn đang hoạt động.`,
+          400,
+          'MAX_SUBJECTS_BELOW_CURRENT_USAGE'
+        )
+      }
+    }
+
+    if (maxSemesters !== undefined) {
+      const years = await prisma.academicYear.findMany({
+        where: { tenantId: req.tenantId },
+        include: { _count: { select: { semesters: true } } },
+        orderBy: { startYear: 'asc' }
+      })
+      const overLimit = years.find((year) => year._count.semesters > maxSemesters)
+      if (overLimit) {
+        throw new AppError(
+          `Không thể đặt số học kỳ tối đa là ${maxSemesters} vì năm học ${overLimit.startYear}-${overLimit.endYear} đang có ${overLimit._count.semesters} học kỳ.`,
+          400,
+          'MAX_SEMESTERS_BELOW_CURRENT_USAGE'
+        )
+      }
+    }
 
     // Validate score range
     const effectiveMinScore = minScore ?? current.minScore
     const effectiveMaxScore = maxScore ?? current.maxScore
     if (effectiveMinScore > effectiveMaxScore) {
       throw new AppError('Điểm tối thiểu không được lớn hơn điểm tối đa', 400, 'INVALID_SCORE_RANGE')
+    }
+    if (minScore !== undefined || maxScore !== undefined) {
+      const outOfRangeScore = await prisma.score.findFirst({
+        where: {
+          tenantId: req.tenantId,
+          OR: [
+            { value: { lt: effectiveMinScore } },
+            { value: { gt: effectiveMaxScore } }
+          ]
+        },
+        select: { value: true }
+      })
+      if (outOfRangeScore) {
+        throw new AppError(
+          `Không thể đổi thang điểm vì đang có điểm ${outOfRangeScore.value} nằm ngoài khoảng ${effectiveMinScore}-${effectiveMaxScore}.`,
+          400,
+          'SCORE_RANGE_HAS_EXISTING_DATA'
+        )
+      }
     }
 
     // Validate passScore range
@@ -146,6 +194,7 @@ router.put('/', authorize('SUPER_ADMIN'), [
     if (minScore !== undefined) updateData.minScore = minScore
     if (maxScore !== undefined) updateData.maxScore = maxScore
     if (maxSemesters !== undefined) updateData.maxSemesters = maxSemesters
+    if (maxRetentions !== undefined) updateData.maxRetentions = maxRetentions
 
     const settings = await prisma.$transaction(async (tx) => {
       const updated = await tx.tenantSettings.update({

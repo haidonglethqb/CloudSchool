@@ -75,7 +75,7 @@
 | GET | `/classes/:id` | Class detail + students + teacher assignments |
 | POST | `/classes` | Create class (capacity from settings; grade must be within current grade range; enforces plan class limit per academic year) |
 | PUT | `/classes/:id` | Update class (capacity must be within settings and `>=` current students; grade must be within current grade range) |
-| DELETE | `/classes/:id` | Delete class (no students/assignments) |
+| DELETE | `/classes/:id` | Delete class (blocked only when students remain; teacher assignments are removed in transaction) |
 | POST | `/classes/:id/assign-teacher` | Assign teacher/staff to class+subject |
 | DELETE | `/classes/:id/assign-teacher/:assignmentId` | Remove assignment |
 | GET | `/classes/:id/students` | Students in class |
@@ -86,9 +86,11 @@
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/subjects` | List subjects (teacher and assigned staff scoped to assignments) |
+| GET | `/subjects` | List subjects; with `academicYearId + classId`, returns subjects applied by version/scope |
 | GET | `/subjects/:id` | Subject detail + score components |
 | POST | `/subjects` | Create subject (maxSubjects validation, code uniqueness) |
+| POST | `/subjects/:subjectId/versions` | Create/upsert subject version for an academic year |
+| PUT | `/subjects/versions/:id/scope` | Replace grade/class scope for one subject version |
 | PUT | `/subjects/:id` | Update subject |
 | DELETE | `/subjects/:id` | Soft delete (sets isActive: false) |
 
@@ -96,16 +98,19 @@
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/score-components` | List components (optional subjectId filter) |
-| POST | `/score-components` | Create component (weight 1-100, total ≤ 100% per subject) |
-| PUT | `/score-components/:id` | Update component (weight re-validation, duplicate name check) |
-| DELETE | `/score-components/:id` | Delete component (no existing scores) |
+| GET | `/score-component-sets` | Get component set for `subjectId + semesterId` |
+| PUT | `/score-component-sets` | Create/update full component set for `subjectId + semesterId` |
+| POST | `/score-component-sets/clone` | Clone component set from one semester to another |
+| GET | `/score-components` | Compatibility list endpoint; with `subjectId + semesterId`, returns set components |
+| POST | `/score-components` | Legacy write blocked with `410 USE_SCORE_COMPONENT_SETS` |
+| PUT | `/score-components/:id` | Legacy write blocked with `410 USE_SCORE_COMPONENT_SETS` |
+| DELETE | `/score-components/:id` | Legacy write blocked with `410 USE_SCORE_COMPONENT_SETS` |
 
 ## Scores
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/scores/class/:classId` | Score sheet for a class (subject + semester) |
+| GET | `/scores/class/:classId` | Score sheet for a class; validates subject scope and loads components by `subjectId + semesterId` |
 | GET | `/scores/history` | Score mutation history for class + subject + semester context |
 | GET | `/scores/student/:studentId` | All scores for a student + ranking |
 | GET | `/scores/student/:studentId/yearly` | Yearly score summary (all semesters) |
@@ -121,7 +126,7 @@
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/promotion/year-end/evaluate` | School-admin synchronous evaluation; writes placement history |
+| POST | `/promotion/year-end/evaluate` | School-admin synchronous all-year evaluation; writes placement history |
 | GET | `/promotion/year-end/results` | Read PASS/FAIL groups, placement status, and placement history |
 | POST | `/promotion/year-end/execute` | Execute promotion; may require `confirmCreateMissingClasses` for missing target classes |
 | PATCH | `/promotion/year-end/failed/:promotionId` | Draft, assign, or inactive one failed student; inactive requires reason |
@@ -156,7 +161,7 @@
 | Method | Path | Description |
 |---|---|---|
 | GET | `/settings` | Get current tenant settings |
-| PUT | `/settings` | Update settings (validates ranges, blocks grade range/max class size changes below existing data, syncs class capacity, invalidates cache) |
+| PUT | `/settings` | Update settings (blocks maxSubjects/maxSemesters/score range/grade range/max class size below existing data, syncs class capacity, invalidates cache) |
 | GET | `/settings/role-permissions` | Get role-based module permissions plus active STAFF/TEACHER usage and plan limits (read-only for `SUPER_ADMIN`,`STAFF`,`TEACHER`; not gated by `settings` module permission) |
 | PUT | `/settings/role-permissions` | Update role permissions |
 | GET | `/settings/grades` | List grades |
@@ -190,7 +195,7 @@ Export note:
 | Method | Path | Description |
 |---|---|---|
 | GET | `/academic-years` | List academic years + semesters |
-| GET | `/academic-years/semesters` | Shared read endpoint for score/report views (`SUPER_ADMIN`,`STAFF`,`TEACHER`), not gated by `academic-calendar` permission |
+| GET | `/academic-years/semesters` | Shared read endpoint for score/report views; returns `displayName`, `academicYearLabel`, `isCurrent` |
 | GET | `/academic-years/:id` | Academic year detail |
 | POST | `/academic-years` | Create academic year (overlap check, startYear < endYear) |
 | PUT | `/academic-years/:id` | Update academic year |

@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
-import { studentApi, classApi, settingsApi } from '@/lib/api'
+import { academicYearApi, studentApi, classApi, settingsApi, subjectApi } from '@/lib/api'
 import { formatDateInput } from '@/lib/utils'
 import { ArrowLeft, Loader2, Save, UserPlus } from 'lucide-react'
 import Link from 'next/link'
@@ -72,10 +72,17 @@ export default function NewStudentPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [classRes, settingsRes] = await Promise.all([
-          classApi.list(),
+        const [yearsRes, semestersRes, settingsRes] = await Promise.all([
+          academicYearApi.list(),
+          subjectApi.getSemesters(),
           settingsApi.get(),
         ])
+        const years = yearsRes.data.data || []
+        const semesters = semestersRes.data.data || []
+        const activeSemester = semesters.find((semester: { isActive: boolean; academicYearId?: string }) => semester.isActive)
+        const activeYear = years.find((year: { id: string; isActive: boolean }) => year.isActive) || years[0]
+        const academicYearId = activeSemester?.academicYearId || activeYear?.id
+        const classRes = await classApi.list(academicYearId ? { academicYearId } : undefined)
         setClasses(classRes.data.data)
         setSettings(settingsRes.data.data)
       } catch (error) {

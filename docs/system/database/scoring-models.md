@@ -2,31 +2,52 @@
 
 > **Source:** `backend/prisma/schema.prisma` | Lines ~310-380
 
+## ScoreComponentSet
+
+Defines the single component configuration for a subject in a semester.
+
+```prisma
+model ScoreComponentSet {
+  id         String
+  tenantId   String
+  subjectId  String
+  semesterId String
+  isActive   Boolean
+
+  @@unique([tenantId, subjectId, semesterId])
+}
+```
+
+Every class learning the subject in that semester uses this set.
+
 ## ScoreComponent
 
-Defines scoring categories within a subject (e.g., "Midterm Exam", "Final Exam", "Homework").
+Defines scoring categories inside a `ScoreComponentSet`.
 
 ```prisma
 model ScoreComponent {
   id        String   @id @default(uuid())
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  subjectId String
+  subjectId String   // compatibility/report denormalization
   subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  scoreComponentSetId String?
   name      String
   weight    Int
+  displayOrder Int
   isActive  Boolean  @default(true)
 
-  @@unique([tenantId, subjectId, name])
+  @@unique([scoreComponentSetId, displayOrder])
 }
 ```
 
 | Field | Type | Notes |
 |---|---|---|
-| `name` | `String` | Component name (e.g., "15-min test", "Midterm") |
+| `name` | `String` | Display label (e.g., "15 phút lần 1") |
 | `weight` | `Int` | Percentage weight toward final grade |
+| `displayOrder` | `Int` | Stable order inside the set |
 
-**Unique:** `(tenantId, subjectId, name)` — each subject has uniquely named components.
+**Unique:** `(scoreComponentSetId, displayOrder)` — labels may repeat across semesters.
 
 ## Score
 
@@ -41,6 +62,7 @@ model Score {
   student          Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
   subjectId        String
   subject          Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subjectVersionId String?
   semesterId       String
   semester         Semester       @relation(fields: [semesterId], references: [id], onDelete: Cascade)
   scoreComponentId String
@@ -50,6 +72,7 @@ model Score {
 
   @@unique([studentId, subjectId, semesterId, scoreComponentId])
   @@index([tenantId, subjectId, semesterId])
+  @@index([tenantId, subjectVersionId])
   @@index([studentId, subjectId, semesterId])
   @@index([tenantId, studentId])
 }
@@ -143,7 +166,7 @@ model Promotion {
 enum PromotionResult {
   PASS   // Student advances
   FAIL   // Student does not advance
-  RETAKE // Student may retake exams
+  RETAKE // Legacy/report compatibility
 }
 ```
 
@@ -153,7 +176,8 @@ enum PromotionResult {
 
 ```mermaid
 erDiagram
-    Subject ||--o{ ScoreComponent : "defines"
+    Subject ||--o{ ScoreComponentSet : "has"
+    ScoreComponentSet ||--o{ ScoreComponent : "defines"
     ScoreComponent ||--o{ Score : "contributes to"
     Student ||--o{ Score : "receives"
     Student ||--o{ Promotion : "receives"

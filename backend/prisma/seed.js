@@ -427,30 +427,95 @@ async function main () {
       }
     })
     subjectByCode[subject.code] = subject
+  }
 
-    for (const component of SCORE_COMPONENT_CONFIG) {
-      await prisma.scoreComponent.upsert({
+  const subjectVersionBySubjectYear = {}
+  for (const subject of Object.values(subjectByCode)) {
+    for (const [yearLabel, academicYear] of Object.entries(academicYearByLabel)) {
+      const version = await prisma.subjectVersion.upsert({
         where: {
-          tenantId_subjectId_name: {
+          tenantId_subjectId_academicYearId: {
             tenantId: tenant.id,
             subjectId: subject.id,
-            name: component.name
+            academicYearId: academicYear.id
           }
         },
         update: {
-          weight: component.weight,
+          versionName: `${subject.name} ${yearLabel}`,
           isActive: true
         },
         create: {
           tenantId: tenant.id,
           subjectId: subject.id,
-          name: component.name,
-          weight: component.weight
+          academicYearId: academicYear.id,
+          versionName: `${subject.name} ${yearLabel}`
         }
       })
+      subjectVersionBySubjectYear[`${subject.id}::${yearLabel}`] = version
+
+      for (const grade of Object.values(gradeByLevel)) {
+        await prisma.subjectVersionGrade.upsert({
+          where: {
+            subjectVersionId_gradeId: {
+              subjectVersionId: version.id,
+              gradeId: grade.id
+            }
+          },
+          update: { tenantId: tenant.id },
+          create: {
+            tenantId: tenant.id,
+            subjectVersionId: version.id,
+            gradeId: grade.id
+          }
+        })
+      }
+    }
+
+    for (const semester of Object.values(semesterByKey)) {
+      const set = await prisma.scoreComponentSet.upsert({
+        where: {
+          tenantId_subjectId_semesterId: {
+            tenantId: tenant.id,
+            subjectId: subject.id,
+            semesterId: semester.id
+          }
+        },
+        update: { isActive: true },
+        create: {
+          tenantId: tenant.id,
+          subjectId: subject.id,
+          semesterId: semester.id
+        }
+      })
+
+      for (let index = 0; index < SCORE_COMPONENT_CONFIG.length; index += 1) {
+        const component = SCORE_COMPONENT_CONFIG[index]
+        await prisma.scoreComponent.upsert({
+          where: {
+            scoreComponentSetId_displayOrder: {
+              scoreComponentSetId: set.id,
+              displayOrder: index + 1
+            }
+          },
+          update: {
+            subjectId: subject.id,
+            name: component.name,
+            weight: component.weight,
+            isActive: true
+          },
+          create: {
+            tenantId: tenant.id,
+            subjectId: subject.id,
+            scoreComponentSetId: set.id,
+            name: component.name,
+            weight: component.weight,
+            displayOrder: index + 1
+          }
+        })
+      }
     }
   }
-  console.log('Subjects and score components ready')
+  console.log('Subjects, subject versions, and score component sets ready')
 
   const teacherBySubjectCode = {}
   for (const teacherData of TEACHER_CONFIG) {
@@ -794,17 +859,18 @@ async function main () {
   console.log('Parent accounts and links ready')
 
   const scoreComponentRows = await prisma.scoreComponent.findMany({
-    where: { tenantId: tenant.id },
-    select: { id: true, subjectId: true, name: true, weight: true }
+    where: { tenantId: tenant.id, scoreComponentSetId: { not: null } },
+    select: { id: true, subjectId: true, name: true, weight: true, displayOrder: true, scoreComponentSet: { select: { semesterId: true } } }
   })
 
-  const componentBySubjectId = {}
+  const componentBySubjectSemester = {}
   for (const row of scoreComponentRows) {
-    if (!componentBySubjectId[row.subjectId]) componentBySubjectId[row.subjectId] = []
-    componentBySubjectId[row.subjectId].push(row)
+    const key = `${row.subjectId}::${row.scoreComponentSet.semesterId}`
+    if (!componentBySubjectSemester[key]) componentBySubjectSemester[key] = []
+    componentBySubjectSemester[key].push(row)
   }
-  for (const subjectId of Object.keys(componentBySubjectId)) {
-    componentBySubjectId[subjectId].sort((a, b) => a.name.localeCompare(b.name))
+  for (const key of Object.keys(componentBySubjectSemester)) {
+    componentBySubjectSemester[key].sort((a, b) => a.displayOrder - b.displayOrder)
   }
 
   const scoreRows = []
@@ -817,9 +883,9 @@ async function main () {
     for (const student of classStudents) {
       SUBJECT_CONFIG.forEach((subject, subjectIndex) => {
         const subjectRow = subjectByCode[subject.code]
-        const components = componentBySubjectId[subjectRow.id] || []
 
         semesters.forEach((semester) => {
+          const components = componentBySubjectSemester[`${subjectRow.id}::${semester.id}`] || []
           components.forEach((component, componentIndex) => {
             const value = buildDeterministicScore({
               studentOrdinal: student.ordinal,
@@ -832,6 +898,7 @@ async function main () {
               tenantId: tenant.id,
               studentId: student.id,
               subjectId: subjectRow.id,
+              subjectVersionId: subjectVersionBySubjectYear[`${subjectRow.id}::${classContext.academicYearLabel}`]?.id || null,
               semesterId: semester.id,
               scoreComponentId: component.id,
               value

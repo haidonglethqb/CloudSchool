@@ -134,11 +134,11 @@ export const classApi = {
   list: (params?: { gradeId?: string; academicYear?: string; academicYearId?: string }) =>
     api.get('/classes', { params }),
   get: (id: string) => api.get(`/classes/${id}`),
-  create: (data: { name: string; gradeId: string; academicYear?: string }) =>
+  create: (data: { name: string; gradeId: string; academicYear?: string; academicYearId?: string }) =>
     api.post('/classes', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/classes/${id}`, data),
   delete: (id: string) => api.delete(`/classes/${id}`),
-  getGrades: () => api.get('/classes/grades'),
+  getGrades: (params?: { academicYearId?: string; academicYear?: string }) => api.get('/classes/grades', { params }),
   // Teacher assignments
   assignTeacher: (classId: string, data: { teacherId: string; subjectId: string; isHomeroom?: boolean }) =>
     api.post(`/classes/${classId}/assign-teacher`, data),
@@ -154,23 +154,36 @@ export const classApi = {
 
 // ==================== Subjects ====================
 export const subjectApi = {
-  list: (params?: { includeInactive?: boolean }) => api.get('/subjects', { params }),
+  list: (params?: { includeInactive?: boolean; academicYearId?: string; classId?: string; includeVersions?: boolean }) => api.get('/subjects', { params }),
   get: (id: string) => api.get(`/subjects/${id}`),
   create: (data: { name: string; code: string; description?: string }) =>
     api.post('/subjects', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/subjects/${id}`, data),
   delete: (id: string) => api.delete(`/subjects/${id}`),
+  createVersion: (subjectId: string, data: { academicYearId: string; versionName?: string }) =>
+    api.post(`/subjects/${subjectId}/versions`, data),
+  updateVersionScope: (versionId: string, data: { gradeIds: string[]; classIds: string[]; isActive?: boolean }) =>
+    api.put(`/subjects/versions/${versionId}/scope`, data),
   getSemesters: () => api.get('/academic-years/semesters'),
 }
 
 // ==================== Score Components ====================
 export const scoreComponentApi = {
-  list: (subjectId?: string) => api.get('/score-components', { params: { subjectId } }),
+  list: (subjectId?: string, semesterId?: string) => api.get('/score-components', { params: { subjectId, semesterId } }),
   create: (data: { name: string; weight: number; subjectId: string }) =>
     api.post('/score-components', data),
   update: (id: string, data: { name?: string; weight?: number }) =>
     api.put(`/score-components/${id}`, data),
   delete: (id: string) => api.delete(`/score-components/${id}`),
+}
+
+export const scoreComponentSetApi = {
+  get: (params: { subjectId: string; semesterId: string }) =>
+    api.get('/score-component-sets', { params }),
+  save: (data: { subjectId: string; semesterId: string; components: Array<{ id?: string; name: string; weight: number; displayOrder: number; isActive?: boolean }> }) =>
+    api.put('/score-component-sets', data),
+  clone: (data: { subjectId: string; sourceSemesterId: string; targetSemesterId: string; overwrite?: boolean }) =>
+    api.post('/score-component-sets/clone', data),
 }
 
 // ==================== Scores ====================
@@ -198,9 +211,9 @@ export const scoreApi = {
 
 // ==================== Promotion ====================
 export const promotionApi = {
-  evaluateYearEnd: (data: { academicYearId: string; classId?: string }) =>
+  evaluateYearEnd: (data: { academicYearId: string }) =>
     api.post('/promotion/year-end/evaluate', data),
-  getYearEndResults: (params: { academicYearId: string; classId?: string }) =>
+  getYearEndResults: (params: { academicYearId: string }) =>
     api.get('/promotion/year-end/results', { params }),
   executeYearEnd: (data: {
     academicYearId: string
@@ -237,7 +250,7 @@ export const settingsApi = {
   update: (data: Partial<{
     minAge: number; maxAge: number; maxClassSize: number; passScore: number;
     minGradeLevel: number; maxGradeLevel: number; maxSubjects: number;
-    minScore: number; maxScore: number; maxSemesters: number
+    minScore: number; maxScore: number; maxSemesters: number; maxRetentions: number
   }>) =>
     api.put('/settings', data),
   // Grades

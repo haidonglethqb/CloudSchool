@@ -9,6 +9,7 @@ const { authenticate, authorize } = require('../middleware/auth')
 const { requireFeature, requireAllFeatures, requireRolePermission } = require('../middleware/feature-flags')
 const { AppError } = require('../middleware/errorHandler')
 const { getUserAssignmentScope, ensureClassSubjectAccess } = require('../utils/assignment-scope')
+const { academicYearLabel, resolveScoreEntryContext } = require('../utils/academic-scope')
 
 const PDF_SECTION_KEYS = ['cover', 'filters', 'summary', 'table', 'students', 'signature']
 const DEFAULT_COMMON_SECTIONS = ['cover', 'filters', 'summary', 'table', 'signature']
@@ -604,20 +605,27 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADM
 
     await ensureClassSubjectAccess(prisma, req, classId, subjectId)
 
-    const [students, scoreComponents] = await Promise.all([
-      prisma.student.findMany({
-        where: { classId, tenantId: req.tenantId, isActive: true },
-        orderBy: { fullName: 'asc' }
-      }),
-      prisma.scoreComponent.findMany({
-        where: { subjectId, tenantId: req.tenantId },
-        orderBy: { weight: 'desc' }
-      })
-    ])
-    const allScores = students.length
+    const scoreContext = await resolveScoreEntryContext(prisma, req.tenantId, { classId, subjectId, semesterId })
+    const scoreComponents = scoreContext.components
+
+    const students = await prisma.student.findMany({
+      where: {
+        tenantId: req.tenantId,
+        isActive: true,
+        enrollments: { some: { classId, semesterId, tenantId: req.tenantId } }
+      },
+      orderBy: { fullName: 'asc' }
+    })
+
+    const fallbackStudents = students.length ? students : await prisma.student.findMany({
+      where: { classId, tenantId: req.tenantId, isActive: true },
+      orderBy: { fullName: 'asc' }
+    })
+
+    const allScores = fallbackStudents.length
       ? await prisma.score.findMany({
           where: {
-            studentId: { in: students.map((student) => student.id) },
+            studentId: { in: fallbackStudents.map((student) => student.id) },
             subjectId,
             semesterId,
             tenantId: req.tenantId
@@ -631,7 +639,7 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADM
       scoresByStudent[score.studentId].push(score)
     }
 
-    const rowModels = students.map((student, index) => {
+    const rowModels = fallbackStudents.map((student, index) => {
       const scores = scoresByStudent[student.id] || []
       let weightedSum = 0
       let totalWeight = 0
@@ -672,6 +680,12 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADM
     const { headers, rows } = buildRowsFromColumns(rowModels, selectedColumns)
     const filename = `scores_${new Date().toISOString().split('T')[0]}`
 
+    const [classInfoForExport, subjectInfoForExport, semesterInfoForExport] = await Promise.all([
+      prisma.class.findFirst({ where: { id: classId, tenantId: req.tenantId }, include: { grade: true } }),
+      prisma.subject.findFirst({ where: { id: subjectId, tenantId: req.tenantId }, select: { name: true } }),
+      prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId }, select: { name: true, year: true } })
+    ])
+
     if (format === 'xlsx') {
       await sendExcel(res, `${filename}.xlsx`, [{ name: 'Bảng điểm', headers, rows }])
       return
@@ -685,11 +699,12 @@ router.get('/scores', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER', 'PLATFORM_ADM
         schoolName,
         sections,
         filters: [
-          { label: 'Lớp', value: classId },
-          { label: 'Môn', value: subjectId },
-          { label: 'Học kỳ', value: semesterId }
+          { label: 'Lớp', value: classInfoForExport?.name || classId },
+          { label: 'Khối', value: classInfoForExport?.grade?.name || '' },
+          { label: 'Môn', value: subjectInfoForExport?.name || subjectId },
+          { label: 'Học kỳ', value: semesterInfoForExport ? `${semesterInfoForExport.name} (${semesterInfoForExport.year || ''})` : semesterId }
         ],
-        summary: [{ label: 'Số học sinh', value: students.length }],
+        summary: [{ label: 'Số học sinh', value: fallbackStudents.length }],
         table: { title: 'Bảng điểm chi tiết', headers, rows }
       })
       return
@@ -813,6 +828,7 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
       })
       const grouped = new Map()
       for (const item of promotions) {
+        if (!item.class?.grade?.id) continue  // skip orphaned records
         if (!grouped.has(item.class.gradeId)) grouped.set(item.class.gradeId, { gradeName: item.class.grade.name, gradeLevel: item.class.grade.level, total: 0, pass: 0 })
         const bucket = grouped.get(item.class.gradeId)
         bucket.total += 1
@@ -842,11 +858,35 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
       filters.push({ label: 'Môn học', value: subjectId }, { label: 'Học kỳ', value: semesterId })
 
       const settings = await prisma.tenantSettings.findUnique({ where: { tenantId: req.tenantId } })
+      const semester = await prisma.semester.findFirst({
+        where: { id: semesterId, tenantId: req.tenantId },
+        include: { academicYear: true }
+      })
+      if (!semester) throw new AppError('Semester not found', 404, 'NOT_FOUND')
+      const classYearFilter = semester.academicYearId
+        ? { academicYearId: semester.academicYearId }
+        : semester.academicYear
+          ? { academicYear: academicYearLabel(semester.academicYear) }
+          : {}
       const classes = await prisma.class.findMany({
-        where: { tenantId: req.tenantId, isActive: true },
+        where: { tenantId: req.tenantId, isActive: true, ...classYearFilter },
         include: { students: { where: { isActive: true } }, grade: true }
       })
-      const allStudentIds = classes.flatMap((cls) => cls.students.map((student) => student.id))
+      const classIds = classes.map((cls) => cls.id)
+      const enrollments = classIds.length
+        ? await prisma.classEnrollment.findMany({
+            where: { tenantId: req.tenantId, semesterId, classId: { in: classIds }, student: { isActive: true } },
+            select: { classId: true, studentId: true }
+          })
+        : []
+      const enrollmentClassIds = new Set(enrollments.map((item) => item.classId))
+      const studentIdsByClass = new Map(classes.map((cls) => [
+        cls.id,
+        enrollmentClassIds.has(cls.id)
+          ? enrollments.filter((item) => item.classId === cls.id).map((item) => item.studentId)
+          : cls.students.map((student) => student.id)
+      ]))
+      const allStudentIds = [...new Set(Array.from(studentIdsByClass.values()).flat())]
       const scores = allStudentIds.length
         ? await prisma.score.findMany({
             where: { tenantId: req.tenantId, subjectId, semesterId, studentId: { in: allStudentIds } },
@@ -860,12 +900,14 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
       }
 
       tableRows = classes.map((cls) => {
+        const studentIds = studentIdsByClass.get(cls.id) || []
         let pass = 0
-        for (const student of cls.students) {
-          const values = scoreMap.get(student.id) || []
+        for (const studentId of studentIds) {
+          const values = scoreMap.get(studentId) || []
           let weightedSum = 0
           let totalWeight = 0
           for (const value of values) {
+            if (!value.scoreComponent || value.scoreComponent.isActive === false) continue
             weightedSum += value.value * value.scoreComponent.weight
             totalWeight += value.scoreComponent.weight
           }
@@ -876,9 +918,9 @@ router.get('/reports/:type', authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requi
         return {
           className: cls.name,
           gradeName: cls.grade?.name || '',
-          total: cls.students.length,
+          total: studentIds.length,
           pass,
-          rate: cls.students.length > 0 ? `${Math.round((pass / cls.students.length) * 10000) / 100}%` : '0%'
+          rate: studentIds.length > 0 ? `${Math.round((pass / studentIds.length) * 10000) / 100}%` : '0%'
         }
       })
       summaryRows = [

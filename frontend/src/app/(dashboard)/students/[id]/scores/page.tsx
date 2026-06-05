@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { studentApi, scoreApi, subjectApi, classApi, scoreComponentApi } from '@/lib/api'
+import { studentApi, scoreApi, subjectApi, classApi, scoreComponentSetApi, settingsApi } from '@/lib/api'
 import { formatSemesterLabel, pickDefaultSemester } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
 import {
@@ -23,6 +23,7 @@ interface Student {
   class: {
     id: string
     name: string
+    academicYearId?: string
     grade: { id: string; name: string }
   } | null
 }
@@ -50,12 +51,21 @@ interface Semester {
   name: string
   isActive: boolean
   year?: string
+  displayName?: string
+  academicYearId?: string
   semesterNum?: number
 }
 
 interface ScoreData {
   subjectScores: SubjectScore[]
   overallAverage: number | null
+  scoreContext?: {
+    class?: Student['class']
+    subjects?: Array<{
+      subject: { id: string; name: string }
+      components: ComponentInfo[]
+    }>
+  } | null
 }
 
 interface ComponentInfo {
@@ -85,6 +95,8 @@ export default function StudentScoreEditPage() {
   const [scoreData, setScoreData] = useState<ScoreData | null>(null)
   const [loadingScores, setLoadingScores] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [minScore, setMinScore] = useState(0)
+  const [maxScore, setMaxScore] = useState(10)
 
   // key = "subjectId::componentId", value = new score value (null = cleared)
   const [editedValues, setEditedValues] = useState<Map<string, number | null>>(new Map())
@@ -93,6 +105,28 @@ export default function StudentScoreEditPage() {
 
   // All score components grouped by subject (fetched once on mount)
   const [componentsBySubject, setComponentsBySubject] = useState<Map<string, SubjectComponentData>>(new Map())
+
+  const buildComponentsFromScores = (subjectScores: SubjectScore[]) => {
+    const grouped = new Map<string, SubjectComponentData>()
+    for (const subjectScore of subjectScores) {
+      const seen = new Set<string>()
+      const components: ComponentInfo[] = []
+      for (const score of subjectScore.scores || []) {
+        const component = score.scoreComponent
+        if (!component?.id || seen.has(component.id)) continue
+        seen.add(component.id)
+        components.push({ id: component.id, name: component.name, weight: component.weight })
+      }
+      if (components.length > 0) {
+        grouped.set(subjectScore.subject.id, {
+          subjectId: subjectScore.subject.id,
+          subjectName: subjectScore.subject.name,
+          components: components.sort((a, b) => a.weight - b.weight),
+        })
+      }
+    }
+    return grouped
+  }
 
   useEffect(() => {
     if (!isAdminOrStaff && !isTeacher) {
@@ -103,13 +137,15 @@ export default function StudentScoreEditPage() {
 
     const fetchInitial = async () => {
       try {
-        const [studentRes, semRes, compRes] = await Promise.all([
+        const [studentRes, semRes, settingsRes] = await Promise.all([
           studentApi.get(id as string),
           subjectApi.getSemesters().catch(() => ({ data: { data: [] } })),
-          scoreComponentApi.list(),
+          settingsApi.get().catch(() => ({ data: { data: { minScore: 0, maxScore: 10 } } })),
         ])
         const studentData = studentRes.data.data
         setStudent(studentData)
+        setMinScore(settingsRes.data.data?.minScore ?? 0)
+        setMaxScore(settingsRes.data.data?.maxScore ?? 10)
 
         const sems = semRes.data.data || []
         setSemesters(sems)
@@ -119,33 +155,10 @@ export default function StudentScoreEditPage() {
           : pickDefaultSemester(sems)?.id
         if (targetSem) setSelectedSemester(targetSem)
 
-        // Group score components by subject
-        const allComps = compRes.data.data || []
-        const grouped = new Map<string, SubjectComponentData>()
-        for (const comp of allComps) {
-          const subId = comp.subjectId || comp.subject?.id
-          if (!subId) continue
-          if (!grouped.has(subId)) {
-            grouped.set(subId, {
-              subjectId: subId,
-              subjectName: comp.subject?.name || '',
-              components: [],
-            })
-          }
-          grouped.get(subId)!.components.push({
-            id: comp.id,
-            name: comp.name,
-            weight: comp.weight,
-          })
-        }
-        grouped.forEach(data => {
-          data.components.sort((a, b) => a.weight - b.weight)
-        })
-        setComponentsBySubject(grouped)
-
         if (isTeacher && studentData.class) {
           try {
-            const classesRes = await classApi.list()
+            // Fetch classes scoped to student's academic year to avoid cross-year ambiguity
+            const classesRes = await classApi.list({ academicYearId: studentData.class.academicYearId || undefined })
             const classes = classesRes.data.data || []
             const studentClass = classes.find((c: any) => c.id === studentData.class?.id)
             if (studentClass?.teacherAssignments) {
@@ -193,6 +206,79 @@ export default function StudentScoreEditPage() {
     if (student && selectedSemester) fetchScores()
   }, [student, selectedSemester, fetchScores])
 
+  useEffect(() => {
+    const fetchComponentSets = async () => {
+      if (!student || !selectedSemester) {
+        setComponentsBySubject(new Map())
+        return
+      }
+
+      const selectedSemesterMeta = semesters.find((semester) => semester.id === selectedSemester)
+      const fallback = buildComponentsFromScores(scoreData?.subjectScores || [])
+      const contextSubjects = scoreData?.scoreContext?.subjects || []
+      if (contextSubjects.length > 0) {
+        const grouped = new Map<string, SubjectComponentData>()
+        for (const item of contextSubjects) {
+          if (!item.components?.length) continue
+          grouped.set(item.subject.id, {
+            subjectId: item.subject.id,
+            subjectName: item.subject.name,
+            components: item.components.sort((a: ComponentInfo, b: ComponentInfo) => a.weight - b.weight),
+          })
+        }
+        fallback.forEach((value, key) => {
+          if (!grouped.has(key)) grouped.set(key, value)
+        })
+        setComponentsBySubject(grouped)
+        return
+      }
+
+      if (!student.class?.id || !selectedSemesterMeta?.academicYearId) {
+        setComponentsBySubject(fallback)
+        return
+      }
+
+      try {
+        const subjectRes = await subjectApi.list({
+          academicYearId: selectedSemesterMeta.academicYearId,
+          classId: student.class.id,
+        })
+        const subjects = subjectRes.data.data || []
+        const rows = await Promise.all(subjects.map(async (subject: { id: string; name: string }) => {
+          try {
+            const setRes = await scoreComponentSetApi.get({ subjectId: subject.id, semesterId: selectedSemester })
+            const components: ComponentInfo[] = (setRes.data.data?.components || []).map((component: ComponentInfo) => ({
+              id: component.id,
+              name: component.name,
+              weight: component.weight,
+            }))
+            return { subject, components }
+          } catch {
+            return { subject, components: [] }
+          }
+        }))
+
+        const grouped = new Map<string, SubjectComponentData>()
+        for (const row of rows) {
+          if (row.components.length === 0) continue
+          grouped.set(row.subject.id, {
+            subjectId: row.subject.id,
+            subjectName: row.subject.name,
+            components: row.components.sort((a: ComponentInfo, b: ComponentInfo) => a.weight - b.weight),
+          })
+        }
+        fallback.forEach((value, key) => {
+          if (!grouped.has(key)) grouped.set(key, value)
+        })
+        setComponentsBySubject(grouped)
+      } catch {
+        setComponentsBySubject(fallback)
+      }
+    }
+
+    fetchComponentSets()
+  }, [student, selectedSemester, semesters, scoreData])
+
   const canEditSubject = (subjectId: string) => {
     if (editableSubjectIds === null) return true
     return editableSubjectIds.has(subjectId)
@@ -215,7 +301,7 @@ export default function StudentScoreEditPage() {
         next.set(key, null)
       } else {
         const num = parseFloat(value)
-        if (!isNaN(num) && num >= 0 && num <= 10) {
+        if (!isNaN(num) && num >= minScore && num <= maxScore) {
           next.set(key, num)
         }
       }
@@ -456,8 +542,8 @@ export default function StudentScoreEditPage() {
                               {editable ? (
                                 <input
                                   type="number"
-                                  min="0"
-                                  max="10"
+                                  min={minScore}
+                                  max={maxScore}
                                   step="0.1"
                                   className="w-16 px-2 py-1 text-sm text-center border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
                                   value={getScoreValue(item.subject.id, componentId, score?.value)}
@@ -498,7 +584,7 @@ export default function StudentScoreEditPage() {
 
           {/* Legend */}
           <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 text-xs text-gray-500 flex flex-wrap gap-4">
-            <span>Điểm: 0 - 10</span>
+            <span>Điểm: {minScore} - {maxScore}</span>
             {isTeacher && (
               <span className="flex items-center gap-1">
                 <Lock className="w-3 h-3 text-yellow-500" /> Điểm đã khóa (chỉ Quản trị viên/Nhân viên sửa được)

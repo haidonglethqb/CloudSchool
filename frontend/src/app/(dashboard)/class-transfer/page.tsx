@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { classApi, studentApi } from '@/lib/api'
+import { academicYearApi, classApi, studentApi, subjectApi } from '@/lib/api'
 import { Loader2, ArrowRightLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -33,6 +33,8 @@ export default function ClassTransferPage() {
   const [loading, setLoading] = useState(true)
   const [classes, setClasses] = useState<ClassItem[]>([])
   const [students, setStudents] = useState<StudentItem[]>([])
+  const [studentSearch, setStudentSearch] = useState('')
+  const [searchingStudents, setSearchingStudents] = useState(false)
   const [studentId, setStudentId] = useState('')
   const [targetClassId, setTargetClassId] = useState('')
   const [reason, setReason] = useState('')
@@ -43,13 +45,18 @@ export default function ClassTransferPage() {
 
   const fetchData = async () => {
     try {
-      const [classRes, studentRes, historyRes] = await Promise.all([
-        classApi.list(),
-        studentApi.list({ limit: 200 }),
+      const [yearsRes, semestersRes, historyRes] = await Promise.all([
+        academicYearApi.list(),
+        subjectApi.getSemesters(),
         studentApi.getAllTransferHistory(),
       ])
+      const years = yearsRes.data.data || []
+      const semesters = semestersRes.data.data || []
+      const activeSemester = semesters.find((semester: { isActive: boolean; academicYearId?: string }) => semester.isActive)
+      const activeYear = years.find((year: { id: string; isActive: boolean }) => year.isActive) || years[0]
+      const academicYearId = activeSemester?.academicYearId || activeYear?.id
+      const classRes = await classApi.list(academicYearId ? { academicYearId } : undefined)
       setClasses(classRes.data.data || [])
-      setStudents(studentRes.data.data || [])
       setHistory(historyRes.data.data || [])
     } catch {
       toast.error('Không thể tải dữ liệu chuyển lớp')
@@ -61,6 +68,21 @@ export default function ClassTransferPage() {
   useEffect(() => {
     fetchData()
   }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(async () => {
+      try {
+        setSearchingStudents(true)
+        const res = await studentApi.list({ search: studentSearch || undefined, status: 'active', page: 1, limit: 20 })
+        setStudents(res.data.data || [])
+      } catch {
+        setStudents([])
+      } finally {
+        setSearchingStudents(false)
+      }
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [studentSearch])
 
   const submitTransfer = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -106,8 +128,14 @@ export default function ClassTransferPage() {
       <form onSubmit={submitTransfer} className="card p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="label">Học sinh</label>
+          <input
+            className="input mb-2"
+            value={studentSearch}
+            onChange={(e) => setStudentSearch(e.target.value)}
+            placeholder="Tìm theo mã hoặc tên học sinh"
+          />
           <select className="input" value={studentId} onChange={(e) => setStudentId(e.target.value)}>
-            <option value="">Chọn học sinh</option>
+            <option value="">{searchingStudents ? 'Đang tìm...' : 'Chọn học sinh'}</option>
             {students.map((student) => (
               <option key={student.id} value={student.id}>
                 {student.studentCode} - {student.fullName} {student.class?.name ? `(${student.class.name})` : '(Chưa có lớp)'}

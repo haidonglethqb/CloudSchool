@@ -1,12 +1,12 @@
 # Score Components (Đầu Điểm)
 
-**Last updated:** 2026-04-09 · **Version:** 1.0
+**Last updated:** 2026-06-05 · **Version:** 2.0
 
-Score components define the configurable score types for each subject, with weight-based contribution to the final average.
+Score components define score columns for one subject in one semester, with weight-based contribution to the final average.
 
 ## Overview
 
-Each subject can have multiple score components (e.g., *Kiểm tra miệng*, *15 phút*, *1 tiết*, *Cuối kỳ*). The sum of all component weights for a subject must not exceed **100%**.
+Each `Subject + Semester` has one active `ScoreComponentSet`. Every class learning that subject in the same semester uses the same components. Different semesters can use different component sets.
 
 ```
 ┌─────────────┬───────┬──────────────┐
@@ -19,23 +19,35 @@ Each subject can have multiple score components (e.g., *Kiểm tra miệng*, *15
 └─────────────┴───────┴──────────────┘
 ```
 
+## Scope Rule
+
+| Scope | Rule |
+|---|---|
+| Subject | Component set belongs to `subjectId` |
+| Semester | Component set belongs to `semesterId` |
+| Class/Grade | Not allowed; components never vary per class or grade |
+| SubjectVersion | Not used for components; versions only decide where the subject applies |
+
 ## CRUD Operations
 
 | Method | Endpoint | Roles | Description |
 |--------|----------|-------|-------------|
-| `GET` | `/api/score-components` | Authenticated | List all components (filter by `?subjectId=`) |
-| `POST` | `/api/score-components` | SUPER_ADMIN, STAFF | Create component |
-| `PUT` | `/api/score-components/:id` | SUPER_ADMIN, STAFF | Update component |
-| `DELETE` | `/api/score-components/:id` | SUPER_ADMIN, STAFF | Delete (fails if scores exist) |
+| `GET` | `/api/score-component-sets?subjectId=&semesterId=` | Authenticated | Get the component set for a subject/semester |
+| `PUT` | `/api/score-component-sets` | SUPER_ADMIN, STAFF | Create/update full component set |
+| `POST` | `/api/score-component-sets/clone` | SUPER_ADMIN, STAFF | Clone set from one semester to another |
+| `GET` | `/api/score-components?subjectId=&semesterId=` | Authenticated | Compatibility read endpoint |
 
 ### Create Request
 
 ```json
-POST /api/score-components
+PUT /api/score-component-sets
 {
-  "name": "15 phút",
-  "weight": 20,
-  "subjectId": "uuid-here"
+  "subjectId": "subject-id",
+  "semesterId": "semester-id",
+  "components": [
+    { "name": "Miệng", "weight": 10, "displayOrder": 1 },
+    { "name": "15 phút lần 1", "weight": 20, "displayOrder": 2 }
+  ]
 }
 ```
 
@@ -43,14 +55,16 @@ POST /api/score-components
 
 ```mermaid
 flowchart TD
-    A[POST /score-components] --> B{weight 1-100?}
+    A[PUT /score-component-sets] --> B{each weight 1-100?}
     B -->|No| C[400 INVALID_WEIGHT]
-    B -->|Yes| D{subject exists?}
+    B -->|Yes| N{unique names in set?}
+    N -->|No| M[400 DUPLICATE_COMPONENT_NAME]
+    N -->|Yes| D{subject exists?}
     D -->|No| E[404 NOT_FOUND]
     D -->|Yes| F[Fetch existing components]
-    F --> G{totalWeight + newWeight ≤ 100?}
+    F --> G{active totalWeight ≤ 100?}
     G -->|No| H[400 WEIGHT_EXCEEDED]
-    G -->|Yes| I[Create component]
+    G -->|Yes| I[Upsert set + components]
     I --> J{totalWeight == 100?}
     J -->|No| K[201 + warning]
     J -->|Yes| L[201 created]
@@ -58,7 +72,7 @@ flowchart TD
 
 ## DELETE Protection
 
-Deletion is blocked with `400 HAS_SCORES` if any scores reference the component.
+Hard deletion is blocked when any scores reference the component. Removing such a component from the payload marks it inactive and moves its `displayOrder` out of the active order range. Current score averages and promotion calculations ignore inactive components.
 
 ## Response with Warning
 
@@ -66,8 +80,8 @@ When total weight ≠ 100% after create/update:
 
 ```json
 {
-  "data": { "id": "...", "name": "Miệng", "weight": 10 },
-  "warning": "Total weight for this subject is 30%, not 100%"
+  "data": { "id": "...", "subjectId": "...", "semesterId": "...", "components": [] },
+  "warning": "Tổng trọng số hiện là 90%, chưa đủ 100%."
 }
 ```
 

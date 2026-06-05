@@ -38,7 +38,7 @@ const getSemesterDisplayName = (semester) => {
 function calcWeightedAverage (scores) {
   let weightedSum = 0; let totalWeight = 0
   for (const s of scores) {
-    if (s.scoreComponent) {
+    if (s.scoreComponent && s.scoreComponent.isActive !== false) {
       weightedSum += s.value * s.scoreComponent.weight
       totalWeight += s.scoreComponent.weight
     }
@@ -171,10 +171,11 @@ router.get('/my-children/:studentId/scores', authorize('PARENT'), async (req, re
     }
 
     const result = Object.values(grouped).map(item => {
-      const average = calcWeightedAverage(item.scores)
+      const activeScores = item.scores.filter((s) => s.scoreComponent && s.scoreComponent.isActive !== false)
+      const average = calcWeightedAverage(activeScores)
       return {
         ...item,
-        scores: item.scores.map(s => ({
+        scores: activeScores.map(s => ({
           id: s.id,
           componentName: s.scoreComponent?.name,
           weight: s.scoreComponent?.weight,

@@ -10,7 +10,7 @@ function calcWeightedAverage(scores) {
   let weightedSum = 0
   let totalWeight = 0
   for (const score of scores) {
-    if (!score.scoreComponent) continue
+    if (!score.scoreComponent || score.scoreComponent.isActive === false) continue
     weightedSum += score.value * score.scoreComponent.weight
     totalWeight += score.scoreComponent.weight
   }
@@ -90,7 +90,22 @@ router.get('/subject-summary', async (req, res, next) => {
       orderBy: { name: 'asc' }
     })
 
-    const allStudentIds = classes.flatMap((cls) => cls.students.map((student) => student.id))
+    const classIds = classes.map((cls) => cls.id)
+    const enrollments = classIds.length
+      ? await prisma.classEnrollment.findMany({
+          where: { tenantId: req.tenantId, semesterId, classId: { in: classIds }, student: { isActive: true } },
+          select: { classId: true, studentId: true }
+        })
+      : []
+    const enrollmentClassIds = new Set(enrollments.map((item) => item.classId))
+    const studentIdsByClass = new Map(classes.map((cls) => [
+      cls.id,
+      enrollmentClassIds.has(cls.id)
+        ? enrollments.filter((item) => item.classId === cls.id).map((item) => item.studentId)
+        : cls.students.map((student) => student.id)
+    ]))
+
+    const allStudentIds = [...new Set(Array.from(studentIdsByClass.values()).flat())]
     const allScores = allStudentIds.length
       ? await prisma.score.findMany({
           where: { studentId: { in: allStudentIds }, subjectId, semesterId, tenantId: req.tenantId },
@@ -105,7 +120,7 @@ router.get('/subject-summary', async (req, res, next) => {
     }
 
     const classStats = classes.map((cls) => {
-      const studentIds = cls.students.map((student) => student.id)
+      const studentIds = studentIdsByClass.get(cls.id) || []
       let passedCount = 0
       let totalAvg = 0
       let withScores = 0
@@ -293,6 +308,7 @@ router.get('/year-promotion-summary', async (req, res, next) => {
 
     const gradeMap = new Map()
     for (const promotion of promotions) {
+      if (!promotion.class?.grade?.id) continue  // skip orphaned promotion records (class/grade deleted)
       const key = promotion.class.grade.id
       if (!gradeMap.has(key)) {
         gradeMap.set(key, {

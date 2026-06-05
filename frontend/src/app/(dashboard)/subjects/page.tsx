@@ -1,14 +1,21 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { subjectApi, scoreComponentApi, settingsApi } from '@/lib/api'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { academicYearApi, classApi, scoreComponentSetApi, settingsApi, subjectApi } from '@/lib/api'
 import toast from 'react-hot-toast'
-import { Plus, Loader2, X, Trash2, Pencil, BookOpen, ChevronDown, ChevronRight, Layers } from 'lucide-react'
+import { BookOpen, Copy, Loader2, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 
-interface ScoreComponent {
+interface SubjectVersionScope {
+  gradeId?: string
+  classId?: string
+}
+
+interface SubjectVersion {
   id: string
-  name: string
-  weight: number
+  academicYearId: string
+  versionName?: string
+  gradeScopes: SubjectVersionScope[]
+  classScopes: SubjectVersionScope[]
 }
 
 interface Subject {
@@ -16,69 +23,178 @@ interface Subject {
   code: string
   name: string
   description: string | null
-  scoreComponents: ScoreComponent[]
+  subjectVersions?: SubjectVersion[]
 }
+
+interface AcademicYear {
+  id: string
+  startYear: number
+  endYear: number
+  isActive: boolean
+}
+
+interface Grade {
+  id: string
+  name: string
+  level: number
+}
+
+interface ClassItem {
+  id: string
+  name: string
+  grade?: Grade
+}
+
+interface Semester {
+  id: string
+  name: string
+  year: string
+  semesterNum: number
+  isActive: boolean
+  displayName?: string
+}
+
+interface ComponentRow {
+  id?: string
+  name: string
+  weight: number
+  displayOrder: number
+  isActive?: boolean
+}
+
+const yearLabel = (year?: AcademicYear) => year ? `${year.startYear}-${year.endYear}` : ''
+const semesterLabel = (semester?: Semester) => semester?.displayName || (semester ? `${semester.name} (${semester.year})` : '')
 
 export default function SubjectsPage() {
   const [subjects, setSubjects] = useState<Subject[]>([])
+  const [years, setYears] = useState<AcademicYear[]>([])
+  const [grades, setGrades] = useState<Grade[]>([])
+  const [classes, setClasses] = useState<ClassItem[]>([])
+  const [semesters, setSemesters] = useState<Semester[]>([])
+  const [maxSubjects, setMaxSubjects] = useState(9)
   const [loading, setLoading] = useState(true)
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [maxSubjects, setMaxSubjects] = useState<number>(9)
 
   const [showSubjectForm, setShowSubjectForm] = useState(false)
   const [editingSubject, setEditingSubject] = useState<string | null>(null)
   const [subjectForm, setSubjectForm] = useState({ code: '', name: '', description: '' })
-  const [savingSubject, setSavingSubject] = useState(false)
 
-  const [showCompForm, setShowCompForm] = useState<string | null>(null)
-  const [editingComp, setEditingComp] = useState<string | null>(null)
-  const [compForm, setCompForm] = useState({ name: '', weight: 0 })
-  const [savingComp, setSavingComp] = useState(false)
+  const [selectedYearId, setSelectedYearId] = useState('')
+  const [scopeSubjectId, setScopeSubjectId] = useState('')
+  const [scopeGradeIds, setScopeGradeIds] = useState<string[]>([])
+  const [scopeClassIds, setScopeClassIds] = useState<string[]>([])
+  const [savingScope, setSavingScope] = useState(false)
 
-  const fetchData = useCallback(() => {
+  const [componentSubjectId, setComponentSubjectId] = useState('')
+  const [componentSemesterId, setComponentSemesterId] = useState('')
+  const [components, setComponents] = useState<ComponentRow[]>([])
+  const [savingComponents, setSavingComponents] = useState(false)
+  const [cloneSourceSemesterId, setCloneSourceSemesterId] = useState('')
+
+  const selectedYear = years.find((item) => item.id === selectedYearId)
+  const selectedSemester = semesters.find((item) => item.id === componentSemesterId)
+  const scopeSubject = subjects.find((item) => item.id === scopeSubjectId)
+  const componentSubject = subjects.find((item) => item.id === componentSubjectId)
+  const activeWeight = useMemo(
+    () => components.filter((item) => item.isActive !== false).reduce((sum, item) => sum + Number(item.weight || 0), 0),
+    [components]
+  )
+
+  // Stable fetch — only run once on mount; individual state changes are handled by their own effects
+  const fetchBaseData = useCallback(async () => {
     setLoading(true)
-    Promise.all([subjectApi.list(), settingsApi.get()])
-      .then(([subjectRes, settingRes]) => {
-        setSubjects(subjectRes.data.data || [])
-        if (settingRes.data.data?.maxSubjects) setMaxSubjects(settingRes.data.data.maxSubjects)
+    try {
+      const [subjectRes, yearRes, gradeRes, semesterRes, settingRes] = await Promise.all([
+        subjectApi.list({ includeVersions: true }),
+        academicYearApi.list(),
+        settingsApi.getGrades(),
+        subjectApi.getSemesters(),
+        settingsApi.get()
+      ])
+      const nextSubjects = subjectRes.data.data || []
+      const nextYears = yearRes.data.data || []
+      const nextSemesters = semesterRes.data.data || []
+      setSubjects(nextSubjects)
+      setYears(nextYears)
+      setGrades(gradeRes.data.data || [])
+      setSemesters(nextSemesters)
+      setMaxSubjects(settingRes.data.data?.maxSubjects || 9)
+
+      // Only set defaults if not already set (prevent overwriting user selections on re-fetch)
+      setSelectedYearId((prev) => {
+        if (prev) return prev
+        const activeYear = nextYears.find((item: AcademicYear) => item.isActive) || nextYears[0]
+        return activeYear?.id || ''
       })
-      .catch(() => toast.error('Lỗi tải dữ liệu'))
-      .finally(() => setLoading(false))
-  }, [])
+      setScopeSubjectId((prev) => prev || nextSubjects[0]?.id || '')
+      setComponentSubjectId((prev) => prev || nextSubjects[0]?.id || '')
+      setComponentSemesterId((prev) => {
+        if (prev) return prev
+        const activeSemester = nextSemesters.find((item: Semester) => item.isActive) || nextSemesters[0]
+        return activeSemester?.id || ''
+      })
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Lỗi tải dữ liệu')
+    } finally {
+      setLoading(false)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // empty deps — only runs on mount; state defaults are set with functional updaters
 
-  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => { fetchBaseData() }, [fetchBaseData])
 
-  const toggleExpand = (id: string) => {
-    const next = new Set(expanded)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    setExpanded(next)
-  }
+  useEffect(() => {
+    if (!selectedYearId) return
+    classApi.list({ academicYearId: selectedYearId })
+      .then((res) => setClasses(res.data.data || []))
+      .catch(() => toast.error('Lỗi tải danh sách lớp'))
+  }, [selectedYearId])
 
-  const handleSubjectSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!subjectForm.code || !subjectForm.name) {
-      toast.error('Vui lòng điền đủ thông tin')
+  useEffect(() => {
+    const version = scopeSubject?.subjectVersions?.find((item) => item.academicYearId === selectedYearId)
+    setScopeGradeIds((version?.gradeScopes || []).map((item) => item.gradeId).filter(Boolean) as string[])
+    setScopeClassIds((version?.classScopes || []).map((item) => item.classId).filter(Boolean) as string[])
+  }, [scopeSubject, selectedYearId])
+
+  const fetchComponents = useCallback(async () => {
+    if (!componentSubjectId || !componentSemesterId) return
+    try {
+      const res = await scoreComponentSetApi.get({ subjectId: componentSubjectId, semesterId: componentSemesterId })
+      const rows = (res.data.data?.components || []).map((item: ComponentRow, index: number) => ({
+        id: item.id,
+        name: item.name,
+        weight: item.weight,
+        displayOrder: item.displayOrder || index + 1,
+        isActive: item.isActive !== false
+      }))
+      setComponents(rows)
+      if (res.data.warning) toast.error(res.data.warning)
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Lỗi tải thành phần điểm')
+    }
+  }, [componentSemesterId, componentSubjectId])
+
+  useEffect(() => { fetchComponents() }, [fetchComponents])
+
+  const handleSubjectSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!subjectForm.code.trim() || !subjectForm.name.trim()) {
+      toast.error('Vui lòng nhập mã và tên môn')
       return
     }
-
     try {
-      setSavingSubject(true)
       if (editingSubject) {
         await subjectApi.update(editingSubject, subjectForm)
-        toast.success('Cập nhật thành công')
+        toast.success('Đã cập nhật môn học')
       } else {
         await subjectApi.create(subjectForm)
-        toast.success('Thêm môn học thành công')
+        toast.success('Đã thêm môn học')
       }
       setShowSubjectForm(false)
       setEditingSubject(null)
       setSubjectForm({ code: '', name: '', description: '' })
-      fetchData()
+      fetchBaseData()
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Lỗi')
-    } finally {
-      setSavingSubject(false)
+      toast.error(error.response?.data?.error?.message || 'Lỗi lưu môn học')
     }
   }
 
@@ -86,47 +202,95 @@ export default function SubjectsPage() {
     if (!confirm('Xóa môn học này?')) return
     try {
       await subjectApi.delete(id)
-      toast.success('Đã xóa')
-      fetchData()
+      toast.success('Đã xóa môn học')
+      fetchBaseData()
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Lỗi xóa')
+      toast.error(error.response?.data?.error?.message || 'Lỗi xóa môn học')
     }
   }
 
-  const handleCompSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!showCompForm || !compForm.name || !compForm.weight) {
-      toast.error('Vui lòng điền đủ thông tin')
+  const toggle = (items: string[], id: string) => (
+    items.includes(id) ? items.filter((item) => item !== id) : [...items, id]
+  )
+
+  const handleSaveScope = async () => {
+    if (!scopeSubjectId || !selectedYearId) return
+    if (scopeGradeIds.length === 0 && scopeClassIds.length === 0) {
+      toast.error('Chọn ít nhất một khối hoặc lớp')
+      return
+    }
+    setSavingScope(true)
+    try {
+      const versionRes = await subjectApi.createVersion(scopeSubjectId, {
+        academicYearId: selectedYearId,
+        versionName: `${scopeSubject?.name || 'Môn học'} ${yearLabel(selectedYear)}`
+      })
+      await subjectApi.updateVersionScope(versionRes.data.data.id, {
+        gradeIds: scopeGradeIds,
+        classIds: scopeClassIds
+      })
+      toast.success('Đã lưu phạm vi áp dụng môn')
+      fetchBaseData()
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Lỗi lưu phạm vi')
+    } finally {
+      setSavingScope(false)
+    }
+  }
+
+  const addComponent = () => {
+    setComponents((prev) => [...prev, { name: '', weight: 0, displayOrder: prev.length + 1, isActive: true }])
+  }
+
+  const updateComponent = (index: number, patch: Partial<ComponentRow>) => {
+    setComponents((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item))
+  }
+
+  const removeComponent = (index: number) => {
+    setComponents((prev) => prev.filter((_, itemIndex) => itemIndex !== index).map((item, itemIndex) => ({ ...item, displayOrder: itemIndex + 1 })))
+  }
+
+  const handleSaveComponents = async () => {
+    if (!componentSubjectId || !componentSemesterId) return
+    if (components.some((item) => !item.name.trim() || Number(item.weight) <= 0)) {
+      toast.error('Tên và trọng số thành phần điểm là bắt buộc')
+      return
+    }
+    setSavingComponents(true)
+    try {
+      const res = await scoreComponentSetApi.save({
+        subjectId: componentSubjectId,
+        semesterId: componentSemesterId,
+        components: components.map((item, index) => ({ ...item, displayOrder: index + 1 }))
+      })
+      if (res.data.warning) {
+        toast('Đã lưu thành phần điểm. ⚠️ ' + res.data.warning, { icon: '⚠️' })
+      } else {
+        toast.success('Đã lưu thành phần điểm')
+      }
+      fetchComponents()
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Lỗi lưu thành phần điểm')
+    } finally {
+      setSavingComponents(false)
+    }
+  }
+
+  const handleClone = async () => {
+    if (!componentSubjectId || !componentSemesterId || !cloneSourceSemesterId) {
+      toast.error('Chọn học kỳ nguồn')
       return
     }
     try {
-      setSavingComp(true)
-      if (editingComp) {
-        await scoreComponentApi.update(editingComp, compForm)
-        toast.success('Cập nhật thành công')
-      } else {
-        await scoreComponentApi.create({ ...compForm, subjectId: showCompForm })
-        toast.success('Thêm cột điểm thành công')
-      }
-      setShowCompForm(null)
-      setEditingComp(null)
-      setCompForm({ name: '', weight: 0 })
-      fetchData()
+      await scoreComponentSetApi.clone({
+        subjectId: componentSubjectId,
+        sourceSemesterId: cloneSourceSemesterId,
+        targetSemesterId: componentSemesterId
+      })
+      toast.success('Đã sao chép thành phần điểm')
+      fetchComponents()
     } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Lỗi')
-    } finally {
-      setSavingComp(false)
-    }
-  }
-
-  const handleDeleteComp = async (id: string) => {
-    if (!confirm('Xóa cột điểm này?')) return
-    try {
-      await scoreComponentApi.delete(id)
-      toast.success('Đã xóa')
-      fetchData()
-    } catch (error: any) {
-      toast.error(error.response?.data?.error?.message || 'Lỗi xóa')
+      toast.error(error.response?.data?.error?.message || 'Lỗi sao chép')
     }
   }
 
@@ -138,8 +302,8 @@ export default function SubjectsPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Môn học & Cột điểm</h1>
-          <p className="text-gray-600 mt-1">Quản lý môn học và cột điểm</p>
+          <h1 className="text-2xl font-bold text-gray-900">Môn học & thành phần điểm</h1>
+          <p className="text-gray-600 mt-1">Cấu hình môn theo năm/khối/lớp và đầu điểm theo môn/học kỳ</p>
         </div>
         <button
           onClick={() => {
@@ -154,66 +318,146 @@ export default function SubjectsPage() {
         </button>
       </div>
 
-      {subjects.length === 0 ? (
-        <div className="card p-12 text-center">
-          <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-500">Chưa có môn học nào</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {subjects.map((subject) => {
-            const totalWeight = subject.scoreComponents.reduce((sum, component) => sum + component.weight, 0)
-            const isExpanded = expanded.has(subject.id)
-            return (
-              <div key={subject.id} className="card overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 cursor-pointer" onClick={() => toggleExpand(subject.id)}>
-                  <div className="flex items-center gap-3">
-                    {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-                    <div>
-                      <p className="font-medium text-gray-900">{subject.name} <span className="text-xs text-gray-400 font-mono">({subject.code})</span></p>
-                      {subject.description && <p className="text-xs text-gray-500">{subject.description}</p>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xs px-2 py-0.5 rounded ${totalWeight === 100 ? 'bg-green-100 text-green-700' : totalWeight > 100 ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                      {totalWeight}% / 100%
-                    </span>
-                    <button onClick={(e) => { e.stopPropagation(); setEditingSubject(subject.id); setSubjectForm({ code: subject.code, name: subject.name, description: subject.description || '' }); setShowSubjectForm(true) }} className="p-1 text-gray-400 hover:text-primary"><Pencil className="w-4 h-4" /></button>
-                    <button onClick={(e) => { e.stopPropagation(); handleDeleteSubject(subject.id) }} className="p-1 text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
-                  </div>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <section className="xl:col-span-1 space-y-3">
+          <h2 className="font-semibold text-gray-900">Danh mục môn</h2>
+          {subjects.map((subject) => (
+            <div key={subject.id} className="card p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium">{subject.name}</p>
+                  <p className="text-xs text-gray-500 font-mono">{subject.code}</p>
+                  {subject.description && <p className="text-sm text-gray-500 mt-1">{subject.description}</p>}
                 </div>
-
-                {isExpanded && (
-                  <div className="border-t px-4 py-3 bg-gray-50/50">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-sm font-medium text-gray-700 flex items-center gap-1"><Layers className="w-4 h-4" /> Cột điểm</h4>
-                      <button onClick={() => { setEditingComp(null); setCompForm({ name: '', weight: 0 }); setShowCompForm(subject.id) }} className="text-xs text-primary hover:underline flex items-center gap-1">
-                        <Plus className="w-3 h-3" /> Thêm
-                      </button>
-                    </div>
-                    {subject.scoreComponents.length === 0 ? (
-                      <p className="text-xs text-gray-400">Chưa có cột điểm</p>
-                    ) : (
-                      <div className="space-y-1">
-                        {subject.scoreComponents.map((component) => (
-                          <div key={component.id} className="flex items-center justify-between py-1.5 px-3 bg-white rounded border">
-                            <span className="text-sm">{component.name}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-primary">{component.weight}%</span>
-                              <button onClick={() => { setEditingComp(component.id); setCompForm({ name: component.name, weight: component.weight }); setShowCompForm(subject.id) }} className="p-1 text-gray-400 hover:text-primary"><Pencil className="w-3 h-3" /></button>
-                              <button onClick={() => handleDeleteComp(component.id)} className="p-1 text-gray-400 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                <div className="flex gap-1">
+                  <button onClick={() => { setEditingSubject(subject.id); setSubjectForm({ code: subject.code, name: subject.name, description: subject.description || '' }); setShowSubjectForm(true) }} className="p-1.5 text-gray-400 hover:text-primary"><Pencil className="w-4 h-4" /></button>
+                  <button onClick={() => handleDeleteSubject(subject.id)} className="p-1.5 text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+                </div>
               </div>
-            )
-          })}
-        </div>
-      )}
+            </div>
+          ))}
+          {subjects.length === 0 && (
+            <div className="card p-10 text-center text-gray-500">
+              <BookOpen className="w-10 h-10 mx-auto mb-2 text-gray-400" />
+              Chưa có môn học
+            </div>
+          )}
+        </section>
+
+        <section className="xl:col-span-2 space-y-6">
+          <div className="card p-5 space-y-4">
+            <div>
+              <h2 className="font-semibold text-gray-900">Phạm vi áp dụng môn</h2>
+              <p className="text-sm text-gray-500">Môn được áp dụng theo năm học, khối hoặc lớp cụ thể.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="label">Năm học</label>
+                <select className="input" value={selectedYearId} onChange={(event) => setSelectedYearId(event.target.value)}>
+                  {years.map((year) => <option key={year.id} value={year.id}>{yearLabel(year)}{year.isActive ? ' - Đang active' : ''}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Môn học</label>
+                <select className="input" value={scopeSubjectId} onChange={(event) => setScopeSubjectId(event.target.value)}>
+                  {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <p className="label">Áp dụng theo khối</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {grades.map((grade) => (
+                  <label key={grade.id} className="flex items-center gap-2 rounded border px-3 py-2 text-sm">
+                    <input type="checkbox" checked={scopeGradeIds.includes(grade.id)} onChange={() => setScopeGradeIds((prev) => toggle(prev, grade.id))} />
+                    {grade.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="label">Áp dụng riêng theo lớp</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-48 overflow-auto">
+                {classes.map((item) => (
+                  <label key={item.id} className="flex items-center gap-2 rounded border px-3 py-2 text-sm">
+                    <input type="checkbox" checked={scopeClassIds.includes(item.id)} onChange={() => setScopeClassIds((prev) => toggle(prev, item.id))} />
+                    {item.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <button onClick={handleSaveScope} disabled={savingScope} className="btn-primary">
+              {savingScope ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+              Lưu phạm vi
+            </button>
+          </div>
+
+          <div className="card p-5 space-y-4">
+            <div>
+              <h2 className="font-semibold text-gray-900">Thành phần điểm theo học kỳ</h2>
+              <p className="text-sm text-gray-500">Cùng một môn trong cùng một học kỳ dùng chung bộ thành phần điểm cho mọi lớp.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="label">Môn học</label>
+                <select className="input" value={componentSubjectId} onChange={(event) => setComponentSubjectId(event.target.value)}>
+                  {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Học kỳ</label>
+                <select className="input" value={componentSemesterId} onChange={(event) => setComponentSemesterId(event.target.value)}>
+                  {semesters.map((semester) => <option key={semester.id} value={semester.id}>{semesterLabel(semester)}{semester.isActive ? ' - Đang active' : ''}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-primary/5 px-4 py-3 text-sm text-primary">
+              Đang cấu hình: {componentSubject?.name || 'Môn học'} - {semesterLabel(selectedSemester)}
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <select className="input sm:max-w-xs" value={cloneSourceSemesterId} onChange={(event) => setCloneSourceSemesterId(event.target.value)}>
+                <option value="">Chọn học kỳ nguồn</option>
+                {semesters.filter((semester) => semester.id !== componentSemesterId).map((semester) => (
+                  <option key={semester.id} value={semester.id}>{semesterLabel(semester)}</option>
+                ))}
+              </select>
+              <button onClick={handleClone} className="px-4 py-2 rounded-lg border text-sm flex items-center justify-center gap-2">
+                <Copy className="w-4 h-4" /> Clone
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {components.map((component, index) => (
+                <div key={component.id || index} className="grid grid-cols-12 gap-2 items-center">
+                  <input className="input col-span-7" placeholder="Tên thành phần" value={component.name} onChange={(event) => updateComponent(index, { name: event.target.value })} />
+                  <input className="input col-span-3" type="number" min="1" max="100" value={component.weight} onChange={(event) => updateComponent(index, { weight: Number(event.target.value) })} />
+                  <button onClick={() => removeComponent(index)} className="col-span-2 px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 flex justify-center">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              <button onClick={addComponent} className="px-4 py-2 rounded-lg border text-sm flex items-center gap-2">
+                <Plus className="w-4 h-4" /> Thêm thành phần
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <span className={`text-sm font-medium ${activeWeight > 100 ? 'text-red-600' : activeWeight === 100 ? 'text-green-700' : 'text-yellow-700'}`}>
+                Tổng trọng số: {activeWeight}% / 100%
+              </span>
+              <button onClick={handleSaveComponents} disabled={savingComponents} className="btn-primary">
+                {savingComponents ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                Lưu thành phần điểm
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
 
       {showSubjectForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -226,51 +470,20 @@ export default function SubjectsPage() {
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="label">Mã *</label>
-                  <input className="input" value={subjectForm.code} onChange={(e) => setSubjectForm({ ...subjectForm, code: e.target.value })} />
+                  <input className="input" value={subjectForm.code} onChange={(event) => setSubjectForm({ ...subjectForm, code: event.target.value })} />
                 </div>
                 <div className="col-span-2">
                   <label className="label">Tên *</label>
-                  <input className="input" value={subjectForm.name} onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })} />
+                  <input className="input" value={subjectForm.name} onChange={(event) => setSubjectForm({ ...subjectForm, name: event.target.value })} />
                 </div>
               </div>
               <div>
                 <label className="label">Mô tả</label>
-                <input className="input" value={subjectForm.description} onChange={(e) => setSubjectForm({ ...subjectForm, description: e.target.value })} />
+                <input className="input" value={subjectForm.description} onChange={(event) => setSubjectForm({ ...subjectForm, description: event.target.value })} />
               </div>
               <div className="flex justify-end gap-3">
                 <button type="button" onClick={() => setShowSubjectForm(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Hủy</button>
-                <button type="submit" disabled={savingSubject} className="btn-primary">
-                  {savingSubject && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                  {editingSubject ? 'Cập nhật' : 'Thêm'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showCompForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-sm">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-semibold">{editingComp ? 'Sửa cột điểm' : 'Thêm cột điểm'}</h2>
-              <button onClick={() => setShowCompForm(null)}><X className="w-5 h-5 text-gray-400" /></button>
-            </div>
-            <form onSubmit={handleCompSubmit} className="p-4 space-y-4">
-              <div>
-                <label className="label">Tên cột *</label>
-                <input className="input" value={compForm.name} onChange={(e) => setCompForm({ ...compForm, name: e.target.value })} />
-              </div>
-              <div>
-                <label className="label">Trọng số (%) *</label>
-                <input type="number" min="1" max="100" className="input" value={compForm.weight} onChange={(e) => setCompForm({ ...compForm, weight: Number(e.target.value) })} />
-              </div>
-              <div className="flex justify-end gap-3">
-                <button type="button" onClick={() => setShowCompForm(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Hủy</button>
-                <button type="submit" disabled={savingComp} className="btn-primary">
-                  {savingComp && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                  {editingComp ? 'Cập nhật' : 'Thêm'}
-                </button>
+                <button type="submit" className="btn-primary">{editingSubject ? 'Cập nhật' : 'Thêm'}</button>
               </div>
             </form>
           </div>
