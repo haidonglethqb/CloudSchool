@@ -41,6 +41,14 @@ interface Student {
     name: string
     grade: { id: string; name: string }
   } | null
+  enrollments?: Array<{
+    semesterId: string
+    class: {
+      id: string
+      name: string
+      grade: { id: string; name: string }
+    } | null
+  }>
   createdAt: string
 }
 
@@ -107,6 +115,7 @@ export default function StudentDetailPage() {
 
   const [semesters, setSemesters] = useState<Semester[]>([])
   const [selectedSemester, setSelectedSemester] = useState('')
+  const [currentSemesterId, setCurrentSemesterId] = useState('')
   const [scoreData, setScoreData] = useState<ScoreData | null>(null)
   const [loadingScores, setLoadingScores] = useState(false)
   const [scoreView, setScoreView] = useState<'semester' | 'yearly'>('semester')
@@ -138,8 +147,18 @@ export default function StudentDetailPage() {
         const activeYearSemesters = defaultYear
           ? sems.filter((semester: Semester) => semester.academicYearId === defaultYear.id || semester.year === activeYearLabel)
           : []
-        const defaultSemester = pickDefaultSemester(activeYearSemesters.length > 0 ? activeYearSemesters : sems)
-        if (defaultSemester) setSelectedSemester(defaultSemester.id)
+        const defaultSemester = activeYearSemesters.length > 0
+          ? activeYearSemesters.find((semester: Semester) => semester.isActive) || [...activeYearSemesters].sort((left: Semester, right: Semester) => {
+            const leftNum = Number(left.semesterNum || 0)
+            const rightNum = Number(right.semesterNum || 0)
+            if (leftNum !== rightNum) return leftNum - rightNum
+            return String(left.id).localeCompare(String(right.id))
+          })[0]
+          : pickDefaultSemester(sems)
+        if (defaultSemester) {
+          setSelectedSemester(defaultSemester.id)
+          setCurrentSemesterId(defaultSemester.id)
+        }
       } catch (error: any) {
         console.error('Failed to fetch student:', error)
         if (error.response?.status === 404) {
@@ -260,6 +279,11 @@ export default function StudentDetailPage() {
       CREATE_TARGET_CLASS: 'Tạo lớp đích',
     }
     return labels[action] || action
+  }
+  const getSemesterClassLabel = (semesterId: string) => {
+    const enrollmentClass = student.enrollments?.find((enrollment) => enrollment.semesterId === semesterId)?.class
+    if (!enrollmentClass) return 'Chưa có phân lớp kỳ này'
+    return enrollmentClass.grade?.name ? `${enrollmentClass.name} - ${enrollmentClass.grade.name}` : enrollmentClass.name
   }
 
   // Collect all unique score component names across all subjects for consistent columns
@@ -545,15 +569,15 @@ export default function StudentDetailPage() {
                 <BookOpen className="w-5 h-5 text-primary" />
                 Bảng điểm
               </h3>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <select
-                  className="input py-1.5 text-sm w-48"
+                  className="input min-h-10 w-full min-w-[22rem] max-w-[34rem] py-2 pr-10 text-sm md:w-[34rem]"
                   value={selectedSemester}
                   onChange={e => setSelectedSemester(e.target.value)}
                 >
                   {semesters.map(s => (
                     <option key={s.id} value={s.id}>
-                      {formatSemesterLabel(s)}{s.isActive ? ' - Hiện tại' : ''}
+                      {formatSemesterLabel(s)} - {getSemesterClassLabel(s.id)}{s.id === currentSemesterId ? ' - Hiện tại' : ''}
                     </option>
                   ))}
                 </select>

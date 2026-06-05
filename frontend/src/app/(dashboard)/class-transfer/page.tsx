@@ -42,6 +42,7 @@ export default function ClassTransferPage() {
   const [history, setHistory] = useState<TransferHistoryItem[]>([])
 
   const selectedStudent = students.find((s) => s.id === studentId)
+  const showStudentResults = studentSearch.trim().length > 0 || students.length > 0
 
   const fetchData = async () => {
     try {
@@ -126,7 +127,7 @@ export default function ClassTransferPage() {
       </div>
 
       <form onSubmit={submitTransfer} className="card p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
+        <div className="md:col-span-2">
           <label className="label">Học sinh</label>
           <input
             className="input mb-2"
@@ -142,6 +143,42 @@ export default function ClassTransferPage() {
               </option>
             ))}
           </select>
+          {selectedStudent && (
+            <div className="mt-2 rounded-lg border border-primary-100 bg-primary-50 px-3 py-2 text-sm">
+              <span className="font-medium text-primary-800">{selectedStudent.fullName}</span>
+              <span className="text-primary-700"> - {selectedStudent.studentCode}</span>
+              <span className="text-primary-700"> - {selectedStudent.class?.name || 'Chưa có lớp'}</span>
+            </div>
+          )}
+          {showStudentResults && (
+            <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white">
+              {searchingStudents ? (
+                <div className="flex items-center px-3 py-3 text-sm text-gray-500">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Đang tìm học sinh...
+                </div>
+              ) : students.length === 0 ? (
+                <div className="px-3 py-3 text-sm text-gray-500">Không tìm thấy học sinh phù hợp</div>
+              ) : (
+                students.map((student) => (
+                  <button
+                    key={student.id}
+                    type="button"
+                    onClick={() => setStudentId(student.id)}
+                    className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50 ${
+                      student.id === studentId ? 'bg-primary-50 text-primary-800' : 'text-gray-700'
+                    }`}
+                  >
+                    <span>
+                      <span className="font-medium">{student.fullName}</span>
+                      <span className="text-gray-500"> - {student.studentCode}</span>
+                    </span>
+                    <span className="shrink-0 text-xs text-gray-500">{student.class?.name || 'Chưa có lớp'}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
         <div>
           <label className="label">Lớp đích</label>

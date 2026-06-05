@@ -57,7 +57,7 @@
 | Method | Path | Description |
 |---|---|---|
 | GET | `/students` | List students (paginated, search, classId, status) |
-| GET | `/students/:id` | Student detail + scores |
+| GET | `/students/:id` | Student detail + scores + semester class enrollments |
 | POST | `/students` | Create student (age validation, class capacity check, plan student limit, code generation) |
 | PUT | `/students/:id` | Update student info (class change blocked — use transfer) |
 | DELETE | `/students/:id` | Delete student (dependency checks) |

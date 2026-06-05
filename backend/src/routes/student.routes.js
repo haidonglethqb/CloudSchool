@@ -114,6 +114,16 @@ router.get('/:id', authenticate, requireFeature('student-lookup'), authorize('SU
       where: { id: req.params.id, tenantId: req.tenantId },
       include: {
         class: { include: { grade: true } },
+        enrollments: {
+          include: {
+            class: { include: { grade: true } },
+            semester: true
+          },
+          orderBy: [
+            { semester: { year: 'desc' } },
+            { semester: { semesterNum: 'asc' } }
+          ]
+        },
         scores: {
           where: { ...(req.query.semesterId && { semesterId: req.query.semesterId }) },
           include: { subject: true, semester: true, scoreComponent: true }

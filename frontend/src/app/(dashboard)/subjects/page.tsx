@@ -94,6 +94,10 @@ export default function SubjectsPage() {
   const selectedSemester = semesters.find((item) => item.id === componentSemesterId)
   const scopeSubject = subjects.find((item) => item.id === scopeSubjectId)
   const componentSubject = subjects.find((item) => item.id === componentSubjectId)
+  const scopeClasses = useMemo(
+    () => classes.filter((item) => item.grade?.id && scopeGradeIds.includes(item.grade.id)),
+    [classes, scopeGradeIds]
+  )
   const activeWeight = useMemo(
     () => components.filter((item) => item.isActive !== false).reduce((sum, item) => sum + Number(item.weight || 0), 0),
     [components]
@@ -155,6 +159,12 @@ export default function SubjectsPage() {
     setScopeClassIds((version?.classScopes || []).map((item) => item.classId).filter(Boolean) as string[])
   }, [scopeSubject, selectedYearId])
 
+  useEffect(() => {
+    if (classes.length === 0) return
+    const visibleClassIds = new Set(scopeClasses.map((item) => item.id))
+    setScopeClassIds((prev) => prev.filter((id) => visibleClassIds.has(id)))
+  }, [classes.length, scopeClasses])
+
   const fetchComponents = useCallback(async () => {
     if (!componentSubjectId || !componentSemesterId) return
     try {
@@ -212,6 +222,19 @@ export default function SubjectsPage() {
   const toggle = (items: string[], id: string) => (
     items.includes(id) ? items.filter((item) => item !== id) : [...items, id]
   )
+
+  const handleToggleScopeGrade = (gradeId: string) => {
+    setScopeGradeIds((prev) => {
+      const next = toggle(prev, gradeId)
+      if (!next.includes(gradeId)) {
+        const removedClassIds = classes
+          .filter((item) => item.grade?.id === gradeId)
+          .map((item) => item.id)
+        setScopeClassIds((classIds) => classIds.filter((id) => !removedClassIds.includes(id)))
+      }
+      return next
+    })
+  }
 
   const handleSaveScope = async () => {
     if (!scopeSubjectId || !selectedYearId) return
@@ -370,7 +393,7 @@ export default function SubjectsPage() {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                 {grades.map((grade) => (
                   <label key={grade.id} className="flex items-center gap-2 rounded border px-3 py-2 text-sm">
-                    <input type="checkbox" checked={scopeGradeIds.includes(grade.id)} onChange={() => setScopeGradeIds((prev) => toggle(prev, grade.id))} />
+                    <input type="checkbox" checked={scopeGradeIds.includes(grade.id)} onChange={() => handleToggleScopeGrade(grade.id)} />
                     {grade.name}
                   </label>
                 ))}
@@ -380,13 +403,16 @@ export default function SubjectsPage() {
             <div>
               <p className="label">Áp dụng riêng theo lớp</p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-48 overflow-auto">
-                {classes.map((item) => (
+                {scopeClasses.map((item) => (
                   <label key={item.id} className="flex items-center gap-2 rounded border px-3 py-2 text-sm">
                     <input type="checkbox" checked={scopeClassIds.includes(item.id)} onChange={() => setScopeClassIds((prev) => toggle(prev, item.id))} />
                     {item.name}
                   </label>
                 ))}
               </div>
+              {scopeGradeIds.length === 0 && (
+                <p className="mt-2 text-xs text-gray-500">Chọn khối ở trên để hiển thị các lớp tương ứng.</p>
+              )}
             </div>
 
             <button onClick={handleSaveScope} disabled={savingScope} className="btn-primary">
