@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
 import { academicYearApi, classApi, downloadBlob, settingsApi, studentApi, subjectApi } from '@/lib/api'
-import { ArrowLeft, Download, FileSpreadsheet, Loader2, Save, Upload } from 'lucide-react'
+import { ArrowLeft, Download, Edit2, FileSpreadsheet, Loader2, Save, Trash2, Upload, X } from 'lucide-react'
 
 const studentSchema = z.object({
   fullName: z.string().min(2, 'Họ tên ít nhất 2 ký tự'),
@@ -76,6 +76,11 @@ const formatDate = (value?: string | null) => {
   return new Date(value).toLocaleDateString('vi-VN')
 }
 
+const toDateInputValue = (value?: string | null) => {
+  if (!value) return ''
+  return new Date(value).toISOString().slice(0, 10)
+}
+
 const readFileBase64 = (file: File) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader()
   reader.onload = () => {
@@ -96,6 +101,11 @@ export default function NewStudentPage() {
   const [activeBatch, setActiveBatch] = useState<ImportBatch | null>(null)
   const [importRows, setImportRows] = useState<ImportRow[]>([])
   const [importHistory, setImportHistory] = useState<ImportBatch[]>([])
+  const [editingRow, setEditingRow] = useState<ImportRow | null>(null)
+  const [editForm, setEditForm] = useState({ fullName: '', gender: '', dateOfBirth: '', address: '', classId: '' })
+  const [savingRow, setSavingRow] = useState(false)
+  const [deletingRowId, setDeletingRowId] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const {
     register,
@@ -122,6 +132,18 @@ export default function NewStudentPage() {
   const fetchImportHistory = async () => {
     const res = await studentApi.listImportBatches()
     setImportHistory(res.data.data || [])
+  }
+
+  const refreshActiveImportBatch = async (batchId: string) => {
+    const [rowsRes, historyRes] = await Promise.all([
+      studentApi.getImportRows(batchId),
+      studentApi.listImportBatches(),
+    ])
+    const rows = rowsRes.data.data || []
+    const history = historyRes.data.data || []
+    setImportRows(rows)
+    setImportHistory(history)
+    setActiveBatch(history.find((batch: ImportBatch) => batch.id === batchId) || null)
   }
 
   const fetchData = async () => {
@@ -207,6 +229,7 @@ export default function NewStudentPage() {
     if (!file) return
     try {
       setUploading(true)
+      setEditingRow(null)
       const contentBase64 = await readFileBase64(file)
       const res = await studentApi.createImportBatch({
         fileName: file.name,
@@ -222,6 +245,7 @@ export default function NewStudentPage() {
       toast.error(error.response?.data?.error?.message || 'Import thất bại')
     } finally {
       setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
 
@@ -230,9 +254,59 @@ export default function NewStudentPage() {
     try {
       const res = await studentApi.updateImportRow(activeBatch.id, rowId, { classId })
       setImportRows((prev) => prev.map((row) => row.id === rowId ? res.data.data : row))
+      await refreshActiveImportBatch(activeBatch.id)
     } catch (error: any) {
       toast.error(error.response?.data?.error?.message || 'Không thể cập nhật lớp')
     }
+  }
+
+  const openEditImportRow = (row: ImportRow) => {
+    setEditingRow(row)
+    setEditForm({
+      fullName: row.fullName || '',
+      gender: row.gender || '',
+      dateOfBirth: toDateInputValue(row.dateOfBirth),
+      address: row.address || '',
+      classId: row.classId || '',
+    })
+  }
+
+  const handleSaveImportRow = async () => {
+    if (!activeBatch || !editingRow) return
+    try {
+      setSavingRow(true)
+      const res = await studentApi.updateImportRow(activeBatch.id, editingRow.id, editForm)
+      setImportRows((prev) => prev.map((row) => row.id === editingRow.id ? res.data.data : row))
+      setEditingRow(null)
+      await refreshActiveImportBatch(activeBatch.id)
+      toast.success('Đã cập nhật dòng import')
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Không thể cập nhật dòng import')
+    } finally {
+      setSavingRow(false)
+    }
+  }
+
+  const handleDeleteImportRow = async (row: ImportRow) => {
+    if (!activeBatch || row.status === 'IMPORTED') return
+    try {
+      setDeletingRowId(row.id)
+      const res = await studentApi.deleteImportRow(activeBatch.id, row.id)
+      setImportRows((prev) => prev.filter((item) => item.id !== row.id))
+      setActiveBatch(res.data.data?.batch || activeBatch)
+      await fetchImportHistory()
+      toast.success('Đã xóa dòng import')
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Không thể xóa dòng import')
+    } finally {
+      setDeletingRowId(null)
+    }
+  }
+
+  const clearActiveImport = () => {
+    setActiveBatch(null)
+    setImportRows([])
+    setEditingRow(null)
   }
 
   const handleCommitImport = async () => {
@@ -243,6 +317,18 @@ export default function NewStudentPage() {
       setActiveBatch(res.data.data)
       setImportRows(res.data.data.rows || [])
       await Promise.all([fetchImportHistory(), fetchData()])
+      const summary = res.data.summary || {}
+      const created = summary.createdThisRun || 0
+      const failed = summary.failedThisRun || 0
+      const remainingInvalid = summary.remainingInvalid || 0
+      if (created > 0 && (failed > 0 || remainingInvalid > 0)) {
+        toast(`Đã tạo ${created} học sinh, ${failed || remainingInvalid} dòng chưa tạo được. Xem lỗi trong bảng.`)
+      } else if (created > 0) {
+        toast.success(`Đã tạo ${created} học sinh từ danh sách import`)
+      } else {
+        toast.error('Không tạo được học sinh nào. Sửa hoặc xóa các dòng lỗi rồi thử lại.')
+      }
+      return
       toast.success('Đã tạo học sinh từ danh sách import')
     } catch (error: any) {
       toast.error(error.response?.data?.error?.message || 'Không thể tạo học sinh từ import')
@@ -376,6 +462,7 @@ export default function NewStudentPage() {
             <span className="mt-3 text-sm font-medium text-gray-900">Chọn file CSV hoặc Excel</span>
             <span className="mt-1 text-xs text-gray-500">Hỗ trợ .csv và .xlsx</span>
             <input
+              ref={fileInputRef}
               type="file"
               accept=".csv,.xlsx"
               className="hidden"
@@ -390,8 +477,15 @@ export default function NewStudentPage() {
             </div>
           )}
 
+          {activeBatch && (
+            <button type="button" onClick={clearActiveImport} className="btn-outline w-fit text-sm">
+              <X className="w-4 h-4 mr-2" />
+              Bỏ bảng hiện tại
+            </button>
+          )}
+
           <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="w-full min-w-[820px]">
+            <table className="w-full min-w-[1040px]">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
                   <th className="table-header">Dòng</th>
@@ -402,12 +496,13 @@ export default function NewStudentPage() {
                   <th className="table-header">Lớp</th>
                   <th className="table-header">Trạng thái</th>
                   <th className="table-header">Lỗi</th>
+                  <th className="table-header">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {importRows.length === 0 ? (
                   <tr>
-                    <td className="table-cell text-center text-gray-500" colSpan={8}>Chưa có dữ liệu import</td>
+                    <td className="table-cell text-center text-gray-500" colSpan={9}>Chưa có dữ liệu import</td>
                   </tr>
                 ) : importRows.map((row) => (
                   <tr key={row.id} className={row.status === 'INVALID' ? 'bg-red-50/50' : row.status === 'IMPORTED' ? 'bg-green-50/50' : ''}>
@@ -420,7 +515,7 @@ export default function NewStudentPage() {
                       <select
                         className="input min-w-[180px] py-1.5 text-sm"
                         value={row.classId || ''}
-                        disabled={row.status === 'INVALID' || row.status === 'IMPORTED'}
+                        disabled={row.status === 'IMPORTED'}
                         onChange={(event) => handleAssignImportRow(row.id, event.target.value)}
                       >
                         <option value="">Chọn lớp</option>
@@ -438,7 +533,23 @@ export default function NewStudentPage() {
                         {row.status === 'IMPORTED' ? 'Đã tạo' : row.status === 'VALID' ? 'Hợp lệ' : 'Lỗi'}
                       </span>
                     </td>
-                    <td className="table-cell text-red-600">{row.errorMessage || '-'}</td>
+                    <td className="table-cell max-w-[220px] whitespace-normal text-red-600">{row.errorMessage || '-'}</td>
+                    <td className="table-cell">
+                      {row.status === 'IMPORTED' ? (
+                        <span className="text-xs text-gray-400">Đã tạo</span>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => openEditImportRow(row)} className="btn-outline px-2 py-1 text-xs">
+                            <Edit2 className="w-3 h-3 mr-1" />
+                            Sửa
+                          </button>
+                          <button type="button" onClick={() => handleDeleteImportRow(row)} disabled={deletingRowId === row.id} className="btn-outline px-2 py-1 text-xs text-red-600 hover:bg-red-50">
+                            {deletingRowId === row.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Trash2 className="w-3 h-3 mr-1" />}
+                            Xóa
+                          </button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -489,6 +600,65 @@ export default function NewStudentPage() {
           </table>
         </div>
       </section>
+
+      {editingRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl rounded-lg bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b px-5 py-4">
+              <h2 className="text-lg font-semibold text-gray-900">Sửa dòng import</h2>
+              <button type="button" onClick={() => setEditingRow(null)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="grid gap-4 p-5 sm:grid-cols-2">
+              <div>
+                <label className="label">Họ tên</label>
+                <input className="input" value={editForm.fullName} onChange={(event) => setEditForm((prev) => ({ ...prev, fullName: event.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Giới tính</label>
+                <select className="input" value={editForm.gender} onChange={(event) => setEditForm((prev) => ({ ...prev, gender: event.target.value }))}>
+                  <option value="">Chọn giới tính</option>
+                  <option value="MALE">Nam</option>
+                  <option value="FEMALE">Nữ</option>
+                  <option value="OTHER">Khác</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">Ngày sinh</label>
+                <input type="date" className="input" value={editForm.dateOfBirth} onChange={(event) => setEditForm((prev) => ({ ...prev, dateOfBirth: event.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Lớp</label>
+                <select className="input" value={editForm.classId} onChange={(event) => setEditForm((prev) => ({ ...prev, classId: event.target.value }))}>
+                  <option value="">Chọn lớp</option>
+                  {classes.map((cls) => (
+                    <option key={cls.id} value={cls.id} disabled={cls._count.students >= cls.capacity}>
+                      {cls.name} ({cls.grade.name})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="label">Địa chỉ</label>
+                <input className="input" value={editForm.address} onChange={(event) => setEditForm((prev) => ({ ...prev, address: event.target.value }))} />
+              </div>
+              {editingRow.errorMessage && (
+                <div className="sm:col-span-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                  Lỗi hiện tại: {editingRow.errorMessage}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-3 border-t px-5 py-4">
+              <button type="button" onClick={() => setEditingRow(null)} className="btn-outline">Hủy</button>
+              <button type="button" onClick={handleSaveImportRow} disabled={savingRow} className="btn-primary">
+                {savingRow ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                Lưu dòng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -63,8 +63,9 @@
 | GET | `/students/import-batches` | List recent CSV/XLSX import batches for the tenant |
 | POST | `/students/import-batches` | Parse CSV/XLSX base64 payload into draft import rows; invalid rows are stored with error messages |
 | GET | `/students/import-batches/:id/rows` | Read draft import rows for class assignment and inline error display |
-| PATCH | `/students/import-batches/:id/rows/:rowId` | Assign a class to one valid import row |
-| POST | `/students/import-batches/:id/commit` | Create real students from valid rows that have class assignments |
+| PATCH | `/students/import-batches/:id/rows/:rowId` | Edit a draft import row (`fullName`, `gender`, `dateOfBirth`, `address`, `classId`) and revalidate it |
+| DELETE | `/students/import-batches/:id/rows/:rowId` | Delete a draft/error import row; imported rows are locked |
+| POST | `/students/import-batches/:id/commit` | Create real students from valid rows and return per-run summary counts |
 | PUT | `/students/:id` | Update student info (class change blocked — use transfer) |
 | DELETE | `/students/:id` | Delete student (dependency checks) |
 | POST | `/students/:id/transfer` | Transfer to another class + transfer history record; `reason` is required |

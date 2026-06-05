@@ -22,8 +22,8 @@ const generateStudentCode = async (tenantId, tx) => {
 1. **Draft first:** Frontend sends CSV/XLSX as base64 JSON. Backend parses with ExcelJS/CSV helpers and writes `StudentImportBatch` + `StudentImportRow` records.
 2. **Row validation:** Required columns are `fullName`, `gender`, `dateOfBirth`, and `address`. Gender accepts `Nam`, `Nu`, `Khac`, `MALE`, `FEMALE`, `OTHER`; invalid rows keep `errorMessage`.
 3. **Duplicate checks:** Import rejects rows matching an existing student by `fullName + dateOfBirth` and rows duplicated inside the same file.
-4. **Class assignment:** Valid rows can receive `classId`; the class must belong to the active semester's academic year.
-5. **Commit:** Creates only `VALID` rows with class assignments, rechecks plan student limit and class capacity, creates `ClassEnrollment`, then marks rows as `IMPORTED`.
+4. **Draft correction:** Non-imported rows can be edited or deleted from the batch; each edit revalidates required fields, duplicate checks, and class-year scope.
+5. **Commit:** Creates only `VALID` rows with class assignments, rechecks plan student limit and class capacity, creates `ClassEnrollment`, then marks rows as `IMPORTED`; rows that fail at commit become `INVALID` with an inline error and the response includes per-run summary counts.
 
 ## Score Entry (`POST /scores`, `POST /scores/batch`) â€” score.routes.js
 

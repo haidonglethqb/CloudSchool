@@ -199,6 +199,98 @@ const validateImportRows = async (tenantId, rawRows) => {
   })
 }
 
+const refreshImportBatchStats = async (batchId, tx = prisma) => {
+  const [totalRows, validRows, invalidRows, createdRows] = await Promise.all([
+    tx.studentImportRow.count({ where: { batchId } }),
+    tx.studentImportRow.count({ where: { batchId, status: 'VALID' } }),
+    tx.studentImportRow.count({ where: { batchId, status: 'INVALID' } }),
+    tx.studentImportRow.count({ where: { batchId, status: 'IMPORTED' } })
+  ])
+
+  const status = createdRows > 0
+    ? (invalidRows > 0 || validRows > 0 ? 'COMPLETED_WITH_ERRORS' : 'COMPLETED')
+    : 'DRAFT'
+
+  return tx.studentImportBatch.update({
+    where: { id: batchId },
+    data: { totalRows, validRows, invalidRows, createdRows, status }
+  })
+}
+
+const validateSingleImportRow = async (tenantId, batchId, rowId, input, tx = prisma) => {
+  const settings = await tx.tenantSettings.findUnique({ where: { tenantId } })
+  if (!settings) throw new AppError('Tenant settings not configured', 404, 'SETTINGS_NOT_FOUND')
+
+  const fullName = normalizeText(input.fullName)
+  const gender = normalizeGender(input.gender)
+  const dateOfBirth = parseDateValue(input.dateOfBirth)
+  const address = normalizeText(input.address)
+  const classId = normalizeText(input.classId)
+  const errors = []
+
+  if (!fullName) errors.push('Thiáº¿u tÃªn há»c sinh')
+  if (!gender) errors.push('Giá»›i tÃ­nh khÃ´ng há»£p lá»‡')
+  if (!dateOfBirth) errors.push('NgÃ y sinh khÃ´ng há»£p lá»‡')
+  if (!address) errors.push('Thiáº¿u Ä‘á»‹a chá»‰')
+
+  if (dateOfBirth) {
+    const age = calculateAge(dateOfBirth)
+    if (age < settings.minAge || age > settings.maxAge) {
+      errors.push(`Tuá»•i (${age}) khÃ´ng náº±m trong khoáº£ng ${settings.minAge}-${settings.maxAge}`)
+    }
+  }
+
+  if (fullName && dateOfBirth) {
+    const existingStudent = await tx.student.findFirst({
+      where: {
+        tenantId,
+        fullName: { equals: fullName, mode: 'insensitive' },
+        dateOfBirth
+      },
+      select: { id: true }
+    })
+    if (existingStudent) errors.push('TrÃ¹ng há»c sinh theo tÃªn vÃ  ngÃ y sinh')
+
+    const duplicateRow = await tx.studentImportRow.findFirst({
+      where: {
+        tenantId,
+        batchId,
+        id: { not: rowId },
+        fullName: { equals: fullName, mode: 'insensitive' },
+        dateOfBirth,
+        status: { not: 'IMPORTED' }
+      },
+      select: { id: true }
+    })
+    if (duplicateRow) errors.push('TrÃ¹ng há»c sinh trong file import')
+  }
+
+  if (classId) {
+    const activeSemester = await getActiveSemesterContext(tenantId, tx)
+    const cls = await tx.class.findFirst({ where: { id: classId, tenantId } })
+    if (!cls) {
+      errors.push('Lá»›p khÃ´ng tá»“n táº¡i')
+    } else {
+      const activeYearLabel = activeSemester.academicYear ? academicYearLabel(activeSemester.academicYear) : null
+      const classInActiveYear = cls.academicYearId === activeSemester.academicYearId
+        || (activeYearLabel && cls.academicYear === activeYearLabel)
+      if (!classInActiveYear) {
+        errors.push('Lá»›p nháº­p há»c pháº£i thuá»™c nÄƒm há»c cá»§a há»c ká»³ Ä‘ang hoáº¡t Ä‘á»™ng')
+      }
+    }
+  }
+
+  return {
+    fullName: fullName || null,
+    gender,
+    dateOfBirth,
+    address: address || null,
+    classId: classId || null,
+    status: errors.length > 0 ? 'INVALID' : 'VALID',
+    errorMessage: errors.length > 0 ? errors.join('; ') : null
+  }
+}
+
 const getActiveSemesterContext = async (tenantId, tx = prisma) => {
   const activeSemester = await tx.semester.findFirst({
     where: { tenantId, isActive: true, academicYearId: { not: null } },
@@ -399,40 +491,37 @@ router.get('/import-batches/:id/rows', authenticate, requireFeature('student-adm
   }
 })
 
-// PATCH /students/import-batches/:id/rows/:rowId - Assign class to import row
+// PATCH /students/import-batches/:id/rows/:rowId - Update draft import row
 router.patch('/import-batches/:id/rows/:rowId', authenticate, requireFeature('student-admission'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('student-admission'), async (req, res, next) => {
   try {
-    const { classId } = req.body
-    if (!classId) throw new AppError('classId is required', 400, 'MISSING_PARAMS')
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.studentImportRow.findFirst({
+        where: { id: req.params.rowId, batchId: req.params.id, tenantId: req.tenantId }
+      })
+      if (!row) throw new AppError('Import row not found', 404, 'NOT_FOUND')
+      if (row.status === 'IMPORTED') throw new AppError('Row already imported', 400, 'ROW_IMPORTED')
 
-    const row = await prisma.studentImportRow.findFirst({
-      where: { id: req.params.rowId, batchId: req.params.id, tenantId: req.tenantId }
-    })
-    if (!row) throw new AppError('Import row not found', 404, 'NOT_FOUND')
-    if (row.status === 'IMPORTED') throw new AppError('Row already imported', 400, 'ROW_IMPORTED')
-    if (row.status === 'INVALID' && row.errorMessage && !row.errorMessage.includes('Lớp')) {
-      throw new AppError('Cannot assign class to invalid row', 400, 'INVALID_ROW')
-    }
-
-    const activeSemester = await getActiveSemesterContext(req.tenantId)
-    const cls = await prisma.class.findFirst({ where: { id: classId, tenantId: req.tenantId } })
-    if (!cls) throw new AppError('Class not found', 404, 'CLASS_NOT_FOUND')
-    const activeYearLabel = activeSemester.academicYear ? academicYearLabel(activeSemester.academicYear) : null
-    const classInActiveYear = cls.academicYearId === activeSemester.academicYearId
-      || (activeYearLabel && cls.academicYear === activeYearLabel)
-    if (!classInActiveYear) {
-      throw new AppError('Lớp nhập học phải thuộc năm học của học kỳ đang hoạt động', 400, 'TARGET_CLASS_YEAR_MISMATCH')
-    }
-
-    const updated = await prisma.studentImportRow.update({
-      where: { id: row.id },
-      data: { classId, status: 'VALID', errorMessage: null }
+      const merged = {
+        fullName: Object.prototype.hasOwnProperty.call(req.body, 'fullName') ? req.body.fullName : row.fullName,
+        gender: Object.prototype.hasOwnProperty.call(req.body, 'gender') ? req.body.gender : row.gender,
+        dateOfBirth: Object.prototype.hasOwnProperty.call(req.body, 'dateOfBirth') ? req.body.dateOfBirth : row.dateOfBirth,
+        address: Object.prototype.hasOwnProperty.call(req.body, 'address') ? req.body.address : row.address,
+        classId: Object.prototype.hasOwnProperty.call(req.body, 'classId') ? req.body.classId : row.classId
+      }
+      const data = await validateSingleImportRow(req.tenantId, req.params.id, row.id, merged, tx)
+      const saved = await tx.studentImportRow.update({
+        where: { id: row.id },
+        data
+      })
+      await refreshImportBatchStats(req.params.id, tx)
+      return saved
     })
     res.json({ data: updated })
   } catch (error) {
     next(error)
   }
 })
+
 
 // POST /students/import-batches/:id/commit - Create students from valid assigned rows
 router.post('/import-batches/:id/commit', authenticate, requireFeature('student-admission'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('student-admission'), async (req, res, next) => {
@@ -451,23 +540,26 @@ router.post('/import-batches/:id/commit', authenticate, requireFeature('student-
       getTenantPlanLimits(prisma, req.tenantId)
     ])
 
-    let createdRows = 0
+    let createdThisRun = 0
+    let failedThisRun = 0
     await prisma.$transaction(async (tx) => {
       const activeSemester = await getActiveSemesterContext(req.tenantId, tx)
       for (const row of rows) {
-        if (!row.classId) {
+        const failRow = async (message) => {
+          failedThisRun++
           await tx.studentImportRow.update({
             where: { id: row.id },
-            data: { errorMessage: 'Chưa chọn lớp' }
+            data: { status: 'INVALID', errorMessage: message }
           })
+        }
+
+        if (!row.classId) {
+          await failRow('Chua chon lop')
           continue
         }
 
-        if (limits && usage.students + createdRows + 1 > limits.students) {
-          await tx.studentImportRow.update({
-            where: { id: row.id },
-            data: { errorMessage: `Vượt giới hạn học sinh của gói (${limits.students})` }
-          })
+        if (limits && usage.students + createdThisRun + 1 > limits.students) {
+          await failRow(`Vuot gioi han hoc sinh cua goi (${limits.students})`)
           continue
         }
 
@@ -476,18 +568,19 @@ router.post('/import-batches/:id/commit', authenticate, requireFeature('student-
           include: { _count: { select: { students: true } } }
         })
         if (!cls) {
-          await tx.studentImportRow.update({ where: { id: row.id }, data: { errorMessage: 'Lớp không tồn tại' } })
+          await failRow('Lop khong ton tai')
           continue
         }
+
         const activeYearLabel = activeSemester.academicYear ? academicYearLabel(activeSemester.academicYear) : null
         const classInActiveYear = cls.academicYearId === activeSemester.academicYearId
           || (activeYearLabel && cls.academicYear === activeYearLabel)
         if (!classInActiveYear) {
-          await tx.studentImportRow.update({ where: { id: row.id }, data: { errorMessage: 'Lớp không thuộc năm học hiện tại' } })
+          await failRow('Lop khong thuoc nam hoc hien tai')
           continue
         }
         if (cls._count.students >= cls.capacity) {
-          await tx.studentImportRow.update({ where: { id: row.id }, data: { errorMessage: `Lớp ${cls.name} đã đầy` } })
+          await failRow(`Lop ${cls.name} da day`)
           continue
         }
 
@@ -500,7 +593,7 @@ router.post('/import-batches/:id/commit', authenticate, requireFeature('student-
           select: { id: true }
         })
         if (duplicate) {
-          await tx.studentImportRow.update({ where: { id: row.id }, data: { status: 'INVALID', errorMessage: 'Trùng học sinh theo tên và ngày sinh' } })
+          await failRow('Trung hoc sinh theo ten va ngay sinh')
           continue
         }
 
@@ -530,30 +623,45 @@ router.post('/import-batches/:id/commit', authenticate, requireFeature('student-
           where: { id: row.id },
           data: { status: 'IMPORTED', studentId: student.id, errorMessage: null }
         })
-        createdRows++
+        createdThisRun++
       }
 
-      const [validCount, invalidCount, importedCount] = await Promise.all([
-        tx.studentImportRow.count({ where: { batchId: batch.id, status: 'VALID' } }),
-        tx.studentImportRow.count({ where: { batchId: batch.id, status: 'INVALID' } }),
-        tx.studentImportRow.count({ where: { batchId: batch.id, status: 'IMPORTED' } })
-      ])
-      await tx.studentImportBatch.update({
-        where: { id: batch.id },
-        data: {
-          validRows: validCount,
-          invalidRows: invalidCount,
-          createdRows: importedCount,
-          status: invalidCount > 0 || validCount > 0 ? 'COMPLETED_WITH_ERRORS' : 'COMPLETED'
-        }
-      })
+      await refreshImportBatchStats(batch.id, tx)
     })
 
     const updatedBatch = await prisma.studentImportBatch.findUnique({
       where: { id: batch.id },
       include: { rows: { orderBy: { rowNumber: 'asc' } } }
     })
-    res.json({ data: updatedBatch })
+    const summary = {
+      createdThisRun,
+      failedThisRun,
+      totalImported: updatedBatch?.createdRows || 0,
+      remainingInvalid: updatedBatch?.invalidRows || 0,
+      remainingValid: updatedBatch?.validRows || 0
+    }
+    res.json({ data: updatedBatch, summary })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// DELETE /students/import-batches/:id/rows/:rowId - Remove draft import row
+router.delete('/import-batches/:id/rows/:rowId', authenticate, requireFeature('student-admission'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('student-admission'), async (req, res, next) => {
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const row = await tx.studentImportRow.findFirst({
+        where: { id: req.params.rowId, batchId: req.params.id, tenantId: req.tenantId }
+      })
+      if (!row) throw new AppError('Import row not found', 404, 'NOT_FOUND')
+      if (row.status === 'IMPORTED') throw new AppError('KhÃ´ng thá»ƒ xÃ³a dÃ²ng Ä‘Ã£ táº¡o há»c sinh', 400, 'ROW_IMPORTED')
+
+      await tx.studentImportRow.delete({ where: { id: row.id } })
+      const batch = await refreshImportBatchStats(req.params.id, tx)
+      return { batch }
+    })
+
+    res.json({ data: result })
   } catch (error) {
     next(error)
   }
