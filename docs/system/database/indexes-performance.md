@@ -49,6 +49,9 @@
 | `ActivityLog` | `(tenantId, createdAt)` | Audit trail by time range |
 | `AcademicYear` | `(tenantId)` | All academic years for tenant |
 | `ClassEnrollment` | `(tenantId, classId, semesterId)` | Enrollment roster |
+| `StudentImportBatch` | `(tenantId, createdAt)` | Import history by newest batch |
+| `StudentImportRow` | `(tenantId, batchId)` | Rows inside one import batch |
+| `StudentImportRow` | `(tenantId, status)` | Commit and row status filters |
 
 ## Index Rationale
 

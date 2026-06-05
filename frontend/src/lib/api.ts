@@ -120,6 +120,14 @@ export const studentApi = {
   get: (id: string) => api.get(`/students/${id}`),
   create: (data: { fullName: string; gender: string; dateOfBirth: string; address?: string; phone?: string; email?: string; admissionDate?: string; classId: string; parentName?: string; parentPhone?: string }) =>
     api.post('/students', data),
+  downloadImportTemplate: () => api.get('/students/import-template', { params: { format: 'csv' }, responseType: 'blob' }),
+  listImportBatches: () => api.get('/students/import-batches'),
+  createImportBatch: (data: { fileName: string; fileType: string; contentBase64: string }) =>
+    api.post('/students/import-batches', data),
+  getImportRows: (batchId: string) => api.get(`/students/import-batches/${batchId}/rows`),
+  updateImportRow: (batchId: string, rowId: string, data: { classId: string }) =>
+    api.patch(`/students/import-batches/${batchId}/rows/${rowId}`, data),
+  commitImportBatch: (batchId: string) => api.post(`/students/import-batches/${batchId}/commit`),
   update: (id: string, data: Record<string, unknown>) => api.put(`/students/${id}`, data),
   delete: (id: string) => api.delete(`/students/${id}`),
   transfer: (id: string, data: { classId: string; reason: string }) =>

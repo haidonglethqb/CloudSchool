@@ -39,6 +39,18 @@ enum PromotionResult {
   RETAKE
 }
 
+enum StudentImportBatchStatus {
+  DRAFT
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+}
+
+enum StudentImportRowStatus {
+  VALID
+  INVALID
+  IMPORTED
+}
+
 // ==================== PLATFORM MODELS ====================
 
 model SubscriptionPlan {
@@ -93,6 +105,7 @@ model Tenant {
   transferHistories           TransferHistory[]
   academicYears               AcademicYear[]
   classEnrollments            ClassEnrollment[]
+  studentImportBatches        StudentImportBatch[]
   graduationArchives          GraduationArchive[]
   promotionPlacementHistories PromotionPlacementHistory[]
 
@@ -318,6 +331,48 @@ model ParentStudent {
 
   @@unique([parentId, studentId])
   @@map("parent_students")
+}
+
+model StudentImportBatch {
+  id          String                   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fileName    String
+  importedBy  String?
+  totalRows   Int                      @default(0)
+  validRows   Int                      @default(0)
+  invalidRows Int                      @default(0)
+  createdRows Int                      @default(0)
+  status      StudentImportBatchStatus @default(DRAFT)
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  rows StudentImportRow[]
+
+  @@index([tenantId, createdAt])
+  @@map("student_import_batches")
+}
+
+model StudentImportRow {
+  id          String                 @id @default(uuid())
+  tenantId    String
+  batchId     String
+  batch       StudentImportBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rowNumber   Int
+  fullName    String?
+  gender      Gender?
+  dateOfBirth DateTime?
+  address     String?
+  classId     String?
+  studentId   String?
+  status      StudentImportRowStatus @default(INVALID)
+  errorMessage String?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  @@index([tenantId, batchId])
+  @@index([tenantId, status])
+  @@map("student_import_rows")
 }
 
 // ==================== SCORE MODELS ====================

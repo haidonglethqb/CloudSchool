@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const { body, validationResult } = require('express-validator')
+const ExcelJS = require('exceljs')
 const prisma = require('../lib/prisma')
 const { authenticate, authorize } = require('../middleware/auth')
 const { AppError } = require('../middleware/errorHandler')
@@ -9,12 +10,203 @@ const { getTenantPlanUsage, getTenantPlanLimits } = require('../utils/subscripti
 const { getUserAssignmentScope, ensureClassAccess } = require('../utils/assignment-scope')
 const { academicYearLabel } = require('../utils/academic-scope')
 
+const REQUIRED_IMPORT_HEADERS = ['fullName', 'gender', 'dateOfBirth', 'address']
+const IMPORT_TEMPLATE_HEADERS = REQUIRED_IMPORT_HEADERS.join(',')
+const IMPORT_TEMPLATE_SAMPLE = 'Nguyễn Văn A,Nam,2010-08-15,"88 Võ Văn Tần, Quận 3, TP.HCM"'
+
 // Generate student code
 const generateStudentCode = async (tenantId, tx) => {
   const client = tx || prisma
   const count = await client.student.count({ where: { tenantId } })
   const year = new Date().getFullYear().toString().slice(-2)
   return `HS${year}${String(count + 1).padStart(4, '0')}`
+}
+
+const normalizeText = (value) => String(value || '').trim()
+
+const normalizeHeader = (value) => normalizeText(value).replace(/^\uFEFF/, '')
+
+const normalizeGender = (value) => {
+  const raw = normalizeText(value).toUpperCase()
+  const withoutMarks = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (['MALE', 'NAM'].includes(withoutMarks)) return 'MALE'
+  if (['FEMALE', 'NU'].includes(withoutMarks)) return 'FEMALE'
+  if (['OTHER', 'KHAC'].includes(withoutMarks)) return 'OTHER'
+  return null
+}
+
+const parseDateValue = (value) => {
+  if (!value) return null
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value
+  if (typeof value === 'number') {
+    const parsed = new Date(Math.round((value - 25569) * 86400 * 1000))
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+
+  const text = normalizeText(value)
+  const iso = new Date(text)
+  if (!Number.isNaN(iso.getTime())) return iso
+
+  const match = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/)
+  if (match) {
+    const [, day, month, year] = match
+    const parsed = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T00:00:00.000Z`)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+
+  return null
+}
+
+const toDateKey = (date) => {
+  if (!date) return ''
+  return new Date(date).toISOString().slice(0, 10)
+}
+
+const calculateAge = (dateOfBirth, referenceDate = new Date()) => {
+  const birth = new Date(dateOfBirth)
+  let age = referenceDate.getFullYear() - birth.getFullYear()
+  const monthDelta = referenceDate.getMonth() - birth.getMonth()
+  if (monthDelta < 0 || (monthDelta === 0 && referenceDate.getDate() < birth.getDate())) age--
+  return age
+}
+
+const getCellText = (cellValue) => {
+  if (cellValue === null || cellValue === undefined) return ''
+  if (cellValue instanceof Date) return cellValue
+  if (typeof cellValue === 'object') {
+    if (cellValue.text) return cellValue.text
+    if (cellValue.result) return cellValue.result
+    if (Array.isArray(cellValue.richText)) return cellValue.richText.map((item) => item.text || '').join('')
+  }
+  return cellValue
+}
+
+const parseCsvLine = (line) => {
+  const cells = []
+  let current = ''
+  let inQuotes = false
+  for (let index = 0; index < line.length; index++) {
+    const char = line[index]
+    const next = line[index + 1]
+    if (char === '"' && inQuotes && next === '"') {
+      current += '"'
+      index++
+    } else if (char === '"') {
+      inQuotes = !inQuotes
+    } else if (char === ',' && !inQuotes) {
+      cells.push(current)
+      current = ''
+    } else {
+      current += char
+    }
+  }
+  cells.push(current)
+  return cells
+}
+
+const parseCsvRows = (buffer) => {
+  const content = buffer.toString('utf8').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const lines = content.split('\n').filter((line) => line.trim())
+  if (lines.length === 0) return []
+  const headers = parseCsvLine(lines[0]).map(normalizeHeader)
+  return lines.slice(1).map((line, index) => {
+    const cells = parseCsvLine(line)
+    const row = { rowNumber: index + 2 }
+    headers.forEach((header, cellIndex) => {
+      row[header] = normalizeText(cells[cellIndex])
+    })
+    return row
+  })
+}
+
+const parseXlsxRows = async (buffer) => {
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+  const sheet = workbook.worksheets[0]
+  if (!sheet) return []
+  const headers = []
+  sheet.getRow(1).eachCell((cell, colNumber) => {
+    headers[colNumber] = normalizeHeader(getCellText(cell.value))
+  })
+  const rows = []
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return
+    const parsed = { rowNumber }
+    let hasValue = false
+    headers.forEach((header, colNumber) => {
+      if (!header) return
+      const value = getCellText(row.getCell(colNumber).value)
+      parsed[header] = value
+      if (normalizeText(value)) hasValue = true
+    })
+    if (hasValue) rows.push(parsed)
+  })
+  return rows
+}
+
+const validateImportRows = async (tenantId, rawRows) => {
+  const settings = await prisma.tenantSettings.findUnique({ where: { tenantId } })
+  if (!settings) throw new AppError('Tenant settings not configured', 404, 'SETTINGS_NOT_FOUND')
+
+  const existingStudents = await prisma.student.findMany({
+    where: { tenantId },
+    select: { fullName: true, dateOfBirth: true }
+  })
+  const duplicateSet = new Set(existingStudents.map((student) => `${normalizeText(student.fullName).toLowerCase()}::${toDateKey(student.dateOfBirth)}`))
+  const seenInFile = new Set()
+
+  return rawRows.map((row) => {
+    const fullName = normalizeText(row.fullName)
+    const gender = normalizeGender(row.gender)
+    const dateOfBirth = parseDateValue(row.dateOfBirth)
+    const address = normalizeText(row.address)
+    const errors = []
+
+    if (!fullName) errors.push('Thiếu tên học sinh')
+    if (!gender) errors.push('Giới tính không hợp lệ')
+    if (!dateOfBirth) errors.push('Ngày sinh không hợp lệ')
+    if (!address) errors.push('Thiếu địa chỉ')
+
+    if (dateOfBirth) {
+      const age = calculateAge(dateOfBirth)
+      if (age < settings.minAge || age > settings.maxAge) {
+        errors.push(`Tuổi (${age}) không nằm trong khoảng ${settings.minAge}-${settings.maxAge}`)
+      }
+    }
+
+    if (fullName && dateOfBirth) {
+      const duplicateKey = `${fullName.toLowerCase()}::${toDateKey(dateOfBirth)}`
+      if (seenInFile.has(duplicateKey)) {
+        errors.push('Trung hoc sinh trong file import')
+      }
+      seenInFile.add(duplicateKey)
+    }
+
+    if (fullName && dateOfBirth && duplicateSet.has(`${fullName.toLowerCase()}::${toDateKey(dateOfBirth)}`)) {
+      errors.push('Trùng học sinh theo tên và ngày sinh')
+    }
+
+    return {
+      tenantId,
+      rowNumber: row.rowNumber,
+      fullName: fullName || null,
+      gender,
+      dateOfBirth,
+      address: address || null,
+      status: errors.length > 0 ? 'INVALID' : 'VALID',
+      errorMessage: errors.length > 0 ? errors.join('; ') : null
+    }
+  })
+}
+
+const getActiveSemesterContext = async (tenantId, tx = prisma) => {
+  const activeSemester = await tx.semester.findFirst({
+    where: { tenantId, isActive: true, academicYearId: { not: null } },
+    include: { academicYear: true },
+    orderBy: [{ updatedAt: 'desc' }, { semesterNum: 'asc' }]
+  })
+  if (!activeSemester) throw new AppError('No active semester found', 400, 'NO_ACTIVE_SEMESTER')
+  return activeSemester
 }
 
 // GET /students
@@ -102,6 +294,266 @@ router.get('/transfers/history', authenticate, requireFeature('class-transfer'),
         transferredByUser: userMap.get(item.transferredBy) || null
       }))
     })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /students/import-template - Download CSV import template
+router.get('/import-template', authenticate, requireFeature('student-admission'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('student-admission'), async (req, res, next) => {
+  try {
+    const format = String(req.query.format || 'csv').toLowerCase()
+    if (format !== 'csv') throw new AppError('Only CSV template is supported', 400, 'UNSUPPORTED_FORMAT')
+
+    const content = `\uFEFF${IMPORT_TEMPLATE_HEADERS}\n${IMPORT_TEMPLATE_SAMPLE}\n`
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', 'attachment; filename="student-import-template.csv"')
+    res.send(content)
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /students/import-batches - Import history
+router.get('/import-batches', authenticate, requireFeature('student-admission'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('student-admission'), async (req, res, next) => {
+  try {
+    const batches = await prisma.studentImportBatch.findMany({
+      where: { tenantId: req.tenantId },
+      orderBy: { createdAt: 'desc' },
+      take: 20
+    })
+    res.json({ data: batches })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /students/import-batches - Parse CSV/XLSX into draft rows
+router.post('/import-batches', authenticate, requireFeature('student-admission'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('student-admission'), async (req, res, next) => {
+  try {
+    const { fileName, fileType, contentBase64 } = req.body
+    if (!fileName || !fileType || !contentBase64) {
+      throw new AppError('fileName, fileType and contentBase64 are required', 400, 'MISSING_PARAMS')
+    }
+
+    const normalizedType = String(fileType).toLowerCase()
+    const buffer = Buffer.from(String(contentBase64), 'base64')
+    const rawRows = normalizedType.includes('sheet') || String(fileName).toLowerCase().endsWith('.xlsx')
+      ? await parseXlsxRows(buffer)
+      : parseCsvRows(buffer)
+
+    const rows = await validateImportRows(req.tenantId, rawRows)
+    const validRows = rows.filter((row) => row.status === 'VALID').length
+    const invalidRows = rows.length - validRows
+
+    const batch = await prisma.$transaction(async (tx) => {
+      const createdBatch = await tx.studentImportBatch.create({
+        data: {
+          tenantId: req.tenantId,
+          fileName: String(fileName),
+          importedBy: req.user?.fullName || req.user?.email || req.user?.id || null,
+          totalRows: rows.length,
+          validRows,
+          invalidRows,
+          createdRows: 0,
+          status: 'DRAFT'
+        }
+      })
+
+      if (rows.length > 0) {
+        await tx.studentImportRow.createMany({
+          data: rows.map((row) => ({
+            ...row,
+            batchId: createdBatch.id
+          }))
+        })
+      }
+
+      return tx.studentImportBatch.findUnique({
+        where: { id: createdBatch.id },
+        include: { rows: { orderBy: { rowNumber: 'asc' } } }
+      })
+    })
+
+    res.status(201).json({ data: batch })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /students/import-batches/:id/rows - Draft rows for assignment
+router.get('/import-batches/:id/rows', authenticate, requireFeature('student-admission'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('student-admission'), async (req, res, next) => {
+  try {
+    const batch = await prisma.studentImportBatch.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!batch) throw new AppError('Import batch not found', 404, 'NOT_FOUND')
+
+    const rows = await prisma.studentImportRow.findMany({
+      where: { batchId: batch.id, tenantId: req.tenantId },
+      orderBy: { rowNumber: 'asc' }
+    })
+    res.json({ data: rows })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// PATCH /students/import-batches/:id/rows/:rowId - Assign class to import row
+router.patch('/import-batches/:id/rows/:rowId', authenticate, requireFeature('student-admission'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('student-admission'), async (req, res, next) => {
+  try {
+    const { classId } = req.body
+    if (!classId) throw new AppError('classId is required', 400, 'MISSING_PARAMS')
+
+    const row = await prisma.studentImportRow.findFirst({
+      where: { id: req.params.rowId, batchId: req.params.id, tenantId: req.tenantId }
+    })
+    if (!row) throw new AppError('Import row not found', 404, 'NOT_FOUND')
+    if (row.status === 'IMPORTED') throw new AppError('Row already imported', 400, 'ROW_IMPORTED')
+    if (row.status === 'INVALID' && row.errorMessage && !row.errorMessage.includes('Lớp')) {
+      throw new AppError('Cannot assign class to invalid row', 400, 'INVALID_ROW')
+    }
+
+    const activeSemester = await getActiveSemesterContext(req.tenantId)
+    const cls = await prisma.class.findFirst({ where: { id: classId, tenantId: req.tenantId } })
+    if (!cls) throw new AppError('Class not found', 404, 'CLASS_NOT_FOUND')
+    const activeYearLabel = activeSemester.academicYear ? academicYearLabel(activeSemester.academicYear) : null
+    const classInActiveYear = cls.academicYearId === activeSemester.academicYearId
+      || (activeYearLabel && cls.academicYear === activeYearLabel)
+    if (!classInActiveYear) {
+      throw new AppError('Lớp nhập học phải thuộc năm học của học kỳ đang hoạt động', 400, 'TARGET_CLASS_YEAR_MISMATCH')
+    }
+
+    const updated = await prisma.studentImportRow.update({
+      where: { id: row.id },
+      data: { classId, status: 'VALID', errorMessage: null }
+    })
+    res.json({ data: updated })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /students/import-batches/:id/commit - Create students from valid assigned rows
+router.post('/import-batches/:id/commit', authenticate, requireFeature('student-admission'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('student-admission'), async (req, res, next) => {
+  try {
+    const batch = await prisma.studentImportBatch.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!batch) throw new AppError('Import batch not found', 404, 'NOT_FOUND')
+
+    const rows = await prisma.studentImportRow.findMany({
+      where: { batchId: batch.id, tenantId: req.tenantId, status: 'VALID' },
+      orderBy: { rowNumber: 'asc' }
+    })
+    const [usage, limits] = await Promise.all([
+      getTenantPlanUsage(prisma, req.tenantId),
+      getTenantPlanLimits(prisma, req.tenantId)
+    ])
+
+    let createdRows = 0
+    await prisma.$transaction(async (tx) => {
+      const activeSemester = await getActiveSemesterContext(req.tenantId, tx)
+      for (const row of rows) {
+        if (!row.classId) {
+          await tx.studentImportRow.update({
+            where: { id: row.id },
+            data: { errorMessage: 'Chưa chọn lớp' }
+          })
+          continue
+        }
+
+        if (limits && usage.students + createdRows + 1 > limits.students) {
+          await tx.studentImportRow.update({
+            where: { id: row.id },
+            data: { errorMessage: `Vượt giới hạn học sinh của gói (${limits.students})` }
+          })
+          continue
+        }
+
+        const cls = await tx.class.findFirst({
+          where: { id: row.classId, tenantId: req.tenantId },
+          include: { _count: { select: { students: true } } }
+        })
+        if (!cls) {
+          await tx.studentImportRow.update({ where: { id: row.id }, data: { errorMessage: 'Lớp không tồn tại' } })
+          continue
+        }
+        const activeYearLabel = activeSemester.academicYear ? academicYearLabel(activeSemester.academicYear) : null
+        const classInActiveYear = cls.academicYearId === activeSemester.academicYearId
+          || (activeYearLabel && cls.academicYear === activeYearLabel)
+        if (!classInActiveYear) {
+          await tx.studentImportRow.update({ where: { id: row.id }, data: { errorMessage: 'Lớp không thuộc năm học hiện tại' } })
+          continue
+        }
+        if (cls._count.students >= cls.capacity) {
+          await tx.studentImportRow.update({ where: { id: row.id }, data: { errorMessage: `Lớp ${cls.name} đã đầy` } })
+          continue
+        }
+
+        const duplicate = await tx.student.findFirst({
+          where: {
+            tenantId: req.tenantId,
+            fullName: { equals: row.fullName || '', mode: 'insensitive' },
+            dateOfBirth: row.dateOfBirth
+          },
+          select: { id: true }
+        })
+        if (duplicate) {
+          await tx.studentImportRow.update({ where: { id: row.id }, data: { status: 'INVALID', errorMessage: 'Trùng học sinh theo tên và ngày sinh' } })
+          continue
+        }
+
+        const studentCode = await generateStudentCode(req.tenantId, tx)
+        const student = await tx.student.create({
+          data: {
+            tenantId: req.tenantId,
+            studentCode,
+            fullName: row.fullName || '',
+            gender: row.gender,
+            dateOfBirth: row.dateOfBirth,
+            address: row.address,
+            admissionDate: new Date(),
+            classId: row.classId
+          }
+        })
+        await tx.classEnrollment.create({
+          data: {
+            tenantId: req.tenantId,
+            studentId: student.id,
+            classId: row.classId,
+            semesterId: activeSemester.id,
+            academicYearId: activeSemester.academicYearId
+          }
+        })
+        await tx.studentImportRow.update({
+          where: { id: row.id },
+          data: { status: 'IMPORTED', studentId: student.id, errorMessage: null }
+        })
+        createdRows++
+      }
+
+      const [validCount, invalidCount, importedCount] = await Promise.all([
+        tx.studentImportRow.count({ where: { batchId: batch.id, status: 'VALID' } }),
+        tx.studentImportRow.count({ where: { batchId: batch.id, status: 'INVALID' } }),
+        tx.studentImportRow.count({ where: { batchId: batch.id, status: 'IMPORTED' } })
+      ])
+      await tx.studentImportBatch.update({
+        where: { id: batch.id },
+        data: {
+          validRows: validCount,
+          invalidRows: invalidCount,
+          createdRows: importedCount,
+          status: invalidCount > 0 || validCount > 0 ? 'COMPLETED_WITH_ERRORS' : 'COMPLETED'
+        }
+      })
+    })
+
+    const updatedBatch = await prisma.studentImportBatch.findUnique({
+      where: { id: batch.id },
+      include: { rows: { orderBy: { rowNumber: 'asc' } } }
+    })
+    res.json({ data: updatedBatch })
   } catch (error) {
     next(error)
   }

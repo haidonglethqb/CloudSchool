@@ -59,6 +59,12 @@
 | GET | `/students` | List students (paginated, search, classId, status) |
 | GET | `/students/:id` | Student detail + scores + semester class enrollments |
 | POST | `/students` | Create student (age validation, class capacity check, plan student limit, code generation) |
+| GET | `/students/import-template?format=csv` | Download CSV template for quick student admission |
+| GET | `/students/import-batches` | List recent CSV/XLSX import batches for the tenant |
+| POST | `/students/import-batches` | Parse CSV/XLSX base64 payload into draft import rows; invalid rows are stored with error messages |
+| GET | `/students/import-batches/:id/rows` | Read draft import rows for class assignment and inline error display |
+| PATCH | `/students/import-batches/:id/rows/:rowId` | Assign a class to one valid import row |
+| POST | `/students/import-batches/:id/commit` | Create real students from valid rows that have class assignments |
 | PUT | `/students/:id` | Update student info (class change blocked — use transfer) |
 | DELETE | `/students/:id` | Delete student (dependency checks) |
 | POST | `/students/:id/transfer` | Transfer to another class + transfer history record; `reason` is required |

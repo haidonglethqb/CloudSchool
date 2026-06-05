@@ -22,6 +22,7 @@ erDiagram
     Tenant ||--o{ TransferHistory : "has"
     Tenant ||--o{ AcademicYear : "has"
     Tenant ||--o{ ClassEnrollment : "has"
+    Tenant ||--o{ StudentImportBatch : "has"
     User ||--o{ ParentStudent : "is parent of"
     User ||--o{ TeacherAssignment : "teaches"
     User ||--o| Student : "linked profile"
@@ -30,6 +31,7 @@ erDiagram
     Student ||--o{ Promotion : "receives"
     Student ||--o{ TransferHistory : "has history"
     Student ||--o{ ClassEnrollment : "enrolls in"
+    StudentImportBatch ||--o{ StudentImportRow : "contains"
     Grade ||--o{ Class : "contains"
     Class ||--o{ Student : "enrolls"
     Class ||--o{ TeacherAssignment : "has assignments"
@@ -49,7 +51,7 @@ erDiagram
     ParentStudent }o--|| Student : "links"
 ```
 
-## Models Summary (21 Models)
+## Models Summary (23 Models)
 
 | Category | Model | Description |
 |---|---|---|
@@ -59,6 +61,8 @@ erDiagram
 | **Users** | `User` | Authentication & role management |
 | **Users** | `Student` | Student profiles & demographics |
 | **Users** | `ParentStudent` | Parent-student relationships |
+| **Users** | `StudentImportBatch` | CSV/XLSX admission import summary |
+| **Users** | `StudentImportRow` | Parsed import row, status, class assignment, and row error |
 | **Academic** | `Grade` | Grade levels (10, 11, 12) |
 | **Academic** | `Class` | Class groups within grades |
 | **Academic** | `Subject` | Academic subjects |
@@ -72,7 +76,7 @@ erDiagram
 | **Tracking** | `ActivityLog` | Audit trail for all actions |
 | **Tracking** | `TransferHistory` | Student class change records |
 
-## Enums (7)
+## Enums (9)
 
 | Enum | Values |
 |---|---|
@@ -80,6 +84,8 @@ erDiagram
 | `Gender` | `MALE`, `FEMALE`, `OTHER` |
 | `TenantStatus` | `ACTIVE`, `SUSPENDED`, `INACTIVE` |
 | `PromotionResult` | `PASS`, `FAIL`, `RETAKE` |
+| `StudentImportBatchStatus` | `DRAFT`, `COMPLETED`, `COMPLETED_WITH_ERRORS` |
+| `StudentImportRowStatus` | `VALID`, `INVALID`, `IMPORTED` |
 
 ## Key Constraints
 
