@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -18,6 +18,8 @@ import {
   Trash2,
   History,
   RotateCcw,
+  AlertTriangle,
+  X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -72,6 +74,8 @@ export default function ClassDetailPage() {
   const [loadError, setLoadError] = useState('')
   const [deletionLogs, setDeletionLogs] = useState<StudentDeletionLog[]>([])
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ClassDetail['students'][number] | null>(null)
+  const [terminateTarget, setTerminateTarget] = useState<StudentDeletionLog | null>(null)
   const [formData, setFormData] = useState({
     name: '',
   })
@@ -132,12 +136,13 @@ export default function ClassDetailPage() {
     }
   }
 
-  const handleDeleteStudent = async (studentId: string) => {
-    if (!confirm('Xóa học sinh khỏi lớp và lưu lịch sử để có thể hoàn tác?')) return
+  const handleDeleteStudent = async () => {
+    if (!deleteTarget) return
     try {
-      setActionLoading(`delete-${studentId}`)
-      await classApi.deleteStudent(studentId)
+      setActionLoading(`delete-${deleteTarget.id}`)
+      await classApi.deleteStudent(deleteTarget.id)
       toast.success('Đã xóa học sinh và lưu lịch sử')
+      setDeleteTarget(null)
       await fetchClassData()
     } catch (error: any) {
       toast.error(error.response?.data?.error?.message || 'Xóa học sinh thất bại')
@@ -145,7 +150,6 @@ export default function ClassDetailPage() {
       setActionLoading(null)
     }
   }
-
   const handleRevertDeletion = async (logId: string) => {
     try {
       setActionLoading(`revert-${logId}`)
@@ -159,12 +163,13 @@ export default function ClassDetailPage() {
     }
   }
 
-  const handleTerminateDeletion = async (logId: string) => {
-    if (!confirm('Xóa vĩnh viễn học sinh này? Thao tác này không thể hoàn tác.')) return
+  const handleTerminateDeletion = async () => {
+    if (!terminateTarget) return
     try {
-      setActionLoading(`terminate-${logId}`)
-      await classApi.terminateStudentDeletion(id as string, logId)
+      setActionLoading(`terminate-${terminateTarget.id}`)
+      await classApi.terminateStudentDeletion(id as string, terminateTarget.id)
       toast.success('Đã xóa vĩnh viễn học sinh')
+      setTerminateTarget(null)
       await fetchClassData()
     } catch (error: any) {
       toast.error(error.response?.data?.error?.message || 'Không thể xóa vĩnh viễn')
@@ -172,7 +177,6 @@ export default function ClassDetailPage() {
       setActionLoading(null)
     }
   }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
@@ -365,7 +369,7 @@ export default function ClassDetailPage() {
                         {!isTeacher ? (
                           <button
                             type="button"
-                            onClick={() => handleDeleteStudent(student.id)}
+                            onClick={() => setDeleteTarget(student)}
                             disabled={actionLoading === `delete-${student.id}`}
                             className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
                             title="Xóa và lưu lịch sử"
@@ -449,7 +453,7 @@ export default function ClassDetailPage() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleTerminateDeletion(log.id)}
+                                onClick={() => setTerminateTarget(log)}
                                 disabled={actionLoading === `terminate-${log.id}`}
                                 className="btn-outline px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
                               >
@@ -468,6 +472,73 @@ export default function ClassDetailPage() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/45 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-lg bg-white shadow-2xl ring-1 ring-gray-900/10">
+            <div className="flex items-start gap-4 border-b border-amber-100 bg-amber-50 px-5 py-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base font-semibold text-gray-900">Xóa tạm học sinh?</h3>
+                <p className="mt-1 text-sm text-gray-600">Học sinh sẽ được ẩn khỏi lớp, nhưng vẫn lưu lịch sử để hoàn tác.</p>
+              </div>
+              <button type="button" onClick={() => setDeleteTarget(null)} className="rounded-lg p-1 text-gray-400 hover:bg-white hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-5 py-4">
+              <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                <p className="font-medium text-gray-900">{deleteTarget.fullName}</p>
+                <p className="mt-1 text-sm text-gray-500">{deleteTarget.studentCode} - {getGenderLabel(deleteTarget.gender)} - {formatDate(deleteTarget.dateOfBirth)}</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-gray-100 px-5 py-4">
+              <button type="button" onClick={() => setDeleteTarget(null)} className="btn-outline">H?y</button>
+              <button type="button" onClick={handleDeleteStudent} disabled={actionLoading === `delete-${deleteTarget.id}`} className="inline-flex items-center rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">
+                {actionLoading === `delete-${deleteTarget.id}` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                X�a t?m
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {terminateTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/55 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-lg bg-white shadow-2xl ring-1 ring-red-900/10">
+            <div className="flex items-start gap-4 border-b border-red-100 bg-red-50 px-5 py-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-700">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base font-semibold text-gray-900">Xóa vĩnh viễn học sinh?</h3>
+                <p className="mt-1 text-sm text-gray-600">Thao tác này sẽ xóa thật record học sinh và không thể hoàn tác.</p>
+              </div>
+              <button type="button" onClick={() => setTerminateTarget(null)} className="rounded-lg p-1 text-gray-400 hover:bg-white hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-3 px-5 py-4">
+              <div className="rounded-lg border border-red-200 bg-red-50/60 px-4 py-3">
+                <p className="font-medium text-gray-900">{terminateTarget.fullName}</p>
+                <p className="mt-1 text-sm text-gray-600">{terminateTarget.studentCode} - đã xóa bởi {terminateTarget.deletedByName || 'không rõ'}</p>
+              </div>
+              <div className="rounded-lg border border-red-200 px-4 py-3 text-sm text-red-700">
+                Sau khi x�a th?t, kh�ng th? kh�i ph?c t? l?ch s? thay d?i.
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-gray-100 px-5 py-4">
+              <button type="button" onClick={() => setTerminateTarget(null)} className="btn-outline">H?y</button>
+              <button type="button" onClick={handleTerminateDeletion} disabled={actionLoading === `terminate-${terminateTarget.id}`} className="inline-flex items-center rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                {actionLoading === `terminate-${terminateTarget.id}` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                X�a vinh vi?n
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
