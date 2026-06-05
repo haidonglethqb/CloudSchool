@@ -113,10 +113,21 @@ FROM "subjects" s
 JOIN "semesters" sem ON sem."tenantId" = s."tenantId"
 ON CONFLICT ("tenantId", "subjectId", "semesterId") DO NOTHING;
 
+-- Drop the legacy subject-level uniqueness before duplicating components per semester.
+-- Otherwise the same component name for the same subject cannot be copied into
+-- multiple subject+semester sets.
+DROP INDEX IF EXISTS "score_components_tenantId_subjectId_name_key";
+
 -- Duplicate legacy subject-level components into each subject+semester set.
 WITH legacy_components AS (
   SELECT
-    sc.*,
+    sc."id" AS "legacyComponentId",
+    sc."tenantId",
+    sc."subjectId",
+    sc."name",
+    sc."weight",
+    sc."isActive",
+    sc."createdAt",
     sem."id" AS "targetSemesterId",
     scs."id" AS "targetSetId",
     ROW_NUMBER() OVER (
@@ -135,7 +146,7 @@ INSERT INTO "score_components" (
   "id", "tenantId", "subjectId", "scoreComponentSetId", "name", "weight", "displayOrder", "isActive", "createdAt", "updatedAt"
 )
 SELECT
-  'scc_' || md5("id" || ':' || "targetSemesterId"),
+  'scc_' || md5("legacyComponentId" || ':' || "targetSemesterId"),
   "tenantId",
   "subjectId",
   "targetSetId",
@@ -180,7 +191,6 @@ SET "displayOrder" = ordered.rn
 FROM ordered
 WHERE sc."id" = ordered."id";
 
-DROP INDEX IF EXISTS "score_components_tenantId_subjectId_name_key";
 CREATE UNIQUE INDEX "score_components_scoreComponentSetId_displayOrder_key"
   ON "score_components"("scoreComponentSetId", "displayOrder");
 CREATE INDEX "score_components_tenantId_subjectId_idx"
