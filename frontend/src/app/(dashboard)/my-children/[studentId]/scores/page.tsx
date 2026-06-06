@@ -114,6 +114,12 @@ export default function ChildScoresPage() {
   const componentNames = Array.from(new Set(subjects.flatMap(item => item.scores.map(score => score.componentName))))
   const scoreColumnCount = Math.max(componentNames.length, 1)
   const tableMinWidth = 520 + scoreColumnCount * 112
+  const subjectAverages = subjects
+    .map(item => item.average)
+    .filter((value): value is number => typeof value === 'number' && !Number.isNaN(value))
+  const overallAverage = subjectAverages.length > 0
+    ? subjectAverages.reduce((sum, value) => sum + value, 0) / subjectAverages.length
+    : null
 
   return (
     <div className="space-y-6">
@@ -227,7 +233,13 @@ export default function ChildScoresPage() {
       </div>
 
       {subjects.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
+          <div className="card p-4">
+            <h3 className="text-sm font-medium text-gray-500 mb-2">TB chung</h3>
+            <p className="text-2xl font-bold text-primary tabular-nums">
+              {overallAverage !== null ? overallAverage.toFixed(2) : '-'}
+            </p>
+          </div>
           <div className="card p-4">
             <h3 className="text-sm font-medium text-gray-500 mb-2">Tổng số môn</h3>
             <p className="text-2xl font-bold text-gray-900">{subjects.length}</p>
