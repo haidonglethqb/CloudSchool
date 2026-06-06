@@ -258,9 +258,9 @@ export default function ClassTransferPage() {
         {students.length === 0 ? (
           <div className="p-6 text-sm text-gray-500">Không tìm thấy học sinh phù hợp</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
+          <div className="max-h-[420px] overflow-auto">
+            <table className="w-full min-w-[760px]">
+              <thead className="sticky top-0 z-10 bg-white">
                 <tr className="border-b border-gray-100">
                   <th className="table-header">Học sinh</th>
                   <th className="table-header">Lớp hiện tại</th>

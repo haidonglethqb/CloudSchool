@@ -346,7 +346,7 @@ export default function NewStudentPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-[1440px] space-y-6">
       <div className="flex items-center gap-4">
         <Link href="/students" className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
           <ArrowLeft className="w-5 h-5" />
@@ -357,7 +357,7 @@ export default function NewStudentPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 2xl:grid-cols-[minmax(420px,0.85fr)_minmax(0,1.6fr)] gap-6">
         <section className="card p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-5">Nhập một học sinh</h2>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
@@ -445,7 +445,7 @@ export default function NewStudentPage() {
           </form>
         </section>
 
-        <section className="card p-6 space-y-5">
+        <section className="card p-6 space-y-5 min-w-0">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Nhập nhanh CSV/Excel</h2>
@@ -485,7 +485,7 @@ export default function NewStudentPage() {
           )}
 
           <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="w-full min-w-[1040px]">
+            <table className="w-full min-w-[920px]">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
                   <th className="table-header">Dòng</th>
@@ -510,10 +510,10 @@ export default function NewStudentPage() {
                     <td className="table-cell font-medium">{row.fullName || '-'}</td>
                     <td className="table-cell">{getGenderLabel(row.gender)}</td>
                     <td className="table-cell">{formatDate(row.dateOfBirth)}</td>
-                    <td className="table-cell">{row.address || '-'}</td>
+                    <td className="table-cell max-w-[260px] whitespace-normal">{row.address || '-'}</td>
                     <td className="table-cell">
                       <select
-                        className="input min-w-[180px] py-1.5 text-sm"
+                        className="input min-w-[150px] py-1.5 text-sm"
                         value={row.classId || ''}
                         disabled={row.status === 'IMPORTED'}
                         onChange={(event) => handleAssignImportRow(row.id, event.target.value)}
