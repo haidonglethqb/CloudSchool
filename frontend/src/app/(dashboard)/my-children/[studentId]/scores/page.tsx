@@ -111,6 +111,10 @@ export default function ChildScoresPage() {
     return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
   }
 
+  const componentNames = Array.from(new Set(subjects.flatMap(item => item.scores.map(score => score.componentName))))
+  const scoreColumnCount = Math.max(componentNames.length, 1)
+  const tableMinWidth = 520 + scoreColumnCount * 112
+
   return (
     <div className="space-y-6">
       <div className="flex items-start gap-4">
@@ -137,12 +141,29 @@ export default function ChildScoresPage() {
 
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full table-fixed" style={{ minWidth: `${tableMinWidth}px` }}>
+            <colgroup>
+              <col className="w-[180px]" />
+              <col className="w-[180px]" />
+              {componentNames.length > 0 ? (
+                componentNames.map(name => <col key={name} className="w-28" />)
+              ) : (
+                <col className="w-28" />
+              )}
+              <col className="w-24" />
+              <col className="w-32" />
+            </colgroup>
             <thead>
               <tr className="border-b border-gray-100">
                 <th className="table-header">Học kỳ</th>
                 <th className="table-header">Môn học</th>
-                <th className="table-header text-center">Các cột điểm</th>
+                {componentNames.length > 0 ? (
+                  componentNames.map(name => (
+                    <th key={name} className="table-header text-center whitespace-normal">{name}</th>
+                  ))
+                ) : (
+                  <th className="table-header text-center">Điểm</th>
+                )}
                 <th className="table-header text-center">TB Môn</th>
                 <th className="table-header text-center">Kết quả</th>
               </tr>
@@ -150,48 +171,55 @@ export default function ChildScoresPage() {
             <tbody className="divide-y divide-gray-100">
               {subjects.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-gray-500">
+                  <td colSpan={4 + scoreColumnCount} className="px-4 py-12 text-center text-gray-500">
                     <BookOpen className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                     <p>Chưa có dữ liệu điểm</p>
                   </td>
                 </tr>
               ) : (
-                subjects.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50">
-                    <td className="table-cell">{getSemesterLabel(item.semester)}</td>
-                    <td className="table-cell font-medium">{item.subject.name}</td>
-                    <td className="table-cell">
-                      <div className="flex flex-wrap gap-2 justify-center">
-                        {item.scores.map((s, i) => (
-                          <div key={i} className="text-center">
-                            <div className="text-xs text-gray-400">{s.componentName}</div>
-                            <div className="text-sm font-medium">{s.value !== null ? s.value : '-'}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="table-cell text-center">
-                      {item.average !== null ? (
-                        <span className={`font-bold text-lg ${item.isPassing ? 'text-green-600' : 'text-red-600'}`}>
-                          {typeof item.average === 'number' ? item.average.toFixed(2) : item.average}
-                        </span>
-                      ) : <span className="text-gray-400">-</span>}
-                    </td>
-                    <td className="table-cell text-center">
-                      {item.isPassing !== null ? (
-                        item.isPassing ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                            <CheckCircle className="w-3 h-3" /> Đạt
+                subjects.map((item, idx) => {
+                  const scoreMap = new Map(item.scores.map(score => [score.componentName, score.value]))
+
+                  return (
+                    <tr key={idx} className="hover:bg-gray-50">
+                      <td className="table-cell">{getSemesterLabel(item.semester)}</td>
+                      <td className="table-cell font-medium">{item.subject.name}</td>
+                      {componentNames.length > 0 ? (
+                        componentNames.map(name => {
+                          const value = scoreMap.get(name)
+
+                          return (
+                            <td key={name} className="table-cell text-center tabular-nums">
+                              <span className="font-medium">{value !== null && value !== undefined ? value : '-'}</span>
+                            </td>
+                          )
+                        })
+                      ) : (
+                        <td className="table-cell text-center text-gray-400">-</td>
+                      )}
+                      <td className="table-cell text-center tabular-nums">
+                        {item.average !== null ? (
+                          <span className={`font-bold text-lg ${item.isPassing ? 'text-green-600' : 'text-red-600'}`}>
+                            {typeof item.average === 'number' ? item.average.toFixed(2) : item.average}
                           </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                            <XCircle className="w-3 h-3" /> Chưa đạt
-                          </span>
-                        )
-                      ) : <span className="text-gray-400 text-xs">Chưa đủ điểm</span>}
-                    </td>
-                  </tr>
-                ))
+                        ) : <span className="text-gray-400">-</span>}
+                      </td>
+                      <td className="table-cell text-center">
+                        {item.isPassing !== null ? (
+                          item.isPassing ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                              <CheckCircle className="w-3 h-3" /> Đạt
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                              <XCircle className="w-3 h-3" /> Chưa đạt
+                            </span>
+                          )
+                        ) : <span className="text-gray-400 text-xs">Chưa đủ điểm</span>}
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
