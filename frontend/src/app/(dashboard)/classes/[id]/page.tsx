@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { classApi, exportApi, downloadBlob } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
@@ -65,6 +65,8 @@ interface StudentDeletionLog {
 export default function ClassDetailPage() {
   const { id } = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const academicYearId = searchParams.get('academicYearId') || undefined
   const user = useAuthStore((state) => state.user)
   const isTeacher = user?.role === 'TEACHER'
   const [classData, setClassData] = useState<ClassDetail | null>(null)
@@ -83,7 +85,7 @@ export default function ClassDetailPage() {
   const fetchClassData = async () => {
     try {
       const [classRes, logsRes] = await Promise.all([
-        classApi.get(id as string),
+        classApi.get(id as string, { academicYearId }),
         isTeacher ? Promise.resolve({ data: { data: [] } }) : classApi.getStudentDeletions(id as string),
       ])
       const data = classRes.data.data
@@ -112,7 +114,7 @@ export default function ClassDetailPage() {
 
   useEffect(() => {
     if (id) fetchClassData()
-  }, [id, router, isTeacher])
+  }, [id, router, isTeacher, academicYearId])
 
   const handleSave = async () => {
     if (!formData.name.trim()) {
@@ -127,7 +129,7 @@ export default function ClassDetailPage() {
       toast.success('Cập nhật lớp thành công')
       setEditing(false)
       // Refresh data
-      const res = await classApi.get(id as string)
+      const res = await classApi.get(id as string, { academicYearId })
       setClassData(res.data.data)
     } catch (error: any) {
       toast.error(error.response?.data?.error?.message || 'Cập nhật thất bại')

@@ -89,9 +89,17 @@ const ensureYearEndReady = (academicYear) => {
 
 const toAcademicYearLabel = (year) => `${year.startYear}-${year.endYear}`
 
-const getActiveStudentCountsByClass = async (client, tenantId, classIds) => {
+const getActiveStudentCountsByClass = async (client, tenantId, classIds, semesterId = null) => {
   const ids = [...new Set((classIds || []).filter(Boolean))]
   if (ids.length === 0) return new Map()
+  if (semesterId) {
+    const counts = await client.classEnrollment.groupBy({
+      by: ['classId'],
+      where: { tenantId, semesterId, classId: { in: ids }, student: { isActive: true } },
+      _count: { _all: true }
+    })
+    return new Map(counts.map((item) => [item.classId, item._count._all]))
+  }
   const counts = await client.student.groupBy({
     by: ['classId'],
     where: { tenantId, isActive: true, classId: { in: ids } },
@@ -612,7 +620,7 @@ router.post('/year-end/execute', async (req, res, next) => {
       where: { tenantId: req.tenantId, id: { in: allTargetClassIds } },
       include: { grade: true, _count: { select: { students: true } } }
     })
-    const activeCountByClass = await getActiveStudentCountsByClass(prisma, req.tenantId, allTargetClassIds)
+    const activeCountByClass = await getActiveStudentCountsByClass(prisma, req.tenantId, allTargetClassIds, nextSemester.id)
     const classStateMap = new Map(classes.map((item) => [item.id, { classInfo: item, capacity: item.capacity, current: activeCountByClass.get(item.id) || 0 }]))
 
     const promoted = []
@@ -713,8 +721,8 @@ router.post('/year-end/execute', async (req, res, next) => {
             unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result, reason: 'Lớp đích phải thuộc năm học kế tiếp' })
             continue
           }
-          if (targetGrade > sourceGrade) {
-            unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result, reason: 'Học sinh chưa đạt không được xếp lên khối cao hơn' })
+          if (targetGrade !== sourceGrade) {
+            unresolved.push({ studentId: promotion.studentId, studentName: promotion.student.fullName, result: promotion.result, reason: 'Học sinh chưa đạt chỉ được phân lại trong cùng khối' })
             continue
           }
         }
@@ -787,6 +795,25 @@ router.post('/year-end/execute', async (req, res, next) => {
             actor,
             metadata: { result: promotion.result }
           })
+        })
+      }
+
+      if (unresolved.length === 0) {
+        await tx.academicYear.updateMany({
+          where: { tenantId: req.tenantId },
+          data: { isActive: false }
+        })
+        await tx.semester.updateMany({
+          where: { tenantId: req.tenantId },
+          data: { isActive: false }
+        })
+        await tx.academicYear.update({
+          where: { id: nextAcademicYear.id },
+          data: { isActive: true }
+        })
+        await tx.semester.update({
+          where: { id: nextSemester.id },
+          data: { isActive: true }
         })
       }
     })
@@ -868,6 +895,11 @@ router.patch('/year-end/failed/:promotionId', async (req, res, next) => {
       if (!toClassId) throw new AppError('toClassId is required', 400, 'MISSING_PARAMS')
       const targetClass = await prisma.class.findFirst({ where: { id: toClassId, tenantId: req.tenantId }, include: { grade: true } })
       if (!targetClass) throw new AppError('Target class not found', 404, 'NOT_FOUND')
+      const isInNextYear = targetClass.academicYearId === nextAcademicYear.id || targetClass.academicYear === toAcademicYearLabel(nextAcademicYear)
+      if (!isInNextYear) throw new AppError('Lá»›p Ä‘Ã­ch pháº£i thuá»™c nÄƒm há»c káº¿ tiáº¿p', 400, 'INVALID_TARGET_YEAR')
+      if ((targetClass.grade?.level || 0) !== (promotion.class?.grade?.level || 0)) {
+        throw new AppError('Học sinh chưa đạt chỉ được phân lại trong cùng khối', 400, 'INVALID_TARGET_GRADE')
+      }
       await prisma.promotionPlacementHistory.create({
         data: createPlacementHistoryPayload({
           tenantId: req.tenantId,
@@ -922,12 +954,12 @@ router.patch('/year-end/failed/:promotionId', async (req, res, next) => {
       include: { grade: true, _count: { select: { students: true } } }
     })
     if (!targetClass) throw new AppError('Target class not found', 404, 'NOT_FOUND')
-    const targetActiveCount = (await getActiveStudentCountsByClass(prisma, req.tenantId, [targetClass.id])).get(targetClass.id) || 0
+    const targetActiveCount = (await getActiveStudentCountsByClass(prisma, req.tenantId, [targetClass.id], nextSemester.id)).get(targetClass.id) || 0
     if (targetActiveCount >= targetClass.capacity) throw new AppError('Target class is full', 400, 'CLASS_FULL')
     const isInNextYear = targetClass.academicYearId === nextAcademicYear.id || targetClass.academicYear === toAcademicYearLabel(nextAcademicYear)
     if (!isInNextYear) throw new AppError('Lớp đích phải thuộc năm học kế tiếp', 400, 'INVALID_TARGET_YEAR')
-    if ((targetClass.grade?.level || 0) > (promotion.class?.grade?.level || 0)) {
-      throw new AppError('Học sinh chưa đạt không được xếp lên khối cao hơn', 400, 'INVALID_TARGET_GRADE')
+    if ((targetClass.grade?.level || 0) !== (promotion.class?.grade?.level || 0)) {
+      throw new AppError('Học sinh chưa đạt chỉ được phân lại trong cùng khối', 400, 'INVALID_TARGET_GRADE')
     }
 
     const updated = await prisma.$transaction(async (tx) => {

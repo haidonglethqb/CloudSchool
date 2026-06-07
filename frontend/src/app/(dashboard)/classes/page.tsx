@@ -417,7 +417,7 @@ export default function ClassesPage() {
 
                           <div className="flex items-center gap-1">
                             <Link
-                              href={`/classes/${cls.id}`}
+                              href={`/classes/${cls.id}?academicYearId=${selectedAcademicYearId}`}
                               className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary-50 rounded"
                             >
                               <Edit2 className="w-4 h-4" />

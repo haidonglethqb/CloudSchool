@@ -98,7 +98,7 @@ export default function PromotionPage() {
       if (item.id === studentRow.classId) return false
       if (nextAcademicYearId && item.academicYearId !== nextAcademicYearId) return false
       const targetGrade = Number(item?.grade?.level || 0)
-      return targetGrade <= currentGrade
+      return targetGrade === currentGrade
     })
   }
 

@@ -24,6 +24,7 @@ interface Subject {
   name: string
   description: string | null
   subjectVersions?: SubjectVersion[]
+  _count?: { scores?: number }
 }
 
 interface AcademicYear {
@@ -209,6 +210,11 @@ export default function SubjectsPage() {
   }
 
   const handleDeleteSubject = async (id: string) => {
+    const subject = subjects.find((item) => item.id === id)
+    if ((subject?._count?.scores || 0) > 0) {
+      toast.error('Môn đã có điểm, không thể xóa.')
+      return
+    }
     if (!confirm('Xóa môn học này?')) return
     try {
       await subjectApi.delete(id)
@@ -354,7 +360,14 @@ export default function SubjectsPage() {
                 </div>
                 <div className="flex gap-1">
                   <button onClick={() => { setEditingSubject(subject.id); setSubjectForm({ code: subject.code, name: subject.name, description: subject.description || '' }); setShowSubjectForm(true) }} className="p-1.5 text-gray-400 hover:text-primary"><Pencil className="w-4 h-4" /></button>
-                  <button onClick={() => handleDeleteSubject(subject.id)} className="p-1.5 text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+                  <button
+                    onClick={() => handleDeleteSubject(subject.id)}
+                    disabled={(subject._count?.scores || 0) > 0}
+                    title={(subject._count?.scores || 0) > 0 ? 'Môn đã có điểm, không thể xóa' : 'Xóa môn học'}
+                    className="p-1.5 text-gray-400 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-gray-400"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             </div>

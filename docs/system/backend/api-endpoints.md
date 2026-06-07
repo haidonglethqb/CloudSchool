@@ -63,6 +63,7 @@
 | GET | `/students/import-batches` | List recent CSV/XLSX import batches for the tenant |
 | POST | `/students/import-batches` | Parse CSV/XLSX base64 payload into draft import rows; invalid rows are stored with error messages |
 | GET | `/students/import-batches/:id/rows` | Read draft import rows for class assignment and inline error display |
+| POST | `/students/import-batches/:id/auto-assign` | Assign valid unassigned draft rows to active-year classes with free seats; optional `classIds` limits target classes |
 | PATCH | `/students/import-batches/:id/rows/:rowId` | Edit a draft import row (`fullName`, `gender`, `dateOfBirth`, `address`, `classId`) and revalidate it |
 | DELETE | `/students/import-batches/:id/rows/:rowId` | Delete a draft/error import row; imported rows are locked |
 | POST | `/students/import-batches/:id/commit` | Create real students from valid rows and return per-run summary counts |
@@ -77,9 +78,9 @@
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/classes` | List classes; teacher and assigned staff are assignment-scoped and deduped by class |
-| GET | `/classes/grades` | Grades with nested classes + student counts; teacher and assigned staff scope applies |
-| GET | `/classes/:id` | Class detail + students + teacher assignments |
+| GET | `/classes` | List classes by academic year; student counts come from latest `ClassEnrollment` in that year |
+| GET | `/classes/grades` | Grades with nested classes + enrollment-based student counts; teacher and assigned staff scope applies |
+| GET | `/classes/:id` | Class detail + students + teacher assignments; optional `academicYearId` returns the roster state for that year |
 | POST | `/classes` | Create class (capacity from settings; grade must be within current grade range; enforces plan class limit per academic year) |
 | PUT | `/classes/:id` | Update class (capacity must be within settings and `>=` current students; grade must be within current grade range) |
 | DELETE | `/classes/:id` | Delete class (blocked only when students remain; teacher assignments are removed in transaction) |
@@ -102,7 +103,7 @@
 | POST | `/subjects/:subjectId/versions` | Create/upsert subject version for an academic year |
 | PUT | `/subjects/versions/:id/scope` | Replace grade/class scope for one subject version |
 | PUT | `/subjects/:id` | Update subject |
-| DELETE | `/subjects/:id` | Soft delete (sets isActive: false) |
+| DELETE | `/subjects/:id` | Soft delete only when no scores exist; returns `HAS_SCORES` for scored subjects |
 
 ## Score Components
 
@@ -138,8 +139,8 @@
 |---|---|---|
 | POST | `/promotion/year-end/evaluate` | School-admin synchronous all-year evaluation; writes placement history |
 | GET | `/promotion/year-end/results` | Read PASS/FAIL groups, placement status, and placement history |
-| POST | `/promotion/year-end/execute` | Execute promotion; may require `confirmCreateMissingClasses` for missing target classes |
-| PATCH | `/promotion/year-end/failed/:promotionId` | Draft, assign, or inactive one failed student; inactive requires reason |
+| POST | `/promotion/year-end/execute` | Execute promotion; auto-activates next academic year/first semester when fully resolved |
+| PATCH | `/promotion/year-end/failed/:promotionId` | Draft, assign, or inactive one failed student; failed placements must stay in the same grade in the next year |
 
 ## Reports
 

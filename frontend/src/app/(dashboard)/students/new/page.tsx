@@ -105,6 +105,8 @@ export default function NewStudentPage() {
   const [editForm, setEditForm] = useState({ fullName: '', gender: '', dateOfBirth: '', address: '', classId: '' })
   const [savingRow, setSavingRow] = useState(false)
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null)
+  const [autoAssigning, setAutoAssigning] = useState(false)
+  const [autoAssignClassIds, setAutoAssignClassIds] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const {
@@ -307,6 +309,38 @@ export default function NewStudentPage() {
     setActiveBatch(null)
     setImportRows([])
     setEditingRow(null)
+    setAutoAssignClassIds([])
+  }
+
+  const toggleAutoAssignClass = (classId: string) => {
+    setAutoAssignClassIds((prev) => (
+      prev.includes(classId) ? prev.filter((id) => id !== classId) : [...prev, classId]
+    ))
+  }
+
+  const handleAutoAssignImportRows = async () => {
+    if (!activeBatch) return
+    try {
+      setAutoAssigning(true)
+      const res = await studentApi.autoAssignImportRows(activeBatch.id, {
+        classIds: autoAssignClassIds.length > 0 ? autoAssignClassIds : undefined,
+      })
+      setActiveBatch(res.data.data)
+      setImportRows(res.data.data.rows || [])
+      await Promise.all([fetchImportHistory(), fetchData()])
+      const summary = res.data.summary || {}
+      const assigned = summary.assigned || 0
+      const skipped = summary.skipped || 0
+      if (assigned > 0) {
+        toast.success(`Đã tự động phân lớp ${assigned} dòng${skipped ? `, ${skipped} dòng chưa có chỗ trống` : ''}.`)
+      } else {
+        toast.error('Không có dòng nào được tự động phân lớp.')
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.error?.message || 'Không thể tự động phân lớp')
+    } finally {
+      setAutoAssigning(false)
+    }
   }
 
   const handleCommitImport = async () => {
@@ -482,6 +516,33 @@ export default function NewStudentPage() {
               <X className="w-4 h-4 mr-2" />
               Bỏ bảng hiện tại
             </button>
+          )}
+
+          {activeBatch && (
+            <div className="rounded-lg border border-gray-200 p-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Tự động phân lớp còn trống</p>
+                  <p className="mt-1 text-xs text-gray-500">Bỏ trống phạm vi để dùng tất cả lớp còn chỗ trong năm học hiện tại.</p>
+                </div>
+                <button type="button" onClick={handleAutoAssignImportRows} disabled={autoAssigning} className="btn-outline text-sm">
+                  {autoAssigning ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  Tự động phân lớp
+                </button>
+              </div>
+              <div className="mt-3 grid max-h-36 grid-cols-2 gap-2 overflow-auto md:grid-cols-3 xl:grid-cols-4">
+                {classes.map((cls) => (
+                  <label key={cls.id} className="flex items-center gap-2 rounded border px-2 py-1.5 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={autoAssignClassIds.includes(cls.id)}
+                      onChange={() => toggleAutoAssignClass(cls.id)}
+                    />
+                    <span>{cls.name} ({cls._count.students}/{cls.capacity})</span>
+                  </label>
+                ))}
+              </div>
+            </div>
           )}
 
           <div className="overflow-x-auto rounded-lg border border-gray-200">

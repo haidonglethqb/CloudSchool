@@ -125,6 +125,8 @@ export const studentApi = {
   createImportBatch: (data: { fileName: string; fileType: string; contentBase64: string }) =>
     api.post('/students/import-batches', data),
   getImportRows: (batchId: string) => api.get(`/students/import-batches/${batchId}/rows`),
+  autoAssignImportRows: (batchId: string, data: { classIds?: string[] }) =>
+    api.post(`/students/import-batches/${batchId}/auto-assign`, data),
   updateImportRow: (batchId: string, rowId: string, data: { fullName?: string; gender?: string; dateOfBirth?: string; address?: string; classId?: string }) =>
     api.patch(`/students/import-batches/${batchId}/rows/${rowId}`, data),
   deleteImportRow: (batchId: string, rowId: string) => api.delete(`/students/import-batches/${batchId}/rows/${rowId}`),
@@ -142,7 +144,7 @@ export const studentApi = {
 export const classApi = {
   list: (params?: { gradeId?: string; academicYear?: string; academicYearId?: string }) =>
     api.get('/classes', { params }),
-  get: (id: string) => api.get(`/classes/${id}`),
+  get: (id: string, params?: { academicYearId?: string }) => api.get(`/classes/${id}`, { params }),
   create: (data: { name: string; gradeId: string; academicYear?: string; academicYearId?: string }) =>
     api.post('/classes', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/classes/${id}`, data),

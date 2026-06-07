@@ -44,7 +44,8 @@ router.get('/', async (req, res, next) => {
             classScopes: { include: { class: true } }
           },
           orderBy: { createdAt: 'desc' }
-        }
+        },
+        _count: { select: { scores: true } }
       },
       orderBy: { name: 'asc' }
     })
@@ -73,7 +74,8 @@ router.get('/:id', async (req, res, next) => {
             gradeScopes: { include: { grade: true } },
             classScopes: { include: { class: true } }
           }
-        }
+        },
+        _count: { select: { scores: true } }
       }
     })
 
@@ -277,6 +279,12 @@ router.delete('/:id', authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('
       where: { id: req.params.id, tenantId: req.tenantId }
     })
     if (!existing) throw new AppError('Subject not found', 404, 'NOT_FOUND')
+    const scoreCount = await prisma.score.count({
+      where: { tenantId: req.tenantId, subjectId: req.params.id }
+    })
+    if (scoreCount > 0) {
+      throw new AppError('Cannot delete subject with existing scores', 400, 'HAS_SCORES')
+    }
 
     await prisma.subject.update({
       where: { id: req.params.id },

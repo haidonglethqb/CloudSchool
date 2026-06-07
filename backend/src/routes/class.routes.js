@@ -7,12 +7,19 @@ const { AppError } = require('../middleware/errorHandler')
 const { requireFeature, requireRolePermission } = require('../middleware/feature-flags')
 const { getClassCountForAcademicYear, getTenantPlanLimits } = require('../utils/subscription-limits')
 const { getUserAssignmentScope, ensureClassAccess } = require('../utils/assignment-scope')
+const {
+  attachClassCountsForAcademicYear,
+  countActiveEnrollmentInSemester,
+  getAcademicYearContext,
+  getClassAcademicYearMatch,
+  getClassRosterForAcademicYear
+} = require('../utils/enrollment-state')
 
 router.use(authenticate, requireFeature('classes'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('classes'))
 
 const buildAcademicYearLabel = (academicYear) => `${academicYear.startYear}-${academicYear.endYear}`
 
-const getActiveAcademicYear = async (tenantId) => {
+const getActiveAcademicYearLegacy = async (tenantId) => {
   return prisma.academicYear.findFirst({
     where: { tenantId, isActive: true },
     select: { id: true, startYear: true, endYear: true }
@@ -23,7 +30,7 @@ const buildAcademicYearClassFilter = async (tenantId, { academicYear, academicYe
   if (academicYearId) return { academicYearId }
   if (academicYear) return { academicYear }
 
-  const activeYear = await getActiveAcademicYear(tenantId)
+  const activeYear = await getActiveAcademicYearLegacy(tenantId)
   if (!activeYear) {
     return { academicYearId: '__no_active_year__' }
   }
@@ -43,9 +50,27 @@ const getActiveSemesterWithAcademicYear = async (tenantId, tx) => {
   return activeSemester
 }
 
-const attachActiveStudentCounts = async (tenantId, classes) => {
+const buildAcademicYearClassContext = async (tenantId, { academicYear, academicYearId }) => {
+  if (academicYearId) {
+    const year = await getAcademicYearContext(tenantId, academicYearId)
+    return { academicYear: year, yearFilter: getClassAcademicYearMatch(year) }
+  }
+  if (academicYear) {
+    const [startYear, endYear] = String(academicYear).split('-').map((item) => Number(item))
+    const year = Number.isInteger(startYear) && Number.isInteger(endYear)
+      ? await prisma.academicYear.findFirst({ where: { tenantId, startYear, endYear } })
+      : null
+    return { academicYear: year, yearFilter: year ? getClassAcademicYearMatch(year) : { academicYear } }
+  }
+
+  const year = await getAcademicYearContext(tenantId)
+  return { academicYear: year, yearFilter: getClassAcademicYearMatch(year) }
+}
+
+const attachActiveStudentCounts = async (tenantId, classes, academicYearId = null) => {
   const rows = Array.isArray(classes) ? classes : []
   if (rows.length === 0) return rows
+  if (academicYearId) return attachClassCountsForAcademicYear(prisma, tenantId, rows, academicYearId)
   const counts = await prisma.student.groupBy({
     by: ['classId'],
     where: {
@@ -72,7 +97,7 @@ const countActiveStudentsInClass = (client, tenantId, classId) => client.student
 // GET /classes/grades - Get grades with classes
 router.get('/grades', tenantGuard, async (req, res, next) => {
   try {
-    const yearFilter = await buildAcademicYearClassFilter(req.tenantId, {
+    const { academicYear, yearFilter } = await buildAcademicYearClassContext(req.tenantId, {
       academicYear: req.query.academicYear,
       academicYearId: req.query.academicYearId
     })
@@ -97,7 +122,7 @@ router.get('/grades', tenantGuard, async (req, res, next) => {
     })
     const gradeRows = await Promise.all(grades.map(async (grade) => ({
       ...grade,
-      classes: await attachActiveStudentCounts(req.tenantId, grade.classes)
+      classes: await attachActiveStudentCounts(req.tenantId, grade.classes, academicYear?.id || null)
     })))
     res.json({ data: gradeRows })
   } catch (error) {
@@ -109,13 +134,13 @@ router.get('/grades', tenantGuard, async (req, res, next) => {
 router.get('/', async (req, res, next) => {
   try {
     const { gradeId, academicYear, academicYearId } = req.query
-    const yearFilter = await buildAcademicYearClassFilter(req.tenantId, { academicYear, academicYearId })
+    const classContext = await buildAcademicYearClassContext(req.tenantId, { academicYear, academicYearId })
 
     const where = {
       tenantId: req.tenantId,
       isActive: true,
       ...(gradeId && { gradeId }),
-      ...yearFilter
+      ...classContext.yearFilter
     }
 
     const scope = await getUserAssignmentScope(prisma, req)
@@ -136,7 +161,7 @@ router.get('/', async (req, res, next) => {
       orderBy: { name: 'asc' }
     })
 
-    res.json({ data: await attachActiveStudentCounts(req.tenantId, classes) })
+    res.json({ data: await attachActiveStudentCounts(req.tenantId, classes, classContext.academicYear?.id || null) })
   } catch (error) {
     next(error)
   }
@@ -146,6 +171,7 @@ router.get('/', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     await ensureClassAccess(prisma, req, req.params.id)
+    const requestedAcademicYearId = req.query.academicYearId ? String(req.query.academicYearId) : null
 
     const classInfo = await prisma.class.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },
@@ -166,7 +192,14 @@ router.get('/:id', async (req, res, next) => {
     })
 
     if (!classInfo) throw new AppError('Class not found', 404, 'NOT_FOUND')
-    const [classWithCount] = await attachActiveStudentCounts(req.tenantId, [classInfo])
+    let classWithCount = classInfo
+    if (requestedAcademicYearId) {
+      const academicYear = await getAcademicYearContext(req.tenantId, requestedAcademicYearId)
+      classWithCount.students = await getClassRosterForAcademicYear(prisma, req.tenantId, req.params.id, academicYear.id, { onlyActiveStudents: true })
+      ;[classWithCount] = await attachActiveStudentCounts(req.tenantId, [classWithCount], academicYear.id)
+    } else {
+      ;[classWithCount] = await attachActiveStudentCounts(req.tenantId, [classInfo])
+    }
     res.json({ data: classWithCount })
   } catch (error) {
     next(error)
@@ -420,7 +453,8 @@ router.post('/:id/student-deletions/:logId/revert', authorize('SUPER_ADMIN', 'ST
 
       const cls = await tx.class.findFirst({ where: { id: req.params.id, tenantId: req.tenantId } })
       if (!cls) throw new AppError('Class not found', 404, 'NOT_FOUND')
-      const activeStudentCount = await countActiveStudentsInClass(tx, req.tenantId, req.params.id)
+      const activeSemester = await getActiveSemesterWithAcademicYear(req.tenantId, tx)
+      const activeStudentCount = await countActiveEnrollmentInSemester(tx, req.tenantId, req.params.id, activeSemester.id)
       if (activeStudentCount >= cls.capacity) throw new AppError('Class is full', 400, 'CLASS_FULL')
 
       const student = await tx.student.findFirst({
@@ -428,7 +462,6 @@ router.post('/:id/student-deletions/:logId/revert', authorize('SUPER_ADMIN', 'ST
       })
       if (!student) throw new AppError('Student not found', 404, 'STUDENT_NOT_FOUND')
 
-      const activeSemester = await getActiveSemesterWithAcademicYear(req.tenantId, tx)
       const restoredStudent = await tx.student.update({
         where: { id: student.id },
         data: {
@@ -526,7 +559,7 @@ router.post('/:id/students', authorize('SUPER_ADMIN', 'STAFF'), async (req, res,
 
       const cls = await tx.class.findFirst({ where: { id: req.params.id, tenantId: req.tenantId } })
       if (!cls) throw new AppError('Class not found', 404, 'NOT_FOUND')
-      const activeStudentCount = await countActiveStudentsInClass(tx, req.tenantId, req.params.id)
+      const activeStudentCount = await countActiveEnrollmentInSemester(tx, req.tenantId, req.params.id, activeSemester.id)
       if (activeStudentCount >= cls.capacity) {
         throw new AppError('Class is full', 400, 'CLASS_FULL')
       }

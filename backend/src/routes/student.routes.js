@@ -9,6 +9,10 @@ const { requireFeature, requireRolePermission } = require('../middleware/feature
 const { getTenantPlanUsage, getTenantPlanLimits } = require('../utils/subscription-limits')
 const { getUserAssignmentScope, ensureClassAccess } = require('../utils/assignment-scope')
 const { academicYearLabel } = require('../utils/academic-scope')
+const {
+  countActiveEnrollmentInSemester,
+  getActiveEnrollmentForStudent
+} = require('../utils/enrollment-state')
 
 const REQUIRED_IMPORT_HEADERS = ['fullName', 'gender', 'dateOfBirth', 'address']
 const IMPORT_TEMPLATE_HEADERS = REQUIRED_IMPORT_HEADERS.join(',')
@@ -306,6 +310,11 @@ router.get('/', authenticate, requireFeature('student-lookup'), authorize('SUPER
   try {
     const { page = 1, limit = 20, search, classId, gradeId, status, address, gender, birthYear } = req.query
     const skip = (parseInt(page) - 1) * parseInt(limit)
+    const activeSemester = await prisma.semester.findFirst({
+      where: { tenantId: req.tenantId, isActive: true, academicYearId: { not: null } },
+      select: { id: true, academicYearId: true }
+    })
+    const andFilters = []
 
     const where = {
       tenantId: req.tenantId,
@@ -315,8 +324,6 @@ router.get('/', authenticate, requireFeature('student-lookup'), authorize('SUPER
           { studentCode: { contains: search, mode: 'insensitive' } }
         ]
       }),
-      ...(classId && { classId }),
-      ...(gradeId && { class: { gradeId } }),
       ...(status === 'active' && { isActive: true }),
       ...(status === 'inactive' && { isActive: false }),
       ...(address && { address: { contains: String(address), mode: 'insensitive' } }),
@@ -329,19 +336,52 @@ router.get('/', authenticate, requireFeature('student-lookup'), authorize('SUPER
       })
     }
 
+    if (activeSemester && (classId || gradeId)) {
+      andFilters.push({
+        enrollments: {
+          some: {
+            semesterId: activeSemester.id,
+            ...(classId && { classId }),
+            ...(gradeId && { class: { gradeId } })
+          }
+        }
+      })
+    } else {
+      if (classId) where.classId = classId
+      if (gradeId) where.class = { gradeId }
+    }
+
     const scope = await getUserAssignmentScope(prisma, req)
     if (scope) {
-      if (classId) {
-        where.classId = { in: scope.classIds.filter((id) => id === classId) }
+      const allowedClassIds = classId ? scope.classIds.filter((id) => id === classId) : scope.classIds
+      if (activeSemester) {
+        andFilters.push({
+          enrollments: {
+            some: {
+              semesterId: activeSemester.id,
+              classId: { in: allowedClassIds }
+            }
+          }
+        })
       } else {
-        where.classId = { in: scope.classIds }
+        where.classId = { in: allowedClassIds }
       }
     }
+    if (andFilters.length > 0) where.AND = andFilters
 
     const [students, total] = await Promise.all([
       prisma.student.findMany({
         where,
-        include: { class: { include: { grade: true } } },
+        include: {
+          class: { include: { grade: true } },
+          ...(activeSemester && {
+            enrollments: {
+              where: { semesterId: activeSemester.id },
+              include: { class: { include: { grade: true } } },
+              take: 1
+            }
+          })
+        },
         orderBy: { fullName: 'asc' },
         skip,
         take: parseInt(limit)
@@ -350,7 +390,15 @@ router.get('/', authenticate, requireFeature('student-lookup'), authorize('SUPER
     ])
 
     res.json({
-      data: students,
+      data: students.map((student) => {
+        const activeEnrollment = student.enrollments?.[0]
+        const { enrollments, ...rest } = student
+        return {
+          ...rest,
+          class: activeEnrollment?.class || student.class,
+          classId: activeEnrollment?.classId || student.classId
+        }
+      }),
       meta: { page: parseInt(page), limit: parseInt(limit), total, totalPages: Math.ceil(total / parseInt(limit)) }
     })
   } catch (error) {
@@ -491,6 +539,99 @@ router.get('/import-batches/:id/rows', authenticate, requireFeature('student-adm
   }
 })
 
+// POST /students/import-batches/:id/auto-assign - Assign valid draft rows to classes with free seats
+router.post('/import-batches/:id/auto-assign', authenticate, requireFeature('student-admission'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('student-admission'), async (req, res, next) => {
+  try {
+    const requestedClassIds = Array.isArray(req.body.classIds)
+      ? req.body.classIds.map((id) => normalizeText(id)).filter(Boolean)
+      : []
+
+    const result = await prisma.$transaction(async (tx) => {
+      const batch = await tx.studentImportBatch.findFirst({
+        where: { id: req.params.id, tenantId: req.tenantId }
+      })
+      if (!batch) throw new AppError('Import batch not found', 404, 'NOT_FOUND')
+
+      const activeSemester = await getActiveSemesterContext(req.tenantId, tx)
+      const activeYearLabel = activeSemester.academicYear ? academicYearLabel(activeSemester.academicYear) : null
+      const classes = await tx.class.findMany({
+        where: {
+          tenantId: req.tenantId,
+          isActive: true,
+          ...(requestedClassIds.length > 0 ? { id: { in: requestedClassIds } } : {}),
+          OR: [
+            { academicYearId: activeSemester.academicYearId },
+            ...(activeYearLabel ? [{ academicYear: activeYearLabel }] : [])
+          ]
+        },
+        include: { grade: true },
+        orderBy: [{ name: 'asc' }]
+      })
+      if (requestedClassIds.length > 0 && classes.length !== requestedClassIds.length) {
+        throw new AppError('One or more selected classes are invalid for active academic year', 400, 'INVALID_CLASSES')
+      }
+
+      const assignedDraftRows = await tx.studentImportRow.groupBy({
+        by: ['classId'],
+        where: {
+          tenantId: req.tenantId,
+          batchId: batch.id,
+          classId: { in: classes.map((item) => item.id) },
+          status: { not: 'IMPORTED' }
+        },
+        _count: { _all: true }
+      })
+      const reservedByClass = new Map(assignedDraftRows.map((item) => [item.classId, item._count._all]))
+      const capacityState = []
+      for (const cls of classes) {
+        const current = await countActiveEnrollmentInSemester(tx, req.tenantId, cls.id, activeSemester.id)
+        capacityState.push({
+          id: cls.id,
+          capacity: cls.capacity,
+          current: current + (reservedByClass.get(cls.id) || 0)
+        })
+      }
+
+      const rows = await tx.studentImportRow.findMany({
+        where: {
+          tenantId: req.tenantId,
+          batchId: batch.id,
+          status: 'VALID',
+          classId: null
+        },
+        orderBy: { rowNumber: 'asc' }
+      })
+
+      let assigned = 0
+      let skipped = 0
+      for (const row of rows) {
+        const target = capacityState.find((item) => item.current < item.capacity)
+        if (!target) {
+          skipped += 1
+          continue
+        }
+        await tx.studentImportRow.update({
+          where: { id: row.id },
+          data: { classId: target.id, errorMessage: null }
+        })
+        target.current += 1
+        assigned += 1
+      }
+
+      await refreshImportBatchStats(batch.id, tx)
+      return { assigned, skipped }
+    })
+
+    const updatedBatch = await prisma.studentImportBatch.findUnique({
+      where: { id: req.params.id },
+      include: { rows: { orderBy: { rowNumber: 'asc' } } }
+    })
+    res.json({ data: updatedBatch, summary: result })
+  } catch (error) {
+    next(error)
+  }
+})
+
 // PATCH /students/import-batches/:id/rows/:rowId - Update draft import row
 router.patch('/import-batches/:id/rows/:rowId', authenticate, requireFeature('student-admission'), authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('student-admission'), async (req, res, next) => {
   try {
@@ -579,7 +720,8 @@ router.post('/import-batches/:id/commit', authenticate, requireFeature('student-
           await failRow('Lop khong thuoc nam hoc hien tai')
           continue
         }
-        if (cls._count.students >= cls.capacity) {
+        const activeEnrollmentCount = await countActiveEnrollmentInSemester(tx, req.tenantId, cls.id, activeSemester.id)
+        if (activeEnrollmentCount >= cls.capacity) {
           await failRow(`Lop ${cls.name} da day`)
           continue
         }
@@ -933,7 +1075,8 @@ router.post('/:id/transfer', authenticate, requireFeature('class-transfer'), aut
       throw new AppError('Cannot transfer inactive student', 400, 'STUDENT_INACTIVE')
     }
 
-    const fromClassId = currentStudent.classId
+    const { activeSemester, enrollment: activeEnrollment } = await getActiveEnrollmentForStudent(prisma, req.tenantId, req.params.id)
+    const fromClassId = activeEnrollment?.classId || currentStudent.classId
     if (!fromClassId) {
       throw new AppError('Student has no current class to transfer from', 400, 'NO_FROM_CLASS')
     }
@@ -947,17 +1090,11 @@ router.post('/:id/transfer', authenticate, requireFeature('class-transfer'), aut
       include: { _count: { select: { students: true } } }
     })
     if (!cls) throw new AppError('Class not found', 404, 'NOT_FOUND')
-    if (cls._count.students >= cls.capacity) {
+    const targetActiveCount = await countActiveEnrollmentInSemester(prisma, req.tenantId, classId, activeSemester.id)
+    if (targetActiveCount >= cls.capacity) {
       throw new AppError('Target class is full', 400, 'CLASS_FULL')
     }
 
-    // Find active semester for enrollment + transfer history
-    const activeSemester = await prisma.semester.findFirst({
-      where: { tenantId: req.tenantId, isActive: true, academicYearId: { not: null } },
-      include: { academicYear: true },
-      orderBy: [{ updatedAt: 'desc' }, { semesterNum: 'asc' }]
-    })
-    if (!activeSemester) throw new AppError('No active semester found', 400, 'NO_ACTIVE_SEMESTER')
     const activeYearLabel = activeSemester.academicYear ? academicYearLabel(activeSemester.academicYear) : null
     const classInActiveYear = cls.academicYearId === activeSemester.academicYearId
       || (activeYearLabel && cls.academicYear === activeYearLabel)

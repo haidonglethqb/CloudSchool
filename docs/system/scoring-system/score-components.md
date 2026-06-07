@@ -74,6 +74,8 @@ flowchart TD
 
 Hard deletion is blocked when any scores reference the component. Removing such a component from the payload marks it inactive and moves its `displayOrder` out of the active order range. Current score averages and promotion calculations ignore inactive components.
 
+Subjects with existing scores cannot be deleted. The subject delete endpoint returns `HAS_SCORES`; use subject academic-year/class scope instead to stop applying a subject in future terms.
+
 ## Response with Warning
 
 When total weight ≠ 100% after create/update:

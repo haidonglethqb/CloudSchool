@@ -80,6 +80,14 @@ model TransferHistory {
 | `reason` | `String?` | Justification for transfer |
 | `transferredBy` | `String?` | User ID who authorized transfer |
 
+### Enrollment State Rule
+
+`Student.classId` stores the current class pointer. Historical and academic-year roster views use `ClassEnrollment` instead:
+
+- Class list/detail counts use the latest enrollment per student in the selected academic year.
+- Class transfer writes `TransferHistory` and upserts the active semester enrollment.
+- Year-end promotion writes next-year enrollment, then activates the next academic year when all placements are resolved.
+
 ### Self-Referential Class Relations
 
 `TransferHistory` references `Class` twice via named relations:
