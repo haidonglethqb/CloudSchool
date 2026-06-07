@@ -181,7 +181,7 @@ const validateImportRows = async (tenantId, rawRows) => {
     if (fullName && dateOfBirth) {
       const duplicateKey = `${fullName.toLowerCase()}::${toDateKey(dateOfBirth)}`
       if (seenInFile.has(duplicateKey)) {
-        errors.push('Trung hoc sinh trong file import')
+        errors.push('Trùng học sinh trong file import')
       }
       seenInFile.add(duplicateKey)
     }
@@ -232,15 +232,15 @@ const validateSingleImportRow = async (tenantId, batchId, rowId, input, tx = pri
   const classId = normalizeText(input.classId)
   const errors = []
 
-  if (!fullName) errors.push('Thiáº¿u tÃªn há»c sinh')
-  if (!gender) errors.push('Giá»›i tÃ­nh khÃ´ng há»£p lá»‡')
-  if (!dateOfBirth) errors.push('NgÃ y sinh khÃ´ng há»£p lá»‡')
-  if (!address) errors.push('Thiáº¿u Ä‘á»‹a chá»‰')
+  if (!fullName) errors.push('Thiếu tên học sinh')
+  if (!gender) errors.push('Giới tính không hợp lệ')
+  if (!dateOfBirth) errors.push('Ngày sinh không hợp lệ')
+  if (!address) errors.push('Thiếu địa chỉ')
 
   if (dateOfBirth) {
     const age = calculateAge(dateOfBirth)
     if (age < settings.minAge || age > settings.maxAge) {
-      errors.push(`Tuá»•i (${age}) khÃ´ng náº±m trong khoáº£ng ${settings.minAge}-${settings.maxAge}`)
+      errors.push(`Tuổi (${age}) không nằm trong khoảng ${settings.minAge}-${settings.maxAge}`)
     }
   }
 
@@ -253,7 +253,7 @@ const validateSingleImportRow = async (tenantId, batchId, rowId, input, tx = pri
       },
       select: { id: true }
     })
-    if (existingStudent) errors.push('TrÃ¹ng há»c sinh theo tÃªn vÃ  ngÃ y sinh')
+    if (existingStudent) errors.push('Trùng học sinh theo tên và ngày sinh')
 
     const duplicateRow = await tx.studentImportRow.findFirst({
       where: {
@@ -266,20 +266,20 @@ const validateSingleImportRow = async (tenantId, batchId, rowId, input, tx = pri
       },
       select: { id: true }
     })
-    if (duplicateRow) errors.push('TrÃ¹ng há»c sinh trong file import')
+    if (duplicateRow) errors.push('Trùng học sinh trong file import')
   }
 
   if (classId) {
     const activeSemester = await getActiveSemesterContext(tenantId, tx)
     const cls = await tx.class.findFirst({ where: { id: classId, tenantId } })
     if (!cls) {
-      errors.push('Lá»›p khÃ´ng tá»“n táº¡i')
+      errors.push('Lớp không tồn tại')
     } else {
       const activeYearLabel = activeSemester.academicYear ? academicYearLabel(activeSemester.academicYear) : null
       const classInActiveYear = cls.academicYearId === activeSemester.academicYearId
         || (activeYearLabel && cls.academicYear === activeYearLabel)
       if (!classInActiveYear) {
-        errors.push('Lá»›p nháº­p há»c pháº£i thuá»™c nÄƒm há»c cá»§a há»c ká»³ Ä‘ang hoáº¡t Ä‘á»™ng')
+        errors.push('Lớp nhập học phải thuộc năm học của học kỳ đang hoạt động')
       }
     }
   }
@@ -695,12 +695,12 @@ router.post('/import-batches/:id/commit', authenticate, requireFeature('student-
         }
 
         if (!row.classId) {
-          await failRow('Chua chon lop')
+          await failRow('Chưa chọn lớp')
           continue
         }
 
         if (limits && usage.students + createdThisRun + 1 > limits.students) {
-          await failRow(`Vuot gioi han hoc sinh cua goi (${limits.students})`)
+          await failRow(`Vượt giới hạn học sinh của gói (${limits.students})`)
           continue
         }
 
@@ -709,7 +709,7 @@ router.post('/import-batches/:id/commit', authenticate, requireFeature('student-
           include: { _count: { select: { students: true } } }
         })
         if (!cls) {
-          await failRow('Lop khong ton tai')
+          await failRow('Lớp không tồn tại')
           continue
         }
 
@@ -717,12 +717,12 @@ router.post('/import-batches/:id/commit', authenticate, requireFeature('student-
         const classInActiveYear = cls.academicYearId === activeSemester.academicYearId
           || (activeYearLabel && cls.academicYear === activeYearLabel)
         if (!classInActiveYear) {
-          await failRow('Lop khong thuoc nam hoc hien tai')
+          await failRow('Lớp không thuộc năm học hiện tại')
           continue
         }
         const activeEnrollmentCount = await countActiveEnrollmentInSemester(tx, req.tenantId, cls.id, activeSemester.id)
         if (activeEnrollmentCount >= cls.capacity) {
-          await failRow(`Lop ${cls.name} da day`)
+          await failRow(`Lớp ${cls.name} đã đầy`)
           continue
         }
 
@@ -735,7 +735,7 @@ router.post('/import-batches/:id/commit', authenticate, requireFeature('student-
           select: { id: true }
         })
         if (duplicate) {
-          await failRow('Trung hoc sinh theo ten va ngay sinh')
+          await failRow('Trùng học sinh theo tên và ngày sinh')
           continue
         }
 
@@ -796,7 +796,7 @@ router.delete('/import-batches/:id/rows/:rowId', authenticate, requireFeature('s
         where: { id: req.params.rowId, batchId: req.params.id, tenantId: req.tenantId }
       })
       if (!row) throw new AppError('Import row not found', 404, 'NOT_FOUND')
-      if (row.status === 'IMPORTED') throw new AppError('KhÃ´ng thá»ƒ xÃ³a dÃ²ng Ä‘Ã£ táº¡o há»c sinh', 400, 'ROW_IMPORTED')
+      if (row.status === 'IMPORTED') throw new AppError('Không thể xóa dòng đã tạo học sinh', 400, 'ROW_IMPORTED')
 
       await tx.studentImportRow.delete({ where: { id: row.id } })
       const batch = await refreshImportBatchStats(req.params.id, tx)

@@ -530,7 +530,7 @@ router.delete('/:id/student-deletions/:logId/terminate', authorize('SUPER_ADMIN'
 
       await tx.studentImportRow.updateMany({
         where: { tenantId: req.tenantId, studentId: student.id },
-        data: { studentId: null, status: 'INVALID', errorMessage: 'Hoc sinh da bi xoa vinh vien' }
+        data: { studentId: null, status: 'INVALID', errorMessage: 'Học sinh đã bị xóa vĩnh viễn' }
       })
       await tx.student.delete({ where: { id: student.id } })
       await tx.studentDeletionLog.update({

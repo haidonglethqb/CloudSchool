@@ -902,7 +902,7 @@ router.patch('/year-end/failed/:promotionId', async (req, res, next) => {
       const targetClass = await prisma.class.findFirst({ where: { id: toClassId, tenantId: req.tenantId }, include: { grade: true } })
       if (!targetClass) throw new AppError('Target class not found', 404, 'NOT_FOUND')
       const isInNextYear = targetClass.academicYearId === nextAcademicYear.id || targetClass.academicYear === toAcademicYearLabel(nextAcademicYear)
-      if (!isInNextYear) throw new AppError('Lá»›p Ä‘Ã­ch pháº£i thuá»™c nÄƒm há»c káº¿ tiáº¿p', 400, 'INVALID_TARGET_YEAR')
+      if (!isInNextYear) throw new AppError('Lớp đích phải thuộc năm học kế tiếp', 400, 'INVALID_TARGET_YEAR')
       if ((targetClass.grade?.level || 0) !== (promotion.class?.grade?.level || 0)) {
         throw new AppError('Học sinh chưa đạt chỉ được phân lại trong cùng khối', 400, 'INVALID_TARGET_GRADE')
       }
