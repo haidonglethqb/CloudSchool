@@ -159,6 +159,23 @@ export default function PromotionPage() {
         })
       }
       toast.success(`Đã thực thi: ${res.data.data.summary.promoted} lên lớp, ${res.data.data.summary.archived} tốt nghiệp`)
+
+      // Re-fetch academic years so the newly activated year is reflected in the UI.
+      // This also ensures /classes page will auto-switch to the new active year on next visit.
+      try {
+        const yearRes = await academicYearApi.list()
+        const yearRows = yearRes.data.data || []
+        setYears(yearRows)
+        // If the newly activated year differs from the filter, switch to it
+        const newActiveId = yearRows.find((y: any) => y.isActive)?.id
+        if (newActiveId && newActiveId !== filters.academicYearId) {
+          setFilters((prev) => ({ ...prev, academicYearId: newActiveId }))
+          return // refreshResults will be triggered by the filter change effect
+        }
+      } catch {
+        // non-critical
+      }
+
       await refreshResults()
     } catch (error: any) {
       toast.error(resolveUiErrorMessage(error, 'Thực thi xét lên lớp thất bại.'))

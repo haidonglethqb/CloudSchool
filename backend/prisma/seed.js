@@ -590,6 +590,15 @@ async function main () {
   }
   console.log('Classes ready:', classContexts.length)
 
+  const activeYearConfig = ACADEMIC_YEARS.find((year) => getYearLabel(year.startYear, year.endYear) === ACTIVE_YEAR_LABEL)
+  const activeStartYear = activeYearConfig?.startYear ?? Number.MAX_SAFE_INTEGER
+  const studentClassContexts = classContexts.filter((context) => context.startYear <= activeStartYear)
+  const futureClassContexts = classContexts.filter((context) => context.startYear > activeStartYear)
+  const classContextByYearGradeClass = new Map(classContexts.map((context) => [
+    `${context.academicYearLabel}::${context.gradeLevel}::${context.classIndex}`,
+    context
+  ]))
+
   const subjectCodes = SUBJECT_CONFIG.map((item) => item.code)
   for (const classContext of classContexts) {
     await prisma.teacherAssignment.updateMany({
@@ -625,10 +634,151 @@ async function main () {
   }
   console.log('Teacher assignments ready')
 
+  const staleSeedStudentFilters = [
+    ...futureClassContexts,
+    ...studentClassContexts.filter((context) => context.startYear === activeStartYear && context.gradeLevel > 10)
+  ].map((context) => ({
+    classId: context.class.id,
+    studentCode: { startsWith: `HS${String(context.startYear).slice(-2)}` }
+  }))
+  if (staleSeedStudentFilters.length > 0) {
+    const cleanupResult = await prisma.student.deleteMany({
+      where: {
+        tenantId: tenant.id,
+        OR: staleSeedStudentFilters
+      }
+    })
+    console.log('Stale future/current-year seed students removed:', cleanupResult.count)
+  }
+
   const studentsByClassId = {}
   let studentOrdinal = 0
 
-  for (const classContext of classContexts) {
+  for (const classContext of studentClassContexts) {
+    studentsByClassId[classContext.class.id] = []
+  }
+
+  const seedStudent = async ({ classContext, studentIndex, codeStartYear, codeClassName, admissionStartYear, birthGradeLevel, existingOrdinal = null }) => {
+    const ordinal = existingOrdinal ?? ++studentOrdinal
+    const lastName = LAST_NAMES[(ordinal + classContext.gradeLevel) % LAST_NAMES.length]
+    const middleName = MIDDLE_NAMES[(ordinal + classContext.classIndex) % MIDDLE_NAMES.length]
+    const firstName = FIRST_NAMES[(ordinal + studentIndex) % FIRST_NAMES.length]
+    const gender = ordinal % 2 === 0 ? 'MALE' : 'FEMALE'
+    const classTag = codeClassName.replace('A', '')
+    const studentCode = `HS${String(codeStartYear).slice(-2)}${classTag}${String(studentIndex).padStart(2, '0')}`
+    const birthYear = admissionStartYear - ((birthGradeLevel ?? classContext.gradeLevel) + 5)
+    const birthMonth = (studentIndex % 12) + 1
+    const birthDay = ((ordinal % 27) + 1)
+
+    const student = await prisma.student.upsert({
+      where: {
+        tenantId_studentCode: {
+          tenantId: tenant.id,
+          studentCode
+        }
+      },
+      update: {
+        classId: classContext.class.id,
+        fullName: `${lastName} ${middleName} ${firstName}`,
+        gender,
+        dateOfBirth: new Date(Date.UTC(birthYear, birthMonth - 1, birthDay)),
+        address: ADDRESS_POOL[ordinal % ADDRESS_POOL.length],
+        parentName: `${lastName} ${middleName} Phụ huynh`,
+        parentPhone: `09${String(10000000 + ordinal).slice(-8)}`,
+        isActive: true,
+        inactiveReason: null,
+        inactiveAt: null,
+        inactivatedBy: null,
+        inactivatedByName: null
+      },
+      create: {
+        tenantId: tenant.id,
+        classId: classContext.class.id,
+        studentCode,
+        fullName: `${lastName} ${middleName} ${firstName}`,
+        gender,
+        dateOfBirth: new Date(Date.UTC(birthYear, birthMonth - 1, birthDay)),
+        address: ADDRESS_POOL[ordinal % ADDRESS_POOL.length],
+        parentName: `${lastName} ${middleName} Phụ huynh`,
+        parentPhone: `09${String(10000000 + ordinal).slice(-8)}`,
+        admissionDate: new Date(Date.UTC(admissionStartYear, 8, 1))
+      }
+    })
+
+    return {
+      ...student,
+      classId: classContext.class.id,
+      ordinal
+    }
+  }
+
+  const sortedStudentYears = ACADEMIC_YEARS
+    .filter((year) => year.startYear <= activeStartYear)
+    .sort((left, right) => left.startYear - right.startYear)
+
+  let previousYearRosterContexts = []
+  for (const ayData of sortedStudentYears) {
+    const academicYearLabel = getYearLabel(ayData.startYear, ayData.endYear)
+    const isFirstStudentYear = previousYearRosterContexts.length === 0
+
+    for (const previousContext of previousYearRosterContexts) {
+      if (previousContext.gradeLevel >= 12) continue
+      const targetContext = classContextByYearGradeClass.get(`${academicYearLabel}::${previousContext.gradeLevel + 1}::${previousContext.classIndex}`)
+      if (!targetContext) continue
+
+      const previousStudents = studentsByClassId[previousContext.class.id] || []
+      for (const previousStudent of previousStudents) {
+        const student = await seedStudent({
+          classContext: targetContext,
+          studentIndex: previousStudent.seedIndex,
+          codeStartYear: previousStudent.codeStartYear,
+          codeClassName: previousStudent.codeClassName,
+          admissionStartYear: previousStudent.admissionStartYear,
+          birthGradeLevel: previousStudent.birthGradeLevel,
+          existingOrdinal: previousStudent.ordinal
+        })
+        studentsByClassId[targetContext.class.id].push({
+          ...student,
+          seedIndex: previousStudent.seedIndex,
+          codeStartYear: previousStudent.codeStartYear,
+          codeClassName: previousStudent.codeClassName,
+          admissionStartYear: previousStudent.admissionStartYear,
+          birthGradeLevel: previousStudent.birthGradeLevel,
+          yearLabel: academicYearLabel
+        })
+      }
+    }
+
+    const newAdmissionContexts = studentClassContexts.filter((context) => (
+      context.academicYearLabel === academicYearLabel &&
+      (isFirstStudentYear || context.gradeLevel === 10)
+    ))
+    for (const classContext of newAdmissionContexts) {
+      for (let studentIndex = 1; studentIndex <= STUDENTS_PER_CLASS; studentIndex += 1) {
+        const student = await seedStudent({
+          classContext,
+          studentIndex,
+          codeStartYear: classContext.startYear,
+          codeClassName: classContext.class.name,
+          admissionStartYear: classContext.startYear,
+          birthGradeLevel: classContext.gradeLevel
+        })
+        studentsByClassId[classContext.class.id].push({
+          ...student,
+          seedIndex: studentIndex,
+          codeStartYear: classContext.startYear,
+          codeClassName: classContext.class.name,
+          admissionStartYear: classContext.startYear,
+          birthGradeLevel: classContext.gradeLevel,
+          yearLabel: academicYearLabel
+        })
+      }
+    }
+
+    previousYearRosterContexts = studentClassContexts.filter((context) => context.academicYearLabel === academicYearLabel)
+  }
+
+  for (const classContext of []) {
     studentsByClassId[classContext.class.id] = []
 
     for (let studentIndex = 1; studentIndex <= STUDENTS_PER_CLASS; studentIndex += 1) {
@@ -683,7 +833,7 @@ async function main () {
   }
   console.log('Students ready:', studentOrdinal)
 
-  for (const classContext of classContexts) {
+  for (const classContext of studentClassContexts) {
     const sem1 = semesterByKey[`${classContext.academicYearLabel}-1`]
     const sem2 = semesterByKey[`${classContext.academicYearLabel}-2`]
     const classStudents = studentsByClassId[classContext.class.id] || []
@@ -874,7 +1024,7 @@ async function main () {
   }
 
   const scoreRows = []
-  for (const classContext of classContexts) {
+  for (const classContext of studentClassContexts) {
     const classStudents = studentsByClassId[classContext.class.id] || []
     const sem1 = semesterByKey[`${classContext.academicYearLabel}-1`]
     const sem2 = semesterByKey[`${classContext.academicYearLabel}-2`]
@@ -917,7 +1067,7 @@ async function main () {
   }
   console.log('Scores ready:', scoreRows.length)
 
-  for (const classContext of classContexts) {
+  for (const classContext of studentClassContexts) {
     const classStudents = studentsByClassId[classContext.class.id] || []
     const semesters = [
       semesterByKey[`${classContext.academicYearLabel}-1`],

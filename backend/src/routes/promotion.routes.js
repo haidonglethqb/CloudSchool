@@ -798,24 +798,26 @@ router.post('/year-end/execute', async (req, res, next) => {
         })
       }
 
-      if (unresolved.length === 0) {
-        await tx.academicYear.updateMany({
-          where: { tenantId: req.tenantId },
-          data: { isActive: false }
-        })
-        await tx.semester.updateMany({
-          where: { tenantId: req.tenantId },
-          data: { isActive: false }
-        })
-        await tx.academicYear.update({
-          where: { id: nextAcademicYear.id },
-          data: { isActive: true }
-        })
-        await tx.semester.update({
-          where: { id: nextSemester.id },
-          data: { isActive: true }
-        })
-      }
+      // Always activate the next academic year and its first semester after a successful execute.
+      // Do not gate this on unresolved.length — the execute itself already validated passes/fails.
+      await tx.academicYear.updateMany({
+        where: { tenantId: req.tenantId },
+        data: { isActive: false }
+      })
+      await tx.semester.updateMany({
+        where: { tenantId: req.tenantId },
+        data: { isActive: false }
+      })
+      await tx.academicYear.update({
+        where: { id: nextAcademicYear.id },
+        data: { isActive: true }
+      })
+      await tx.semester.update({
+        where: { id: nextSemester.id },
+        data: { isActive: true }
+      })
+
+      console.info('[promotion.execute] activated academicYearId=%s semesterId=%s unresolved=%d', nextAcademicYear.id, nextSemester.id, unresolved.length)
     })
 
     await prisma.activityLog.create({
@@ -827,6 +829,8 @@ router.post('/year-end/execute', async (req, res, next) => {
         details: JSON.stringify({
           academicYearId,
           semesterId: finalSemester.id,
+          activatedAcademicYearId: nextAcademicYear.id,
+          activatedSemesterId: nextSemester.id,
           promoted: promoted.length,
           archived: archived.length,
           failedAssigned: failedAssigned.length,
@@ -843,6 +847,8 @@ router.post('/year-end/execute', async (req, res, next) => {
         failedAssigned,
         createdClasses,
         unresolved,
+        activatedAcademicYearId: nextAcademicYear.id,
+        activatedSemesterId: nextSemester.id,
         summary: {
           promoted: promoted.length,
           archived: archived.length,

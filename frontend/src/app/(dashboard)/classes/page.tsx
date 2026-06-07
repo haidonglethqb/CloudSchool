@@ -57,6 +57,10 @@ export default function ClassesPage() {
   const [teacherClasses, setTeacherClasses] = useState<Class[]>([])
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([])
   const [selectedAcademicYearId, setSelectedAcademicYearId] = useState('')
+  // Track whether user manually picked a year so we don't override their selection.
+  // When false (default), always follow the backend active year — this ensures the dropdown
+  // auto-updates to the new active year after promotion executes.
+  const [userSelectedYear, setUserSelectedYear] = useState(false)
   const [settings, setSettings] = useState<Settings | null>(null)
   const [loading, setLoading] = useState(true)
   const [expandedGrades, setExpandedGrades] = useState<Set<string>>(new Set())
@@ -70,9 +74,10 @@ export default function ClassesPage() {
       const yearRes = await academicYearApi.list()
       const yearRows = yearRes.data.data || []
       const activeYearId = yearRows.find((item: AcademicYear) => item.isActive)?.id || yearRows[0]?.id || ''
-      const targetYearId = selectedAcademicYearId || activeYearId
+      // If user has not manually selected a year, always follow the active year from backend.
+      const targetYearId = userSelectedYear ? (selectedAcademicYearId || activeYearId) : activeYearId
       setAcademicYears(yearRows)
-      if (!selectedAcademicYearId && targetYearId) setSelectedAcademicYearId(targetYearId)
+      if (targetYearId !== selectedAcademicYearId) setSelectedAcademicYearId(targetYearId)
 
       const classesRes = await classApi.list(targetYearId ? { academicYearId: targetYearId } : undefined)
       setTeacherClasses(classesRes.data.data || [])
@@ -251,7 +256,14 @@ export default function ClassesPage() {
 
       <div className="card p-4">
         <label className="label">Đang xem danh sách lớp năm học</label>
-        <select className="input max-w-sm" value={selectedAcademicYearId} onChange={(e) => setSelectedAcademicYearId(e.target.value)}>
+        <select
+          className="input max-w-sm"
+          value={selectedAcademicYearId}
+          onChange={(e) => {
+            setUserSelectedYear(true)
+            setSelectedAcademicYearId(e.target.value)
+          }}
+        >
           {academicYears.map((year) => (
             <option key={year.id} value={year.id}>
               {year.startYear}-{year.endYear}{year.isActive ? ' - Đang active' : ''}
