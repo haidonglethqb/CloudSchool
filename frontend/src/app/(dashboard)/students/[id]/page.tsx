@@ -52,6 +52,16 @@ interface Student {
   createdAt: string
 }
 
+const compareSemesterRecency = (left: Semester, right: Semester) => {
+  const leftYear = Number(String(left.year || '').split('-')[0]) || 0
+  const rightYear = Number(String(right.year || '').split('-')[0]) || 0
+  if (leftYear !== rightYear) return rightYear - leftYear
+  const leftNum = Number(left.semesterNum || 0)
+  const rightNum = Number(right.semesterNum || 0)
+  if (leftNum !== rightNum) return rightNum - leftNum
+  return String(right.id).localeCompare(String(left.id))
+}
+
 interface ScoreEntry {
   id: string
   value: number
@@ -139,22 +149,17 @@ export default function StudentDetailPage() {
         setPlacementHistory(placementRes.data.data || [])
         const ays = ayRes.data.data || []
         setAcademicYears(ays)
-        const defaultYear = ays.find((ay: { isActive?: boolean }) => ay.isActive) || ays[0]
-        if (defaultYear) setSelectedYear(`${defaultYear.startYear}-${defaultYear.endYear}`)
         const sems = semRes.data.data || []
         setSemesters(sems)
-        const activeYearLabel = defaultYear ? `${defaultYear.startYear}-${defaultYear.endYear}` : ''
-        const activeYearSemesters = defaultYear
-          ? sems.filter((semester: Semester) => semester.academicYearId === defaultYear.id || semester.year === activeYearLabel)
-          : []
-        const defaultSemester = activeYearSemesters.length > 0
-          ? activeYearSemesters.find((semester: Semester) => semester.isActive) || [...activeYearSemesters].sort((left: Semester, right: Semester) => {
-            const leftNum = Number(left.semesterNum || 0)
-            const rightNum = Number(right.semesterNum || 0)
-            if (leftNum !== rightNum) return leftNum - rightNum
-            return String(left.id).localeCompare(String(right.id))
-          })[0]
-          : pickDefaultSemester(sems)
+        const enrollmentSemesterIds = new Set((response.data.data?.enrollments || []).map((item: { semesterId: string }) => item.semesterId))
+        const enrolledSemesters = sems.filter((semester: Semester) => enrollmentSemesterIds.has(semester.id))
+        const defaultSemester = enrolledSemesters.find((semester: Semester) => semester.isActive)
+          || [...enrolledSemesters].sort(compareSemesterRecency)[0]
+          || pickDefaultSemester(sems)
+        const defaultYear = defaultSemester
+          ? ays.find((ay: { id: string; startYear: number; endYear: number }) => ay.id === defaultSemester.academicYearId)
+          : (ays.find((ay: { isActive?: boolean }) => ay.isActive) || ays[0])
+        if (defaultYear) setSelectedYear(`${defaultYear.startYear}-${defaultYear.endYear}`)
         if (defaultSemester) {
           setSelectedSemester(defaultSemester.id)
           setCurrentSemesterId(defaultSemester.id)

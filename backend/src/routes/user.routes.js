@@ -60,7 +60,7 @@ router.get('/:id', authorize('SUPER_ADMIN', 'STAFF'), requireRolePermission('use
         id: true, email: true, fullName: true, role: true, department: true,
         phone: true, isActive: true, createdAt: true, updatedAt: true,
         teacherAssignments: {
-          include: { class: true, subject: true }
+          include: { class: true, subject: true, semester: true }
         }
       }
     })
@@ -221,15 +221,36 @@ router.put('/:id/assignments', authorize('SUPER_ADMIN'), async (req, res, next) 
     })
     if (!targetUser) throw new AppError('Teacher/staff not found', 404, 'NOT_FOUND')
 
-    // Validate all classIds and subjectIds belong to this tenant
+    // Validate all classIds, subjectIds, and semesterIds belong to this tenant
+    if (assignments.some((assignment) => !assignment.classId || !assignment.subjectId || !assignment.semesterId)) {
+      throw new AppError('Each assignment must include classId, subjectId, and semesterId', 400, 'INVALID_INPUT')
+    }
+
     const classIds = [...new Set(assignments.map(a => a.classId))]
     const subjectIds = [...new Set(assignments.map(a => a.subjectId))]
-    const [validClasses, validSubjects] = await Promise.all([
-      prisma.class.findMany({ where: { id: { in: classIds }, tenantId: req.tenantId }, select: { id: true } }),
-      prisma.subject.findMany({ where: { id: { in: subjectIds }, tenantId: req.tenantId }, select: { id: true } })
+    const semesterIds = [...new Set(assignments.map(a => a.semesterId))]
+    const [validClasses, validSubjects, validSemesters] = await Promise.all([
+      prisma.class.findMany({ where: { id: { in: classIds }, tenantId: req.tenantId }, select: { id: true, academicYearId: true, academicYear: true } }),
+      prisma.subject.findMany({ where: { id: { in: subjectIds }, tenantId: req.tenantId }, select: { id: true } }),
+      prisma.semester.findMany({ where: { id: { in: semesterIds }, tenantId: req.tenantId }, select: { id: true, academicYearId: true, year: true } })
     ])
     if (validClasses.length !== classIds.length) throw new AppError('One or more classes not found', 404, 'NOT_FOUND')
     if (validSubjects.length !== subjectIds.length) throw new AppError('One or more subjects not found', 404, 'NOT_FOUND')
+    if (validSemesters.length !== semesterIds.length) throw new AppError('One or more semesters not found', 404, 'NOT_FOUND')
+
+    const classMap = new Map(validClasses.map((item) => [item.id, item]))
+    const semesterMap = new Map(validSemesters.map((item) => [item.id, item]))
+    const invalidAssignment = assignments.find((assignment) => {
+      const classItem = classMap.get(assignment.classId)
+      const semester = semesterMap.get(assignment.semesterId)
+      if (!classItem || !semester) return true
+      return classItem.academicYearId
+        ? classItem.academicYearId !== semester.academicYearId
+        : classItem.academicYear !== semester.year
+    })
+    if (invalidAssignment) {
+      throw new AppError('Class assignment must belong to the selected semester academic year', 400, 'CLASS_SEMESTER_MISMATCH')
+    }
 
     // Delete all existing assignments for this teacher, then create new ones atomically
     await prisma.$transaction(async (tx) => {
@@ -243,6 +264,7 @@ router.put('/:id/assignments', authorize('SUPER_ADMIN'), async (req, res, next) 
             tenantId: req.tenantId,
             teacherId: req.params.id,
             classId: a.classId,
+            semesterId: a.semesterId,
             subjectId: a.subjectId,
             isHomeroom: a.isHomeroom || false,
           })),
@@ -255,7 +277,7 @@ router.put('/:id/assignments', authorize('SUPER_ADMIN'), async (req, res, next) 
       where: { id: req.params.id },
       select: {
         id: true, fullName: true,
-        teacherAssignments: { include: { class: true, subject: true } },
+        teacherAssignments: { include: { class: true, subject: true, semester: true } },
       },
     })
 

@@ -219,15 +219,18 @@ model TeacherAssignment {
   teacher    User     @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   classId    String
   class      Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  semesterId String
+  semester   Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
   subjectId  String
   subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   isHomeroom Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  @@unique([teacherId, classId, subjectId])
-  @@index([tenantId, teacherId])
+  @@unique([teacherId, classId, subjectId, semesterId])
+  @@index([tenantId, teacherId, semesterId])
   @@index([classId, tenantId])
+  @@index([semesterId, tenantId])
   @@map("teacher_assignments")
 }
 
@@ -272,6 +275,7 @@ model Semester {
   promotions         Promotion[]
   enrollments        ClassEnrollment[]
   transferHistories  TransferHistory[]
+  teacherAssignments TeacherAssignment[]
 
   @@unique([tenantId, year, semesterNum])
   @@index([tenantId, isActive])

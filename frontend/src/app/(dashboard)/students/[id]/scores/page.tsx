@@ -128,6 +128,13 @@ export default function StudentScoreEditPage() {
     return grouped
   }
 
+  const resolveSemesterAcademicYearId = useCallback((semesterId: string) => {
+    if (!semesterId) return student?.class?.academicYearId
+    return semesters.find((semester) => semester.id === semesterId)?.academicYearId || student?.class?.academicYearId
+  }, [semesters, student?.class?.academicYearId])
+
+  const resolvedClassIdForSemester = scoreData?.scoreContext?.class?.id || student?.class?.id || ''
+
   useEffect(() => {
     if (!isAdminOrStaff && !isTeacher) {
       toast.error('Bạn không có quyền truy cập trang này')
@@ -155,24 +162,7 @@ export default function StudentScoreEditPage() {
           : pickDefaultSemester(sems)?.id
         if (targetSem) setSelectedSemester(targetSem)
 
-        if (isTeacher && studentData.class) {
-          try {
-            // Fetch classes scoped to student's academic year to avoid cross-year ambiguity
-            const classesRes = await classApi.list({ academicYearId: studentData.class.academicYearId || undefined })
-            const classes = classesRes.data.data || []
-            const studentClass = classes.find((c: any) => c.id === studentData.class?.id)
-            if (studentClass?.teacherAssignments) {
-              const myAssignments = studentClass.teacherAssignments.filter(
-                (a: any) => a.teacher?.id === user?.id
-              )
-              setEditableSubjectIds(new Set(myAssignments.map((a: any) => a.subject?.id)))
-            } else {
-              setEditableSubjectIds(new Set())
-            }
-          } catch {
-            setEditableSubjectIds(new Set())
-          }
-        } else if (isAdminOrStaff) {
+        if (isAdminOrStaff) {
           setEditableSubjectIds(null)
         }
       } catch (error: any) {
@@ -187,6 +177,35 @@ export default function StudentScoreEditPage() {
     }
     if (id) fetchInitial()
   }, [id, router, isAdminOrStaff, isTeacher, user?.id])
+
+  useEffect(() => {
+    if (!isTeacher || !resolvedClassIdForSemester || !selectedSemester) return
+
+    const fetchEditableSubjects = async () => {
+      try {
+        const academicYearId = resolveSemesterAcademicYearId(selectedSemester)
+        const classesRes = await classApi.list({
+          ...(academicYearId ? { academicYearId } : {}),
+          semesterId: selectedSemester,
+        })
+        const classes = classesRes.data.data || []
+        const studentClass = classes.find((c: any) => c.id === resolvedClassIdForSemester)
+        if (!studentClass?.teacherAssignments) {
+          setEditableSubjectIds(new Set())
+          return
+        }
+
+        const myAssignments = studentClass.teacherAssignments.filter(
+          (assignment: any) => assignment.teacher?.id === user?.id && assignment.semester?.id === selectedSemester
+        )
+        setEditableSubjectIds(new Set(myAssignments.map((assignment: any) => assignment.subject?.id).filter(Boolean)))
+      } catch {
+        setEditableSubjectIds(new Set())
+      }
+    }
+
+    fetchEditableSubjects()
+  }, [isTeacher, resolveSemesterAcademicYearId, resolvedClassIdForSemester, selectedSemester, user?.id])
 
   const fetchScores = useCallback(async () => {
     if (!id || !selectedSemester) return
@@ -233,7 +252,7 @@ export default function StudentScoreEditPage() {
         return
       }
 
-      if (!student.class?.id || !selectedSemesterMeta?.academicYearId) {
+      if (!resolvedClassIdForSemester || !selectedSemesterMeta?.academicYearId) {
         setComponentsBySubject(fallback)
         return
       }
@@ -241,7 +260,8 @@ export default function StudentScoreEditPage() {
       try {
         const subjectRes = await subjectApi.list({
           academicYearId: selectedSemesterMeta.academicYearId,
-          classId: student.class.id,
+          classId: resolvedClassIdForSemester,
+          semesterId: selectedSemester,
         })
         const subjects = subjectRes.data.data || []
         const rows = await Promise.all(subjects.map(async (subject: { id: string; name: string }) => {
@@ -277,7 +297,7 @@ export default function StudentScoreEditPage() {
     }
 
     fetchComponentSets()
-  }, [student, selectedSemester, semesters, scoreData])
+  }, [resolvedClassIdForSemester, selectedSemester, semesters, scoreData, student])
 
   const canEditSubject = (subjectId: string) => {
     if (editableSubjectIds === null) return true

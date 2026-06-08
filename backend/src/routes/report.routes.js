@@ -19,8 +19,8 @@ function calcWeightedAverage(scores) {
 
 const buildAcademicYearLabel = (academicYear) => `${academicYear.startYear}-${academicYear.endYear}`
 
-const getScopedClassIds = async (req, subjectId = null) => {
-  const scope = await getUserAssignmentScope(prisma, req, subjectId)
+const getScopedClassIds = async (req, options = {}) => {
+  const scope = await getUserAssignmentScope(prisma, req, options)
   return scope ? scope.classIds : null
 }
 
@@ -78,7 +78,7 @@ router.get('/subject-summary', async (req, res, next) => {
     if (!settings) throw new AppError('Tenant settings not configured', 400, 'SETTINGS_NOT_FOUND')
 
     const yearFilter = await getSemesterClassFilter(req.tenantId, semesterId)
-    const teacherClassIds = await getScopedClassIds(req, subjectId)
+    const teacherClassIds = await getScopedClassIds(req, { subjectId, semesterId })
     const classes = await prisma.class.findMany({
       where: {
         tenantId: req.tenantId,
@@ -177,7 +177,7 @@ router.get('/class-promotion-summary', async (req, res, next) => {
     const { classId, semesterId } = req.query
     if (!classId || !semesterId) throw new AppError('classId and semesterId are required', 400, 'MISSING_PARAMS')
 
-    await ensureClassAccess(prisma, req, classId)
+    await ensureClassAccess(prisma, req, classId, { semesterId })
 
     const classInfo = await prisma.class.findFirst({
       where: { id: classId, tenantId: req.tenantId },
@@ -224,7 +224,7 @@ router.get('/semester-promotion-summary', async (req, res, next) => {
     const semester = await prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId } })
     if (!semester) throw new AppError('Semester not found', 404, 'NOT_FOUND')
 
-    const teacherClassIds = await getScopedClassIds(req)
+    const teacherClassIds = await getScopedClassIds(req, { semesterId })
     const promotions = await prisma.promotion.findMany({
       where: {
         tenantId: req.tenantId,
@@ -296,7 +296,7 @@ router.get('/year-promotion-summary', async (req, res, next) => {
     if (year.semesters.length === 0) throw new AppError('Academic year has no semesters', 400, 'NO_SEMESTERS')
 
     const finalSemester = year.semesters[year.semesters.length - 1]
-    const teacherClassIds = await getScopedClassIds(req)
+    const teacherClassIds = await getScopedClassIds(req, { semesterId: finalSemester.id })
     const promotions = await prisma.promotion.findMany({
       where: {
         tenantId: req.tenantId,
@@ -380,7 +380,7 @@ router.get('/dashboard', async (req, res, next) => {
       }
     }
 
-    const scopedClassIds = await getScopedClassIds(req)
+    const scopedClassIds = await getScopedClassIds(req, { semesterId: selectedSemester?.id || null })
     if (scopedClassIds) {
       classWhere.id = { in: scopedClassIds }
       studentWhere.classId = { in: scopedClassIds }

@@ -59,7 +59,7 @@ const getStudentIdsForClassAndSemester = async (tenantId, classId, semesterId) =
 }
 
 const assertAssignedUserCanAccessStudent = async (req, studentId, semesterId = null) => {
-  const scope = await getUserAssignmentScope(prisma, req)
+  const scope = await getUserAssignmentScope(prisma, req, { semesterId })
   if (!scope) return
   const student = await prisma.student.findFirst({
     where: { id: studentId, tenantId: req.tenantId },
@@ -130,7 +130,7 @@ router.get('/history', async (req, res, next) => {
       throw new AppError('classId, subjectId and semesterId are required', 400, 'MISSING_PARAMS')
     }
 
-    await ensureClassSubjectAccess(prisma, req, classId, subjectId)
+    await ensureClassSubjectAccess(prisma, req, classId, subjectId, { semesterId })
 
     const skip = (Number(page) - 1) * Number(limit)
     const where = {
@@ -174,7 +174,7 @@ router.get('/class/:classId', async (req, res, next) => {
       throw new AppError('subjectId and semesterId are required', 400, 'MISSING_PARAMS')
     }
 
-    await ensureClassSubjectAccess(prisma, req, req.params.classId, subjectId)
+    await ensureClassSubjectAccess(prisma, req, req.params.classId, subjectId, { semesterId })
 
     const scoreContext = await resolveScoreEntryContext(prisma, req.tenantId, {
       classId: req.params.classId,
@@ -484,7 +484,7 @@ router.post('/', [
       throw new AppError('Student not assigned to a class in this semester', 400, 'INVALID_STUDENT')
     }
 
-    await ensureClassSubjectAccess(prisma, req, classId, subjectId)
+    await ensureClassSubjectAccess(prisma, req, classId, subjectId, { semesterId })
     const scoreContext = await resolveScoreEntryContext(prisma, req.tenantId, { classId, subjectId, semesterId })
     if (!scoreContext.components.some((component) => component.id === scoreComponentId)) {
       throw new AppError('Thành phần điểm không thuộc môn và học kỳ đã chọn', 400, 'COMPONENT_SET_MISMATCH')
@@ -693,7 +693,7 @@ router.post('/batch', async (req, res, next) => {
 
       for (const { studentId, subjectId, semesterId } of pairsToCheck.values()) {
         const classId = classByStudentSemester.get(`${studentId}::${semesterId}`)
-        if (!classId || !scope.pairSet.has(`${classId}::${subjectId}`)) {
+        if (!classId || !scope.classSubjectSemesterSet.has(`${classId}::${subjectId}::${semesterId}`)) {
           throw new AppError('Not assigned to this class/subject', 403, 'FORBIDDEN')
         }
       }
@@ -888,7 +888,7 @@ router.post('/class/:classId/lock', authorize('SUPER_ADMIN', 'STAFF'), async (re
 
     const classCheck = await prisma.class.findFirst({ where: { id: req.params.classId, tenantId: req.tenantId }, select: { id: true, name: true } })
     if (!classCheck) throw new AppError('Class not found', 404, 'NOT_FOUND')
-    await ensureClassSubjectAccess(prisma, req, req.params.classId, subjectId)
+    await ensureClassSubjectAccess(prisma, req, req.params.classId, subjectId, { semesterId })
 
     const studentIds = await getStudentIdsForClassAndSemester(req.tenantId, req.params.classId, semesterId)
 
@@ -964,7 +964,7 @@ router.post('/class/:classId/unlock', authorize('SUPER_ADMIN', 'STAFF'), async (
 
     const classCheck = await prisma.class.findFirst({ where: { id: req.params.classId, tenantId: req.tenantId }, select: { id: true, name: true } })
     if (!classCheck) throw new AppError('Class not found', 404, 'NOT_FOUND')
-    await ensureClassSubjectAccess(prisma, req, req.params.classId, subjectId)
+    await ensureClassSubjectAccess(prisma, req, req.params.classId, subjectId, { semesterId })
 
     const studentIds = await getStudentIdsForClassAndSemester(req.tenantId, req.params.classId, semesterId)
 

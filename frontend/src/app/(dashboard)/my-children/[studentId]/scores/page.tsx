@@ -56,6 +56,19 @@ const getSemesterLabel = (semester?: {
   return semester.name || ''
 }
 
+const pickLatestSemester = (semesters: any[]) => {
+  if (!Array.isArray(semesters) || semesters.length === 0) return null
+  return [...semesters].sort((left, right) => {
+    const leftYear = Number(String(left.year || '').split('-')[0]) || 0
+    const rightYear = Number(String(right.year || '').split('-')[0]) || 0
+    if (leftYear !== rightYear) return rightYear - leftYear
+    const leftNum = Number(left.semesterNum || 0)
+    const rightNum = Number(right.semesterNum || 0)
+    if (leftNum !== rightNum) return rightNum - leftNum
+    return String(right.id).localeCompare(String(left.id))
+  })[0]
+}
+
 export default function ChildScoresPage() {
   const { studentId } = useParams()
   const [student, setStudent] = useState<StudentInfo | null>(null)
@@ -68,9 +81,12 @@ export default function ChildScoresPage() {
     if (!studentId) return
     parentApi.getSemesters(studentId as string)
       .then(res => {
-        setSemesters(res.data?.data || [])
-        const active = res.data?.data?.find((s: any) => s.isActive)
-        if (active) setSelectedSemester(active.id)
+        const rows = res.data?.data || []
+        setSemesters(rows)
+        const active = rows.find((s: any) => s.isActive)
+        const fallback = pickLatestSemester(rows)
+        if (active?.id) setSelectedSemester(active.id)
+        else if (fallback?.id) setSelectedSemester(fallback.id)
       })
       .catch(() => {})
   }, [studentId])

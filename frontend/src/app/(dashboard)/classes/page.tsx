@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { academicYearApi, classApi, settingsApi } from '@/lib/api'
+import { academicYearApi, classApi, settingsApi, subjectApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
+import { formatSemesterLabel } from '@/lib/utils'
 import {
   Users,
   Plus,
@@ -33,6 +34,7 @@ interface Class {
   teacherAssignments?: Array<{
     id: string
     isHomeroom?: boolean
+    semester?: { id: string; name: string; year?: string; displayName?: string; academicYearId?: string; isActive?: boolean } | null
     subject?: { id: string; name: string } | null
     teacher?: { id: string; fullName: string } | null
   }>
@@ -50,13 +52,24 @@ interface AcademicYear {
   isActive: boolean
 }
 
+interface Semester {
+  id: string
+  name: string
+  year?: string
+  displayName?: string
+  academicYearId?: string
+  isActive: boolean
+}
+
 export default function ClassesPage() {
   const user = useAuthStore((state) => state.user)
   const isTeacher = user?.role === 'TEACHER'
   const [grades, setGrades] = useState<Grade[]>([])
   const [teacherClasses, setTeacherClasses] = useState<Class[]>([])
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([])
+  const [semesters, setSemesters] = useState<Semester[]>([])
   const [selectedAcademicYearId, setSelectedAcademicYearId] = useState('')
+  const [selectedSemesterId, setSelectedSemesterId] = useState('')
   // Track whether user manually picked a year so we don't override their selection.
   // When false (default), always follow the backend active year — this ensures the dropdown
   // auto-updates to the new active year after promotion executes.
@@ -72,14 +85,24 @@ export default function ClassesPage() {
   const fetchData = async () => {
     try {
       const yearRes = await academicYearApi.list()
+      const semesterRes = await subjectApi.getSemesters()
       const yearRows = yearRes.data.data || []
+      const semesterRows = semesterRes.data.data || []
       const activeYearId = yearRows.find((item: AcademicYear) => item.isActive)?.id || yearRows[0]?.id || ''
+      const activeSemesterId = semesterRows.find((item: Semester) => item.isActive && item.academicYearId === activeYearId)?.id
+        || semesterRows.find((item: Semester) => item.academicYearId === activeYearId)?.id
+        || semesterRows[0]?.id
       // If user has not manually selected a year, always follow the active year from backend.
       const targetYearId = userSelectedYear ? (selectedAcademicYearId || activeYearId) : activeYearId
+      const targetSemesterId = selectedSemesterId && semesterRows.some((item: Semester) => item.id === selectedSemesterId)
+        ? selectedSemesterId
+        : activeSemesterId || ''
       setAcademicYears(yearRows)
+      setSemesters(semesterRows)
       if (targetYearId !== selectedAcademicYearId) setSelectedAcademicYearId(targetYearId)
+      if (targetSemesterId !== selectedSemesterId) setSelectedSemesterId(targetSemesterId)
 
-      const classesRes = await classApi.list(targetYearId ? { academicYearId: targetYearId } : undefined)
+      const classesRes = await classApi.list(targetYearId ? { academicYearId: targetYearId, ...(isTeacher && targetSemesterId ? { semesterId: targetSemesterId } : {}) } : undefined)
       setTeacherClasses(classesRes.data.data || [])
 
       if (isTeacher) {
@@ -106,7 +129,7 @@ export default function ClassesPage() {
 
   useEffect(() => {
     fetchData()
-  }, [isTeacher, selectedAcademicYearId])
+  }, [isTeacher, selectedAcademicYearId, selectedSemesterId])
 
   const toggleGrade = (gradeId: string) => {
     const newExpanded = new Set(expandedGrades)
@@ -164,6 +187,10 @@ export default function ClassesPage() {
   const getTotalClasses = () =>
     grades.reduce((sum, grade) => sum + grade.classes.length, 0)
 
+  const filteredSemesters = selectedAcademicYearId
+    ? semesters.filter((item) => item.academicYearId === selectedAcademicYearId)
+    : semesters
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
@@ -174,7 +201,7 @@ export default function ClassesPage() {
 
   if (isTeacher) {
     const cards = teacherClasses.map((item) => {
-      const assignments = (item.teacherAssignments || []).filter((entry) => entry.teacher?.id === user?.id)
+      const assignments = (item.teacherAssignments || []).filter((entry) => entry.teacher?.id === user?.id && (!selectedSemesterId || entry.semester?.id === selectedSemesterId))
       const homeroom = assignments.find((entry) => entry.isHomeroom)
       const subject = homeroom?.subject || assignments[0]?.subject || null
       return {
@@ -218,12 +245,12 @@ export default function ClassesPage() {
                   <p>{item.subject ? `Môn phụ trách: ${item.subject.name}` : 'Môn phụ trách: Đang cập nhật'}</p>
                 </div>
                 <div className="mt-4 flex gap-2">
-                  <Link href={`/classes/${item.id}`} className="btn-outline flex-1 justify-center">
+                  <Link href={`/classes/${item.id}?academicYearId=${selectedAcademicYearId}&semesterId=${selectedSemesterId}`} className="btn-outline flex-1 justify-center">
                     <BookOpen className="w-4 h-4 mr-1" />
                     Xem lớp
                   </Link>
                   <Link
-                    href={`/scores?classId=${item.id}${item.subject?.id ? `&subjectId=${item.subject.id}` : ''}`}
+                    href={`/scores?academicYearId=${selectedAcademicYearId}&semesterId=${selectedSemesterId}&classId=${item.id}${item.subject?.id ? `&subjectId=${item.subject.id}` : ''}`}
                     className="btn-primary flex-1 justify-center"
                   >
                     <ClipboardEdit className="w-4 h-4 mr-1" />
@@ -256,20 +283,37 @@ export default function ClassesPage() {
 
       <div className="card p-4">
         <label className="label">Đang xem danh sách lớp năm học</label>
-        <select
-          className="input max-w-sm"
-          value={selectedAcademicYearId}
-          onChange={(e) => {
-            setUserSelectedYear(true)
-            setSelectedAcademicYearId(e.target.value)
-          }}
-        >
-          {academicYears.map((year) => (
-            <option key={year.id} value={year.id}>
-              {year.startYear}-{year.endYear}{year.isActive ? ' - Đang active' : ''}
-            </option>
-          ))}
-        </select>
+        <div className="grid gap-3 md:grid-cols-2 max-w-2xl">
+          <select
+            className="input"
+            value={selectedAcademicYearId}
+            onChange={(e) => {
+              const nextYearId = e.target.value
+              setUserSelectedYear(true)
+              setSelectedAcademicYearId(nextYearId)
+              const nextSemester = semesters.find((item) => item.isActive && item.academicYearId === nextYearId)
+                || semesters.find((item) => item.academicYearId === nextYearId)
+              setSelectedSemesterId(nextSemester?.id || '')
+            }}
+          >
+            {academicYears.map((year) => (
+              <option key={year.id} value={year.id}>
+                {year.startYear}-{year.endYear}{year.isActive ? ' - Đang active' : ''}
+              </option>
+            ))}
+          </select>
+          <select
+            className="input"
+            value={selectedSemesterId}
+            onChange={(e) => setSelectedSemesterId(e.target.value)}
+          >
+            {filteredSemesters.map((semester) => (
+              <option key={semester.id} value={semester.id}>
+                {formatSemesterLabel(semester)}{semester.isActive ? ' - Hiện tại' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Stats */}
@@ -429,7 +473,7 @@ export default function ClassesPage() {
 
                           <div className="flex items-center gap-1">
                             <Link
-                              href={`/classes/${cls.id}?academicYearId=${selectedAcademicYearId}`}
+                              href={`/classes/${cls.id}?academicYearId=${selectedAcademicYearId}&semesterId=${selectedSemesterId}`}
                               className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary-50 rounded"
                             >
                               <Edit2 className="w-4 h-4" />

@@ -601,35 +601,47 @@ async function main () {
 
   const subjectCodes = SUBJECT_CONFIG.map((item) => item.code)
   for (const classContext of classContexts) {
-    await prisma.teacherAssignment.updateMany({
-      where: { tenantId: tenant.id, classId: classContext.class.id },
-      data: { isHomeroom: false }
-    })
-
     const homeroomSubjectCode = subjectCodes[(classContext.classIndex - 1) % subjectCodes.length]
+    const classSemesters = getSemesterWindows({
+      startYear: classContext.startYear,
+      endYear: classContext.startYear + 1
+    }).map((semesterConfig) => semesterByKey[`${semesterConfig.year}-${semesterConfig.semesterNum}`]).filter(Boolean)
+
+    for (const semester of classSemesters) {
+      await prisma.teacherAssignment.updateMany({
+        where: { tenantId: tenant.id, classId: classContext.class.id, semesterId: semester.id },
+        data: { isHomeroom: false }
+      })
+    }
+
     for (const subjectCode of subjectCodes) {
       const teacher = teacherBySubjectCode[subjectCode]
       const subject = subjectByCode[subjectCode]
-      await prisma.teacherAssignment.upsert({
-        where: {
-          teacherId_classId_subjectId: {
+      for (const semester of classSemesters) {
+        await prisma.teacherAssignment.upsert({
+          where: {
+            teacherId_classId_subjectId_semesterId: {
+              teacherId: teacher.id,
+              classId: classContext.class.id,
+              subjectId: subject.id,
+              semesterId: semester.id
+            }
+          },
+          update: {
+            tenantId: tenant.id,
+            semesterId: semester.id,
+            isHomeroom: subjectCode === homeroomSubjectCode
+          },
+          create: {
+            tenantId: tenant.id,
             teacherId: teacher.id,
             classId: classContext.class.id,
-            subjectId: subject.id
+            subjectId: subject.id,
+            semesterId: semester.id,
+            isHomeroom: subjectCode === homeroomSubjectCode
           }
-        },
-        update: {
-          tenantId: tenant.id,
-          isHomeroom: subjectCode === homeroomSubjectCode
-        },
-        create: {
-          tenantId: tenant.id,
-          teacherId: teacher.id,
-          classId: classContext.class.id,
-          subjectId: subject.id,
-          isHomeroom: subjectCode === homeroomSubjectCode
-        }
-      })
+        })
+      }
     }
   }
   console.log('Teacher assignments ready')

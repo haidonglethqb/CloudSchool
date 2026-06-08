@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { userApi, classApi, subjectApi } from '@/lib/api'
+import { academicYearApi, userApi, classApi, subjectApi } from '@/lib/api'
 import { isValidVietnamPhone } from '@/lib/phone'
-import { getRoleLabel } from '@/lib/utils'
+import { formatSemesterLabel, getRoleLabel } from '@/lib/utils'
 import toast from 'react-hot-toast'
 import {
   Search, Plus, Loader2, X, Trash2, Pencil, Users,
@@ -24,19 +24,25 @@ interface UserItem {
 interface Assignment {
   id: string
   classId: string
+  semesterId: string
   subjectId: string
   isHomeroom: boolean
-  class: { id: string; name: string }
+  class: { id: string; name: string; academicYear?: string | null }
+  semester?: { id: string; name: string; year?: string | null; displayName?: string | null; academicYearId?: string | null; isActive?: boolean }
   subject: { id: string; name: string }
 }
 
-interface ClassItem { id: string; name: string }
+interface ClassItem { id: string; name: string; academicYear?: string | null }
 interface SubjectItem { id: string; name: string }
+interface AcademicYearItem { id: string; startYear: number; endYear: number; isActive: boolean }
+interface SemesterItem { id: string; name: string; year?: string | null; displayName?: string | null; academicYearId?: string | null; isActive: boolean }
 
 const MANAGE_ROLES = ['SUPER_ADMIN', 'STAFF', 'TEACHER'] as const
 const FILTER_ROLES = ['SUPER_ADMIN', 'STAFF', 'TEACHER'] as const
 
 const emptyForm = { email: '', password: '', fullName: '', phone: '', role: 'TEACHER' as string, department: '' }
+const getClassLabel = (item: { name: string; academicYear?: string | null }) =>
+  item.academicYear ? `${item.name} (${item.academicYear})` : item.name
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserItem[]>([])
@@ -55,8 +61,19 @@ export default function UsersPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [allClasses, setAllClasses] = useState<ClassItem[]>([])
   const [allSubjects, setAllSubjects] = useState<SubjectItem[]>([])
-  const [newAssign, setNewAssign] = useState({ classId: '', subjectIds: [] as string[], isHomeroom: false })
+  const [allAcademicYears, setAllAcademicYears] = useState<AcademicYearItem[]>([])
+  const [allSemesters, setAllSemesters] = useState<SemesterItem[]>([])
+  const [assignmentYearId, setAssignmentYearId] = useState('')
+  const [newAssign, setNewAssign] = useState({ semesterId: '', classId: '', subjectIds: [] as string[], isHomeroom: false })
   const [savingAssign, setSavingAssign] = useState(false)
+  const selectedAssignmentYear = allAcademicYears.find((year) => year.id === assignmentYearId)
+  const selectedAssignmentYearLabel = selectedAssignmentYear ? `${selectedAssignmentYear.startYear}-${selectedAssignmentYear.endYear}` : ''
+  const filteredClasses = assignmentYearId
+    ? allClasses.filter((item) => item.academicYear === selectedAssignmentYearLabel)
+    : allClasses
+  const filteredSemesters = assignmentYearId
+    ? allSemesters.filter((item) => item.academicYearId === assignmentYearId)
+    : allSemesters
 
   const fetchUsers = useCallback(() => {
     setLoading(true)
@@ -90,16 +107,27 @@ export default function UsersPage() {
   const openAssignments = async (u: UserItem) => {
     setAssignUserId(u.id)
     setAssignUserName(u.fullName)
-    setNewAssign({ classId: '', subjectIds: [], isHomeroom: false })
+    setNewAssign({ semesterId: '', classId: '', subjectIds: [], isHomeroom: false })
     try {
-      const [userRes, classesRes, subjectsRes] = await Promise.all([
+      const [userRes, classesRes, subjectsRes, yearsRes, semestersRes] = await Promise.all([
         userApi.get(u.id),
         classApi.list(),
         subjectApi.list(),
+        academicYearApi.list(),
+        subjectApi.getSemesters(),
       ])
+      const yearRows = yearsRes.data.data || []
+      const semesterRows = semestersRes.data.data || []
+      const activeYear = yearRows.find((item: AcademicYearItem) => item.isActive) || yearRows[0]
+      const activeSemester = semesterRows.find((item: SemesterItem) => item.isActive && item.academicYearId === activeYear?.id) || semesterRows.find((item: SemesterItem) => item.academicYearId === activeYear?.id) || semesterRows[0]
+
       setAssignments(userRes.data.data.teacherAssignments || [])
       setAllClasses(classesRes.data.data || [])
       setAllSubjects(subjectsRes.data.data || [])
+      setAllAcademicYears(yearRows)
+      setAllSemesters(semesterRows)
+      setAssignmentYearId(activeYear?.id || '')
+      setNewAssign({ semesterId: activeSemester?.id || '', classId: '', subjectIds: [], isHomeroom: false })
       setShowAssignments(true)
     } catch {
       toast.error('Lỗi tải dữ liệu phân công')
@@ -107,31 +135,35 @@ export default function UsersPage() {
   }
 
   const addAssignment = () => {
-    if (!newAssign.classId || newAssign.subjectIds.length === 0) {
-      return toast.error('Chọn lớp và ít nhất một môn học')
+    if (!newAssign.semesterId || !newAssign.classId || newAssign.subjectIds.length === 0) {
+      return toast.error('Chọn học kỳ, lớp và ít nhất một môn học')
     }
 
     const cls = allClasses.find(c => c.id === newAssign.classId)
+    const semester = allSemesters.find(item => item.id === newAssign.semesterId)
     if (!cls) return
+    if (!semester) return
 
     const nextRows = newAssign.subjectIds
-      .filter(subjectId => !assignments.some(a => a.classId === newAssign.classId && a.subjectId === subjectId))
+      .filter(subjectId => !assignments.some(a => a.classId === newAssign.classId && a.subjectId === subjectId && a.semesterId === newAssign.semesterId))
       .map((subjectId, index) => {
         const subj = allSubjects.find(s => s.id === subjectId)
         if (!subj) return null
         return {
           id: `new-${Date.now()}-${index}`,
+          semesterId: newAssign.semesterId,
           classId: newAssign.classId,
           subjectId,
           isHomeroom: newAssign.isHomeroom && index === 0,
           class: cls,
+          semester,
           subject: subj,
         }
       })
       .filter(Boolean) as Assignment[]
     if (nextRows.length === 0) return toast.error('Các phân công này đã tồn tại')
     setAssignments(prev => [...prev, ...nextRows])
-    setNewAssign({ classId: '', subjectIds: [], isHomeroom: false })
+    setNewAssign(prev => ({ ...prev, classId: '', subjectIds: [], isHomeroom: false }))
   }
 
   const removeAssignment = (idx: number) => {
@@ -146,6 +178,7 @@ export default function UsersPage() {
         assignUserId,
         assignments.map(a => ({
           classId: a.classId,
+          semesterId: a.semesterId,
           subjectId: a.subjectId,
           isHomeroom: a.isHomeroom,
         }))
@@ -398,9 +431,10 @@ export default function UsersPage() {
                   {assignments.map((a, idx) => (
                     <div key={a.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
                       <div className="flex items-center gap-3 text-sm">
-                        <span className="font-medium text-gray-900">{a.class.name}</span>
+                        <span className="font-medium text-gray-900">{getClassLabel(a.class)}</span>
                         <span className="text-gray-400">—</span>
                         <span className="text-gray-700">{a.subject.name}</span>
+                        <span className="text-xs text-gray-500">{a.semester ? formatSemesterLabel(a.semester) : ''}</span>
                         {a.isHomeroom && (
                           <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">CN</span>
                         )}
@@ -416,15 +450,47 @@ export default function UsersPage() {
               {/* Add new assignment */}
               <div className="border-t pt-4">
                 <p className="text-sm font-medium text-gray-700 mb-2">Thêm phân công</p>
+                <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  Phân công giáo viên gắn với từng năm học và học kỳ. Nếu đổi giáo viên giữa HK1 và HK2 thì phải tạo phân công riêng cho từng kỳ.
+                </p>
                 <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={assignmentYearId}
+                    onChange={e => {
+                      const nextYearId = e.target.value
+                      setAssignmentYearId(nextYearId)
+                      const nextSemester = allSemesters.find(item => item.isActive && item.academicYearId === nextYearId) || allSemesters.find(item => item.academicYearId === nextYearId)
+                      setNewAssign({ semesterId: nextSemester?.id || '', classId: '', subjectIds: [], isHomeroom: false })
+                    }}
+                    className="input text-sm"
+                  >
+                    <option value="">Chọn năm học</option>
+                    {allAcademicYears.map(year => (
+                      <option key={year.id} value={year.id}>{year.startYear}-{year.endYear}{year.isActive ? ' - Đang active' : ''}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={newAssign.semesterId}
+                    onChange={e => setNewAssign(p => ({ ...p, semesterId: e.target.value, classId: '', subjectIds: [] }))}
+                    className="input text-sm"
+                  >
+                    <option value="">Chọn học kỳ</option>
+                    {filteredSemesters.map(semester => (
+                      <option key={semester.id} value={semester.id}>
+                        {formatSemesterLabel(semester)}{semester.isActive ? ' - Hiện tại' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
                   <select
                     value={newAssign.classId}
                     onChange={e => setNewAssign(p => ({ ...p, classId: e.target.value }))}
                     className="input text-sm"
                   >
                     <option value="">Chọn lớp</option>
-                    {allClasses.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
+                    {filteredClasses.map(c => (
+                      <option key={c.id} value={c.id}>{getClassLabel(c)}</option>
                     ))}
                   </select>
                   <select

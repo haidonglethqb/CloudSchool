@@ -80,6 +80,7 @@ export type SemesterDisplay = {
   name: string
   isActive?: boolean
   year?: string | null
+  displayName?: string | null
   semesterNum?: number | null
 }
 
@@ -112,6 +113,7 @@ export function getSemesterScheduleStatus(semester: SemesterStatusSource, refere
 }
 
 export function formatSemesterLabel(semester: SemesterDisplay): string {
+  if (semester.displayName) return semester.displayName
   const yearSuffix = semester.year ? ` (${semester.year})` : ''
   return `${semester.name}${yearSuffix}`
 }

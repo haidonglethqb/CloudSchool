@@ -190,7 +190,10 @@ export default function ScoresPage() {
 
   useEffect(() => {
     if (!selectedAcademicYear) return
-    classApi.list({ academicYearId: selectedAcademicYear })
+    classApi.list({
+      academicYearId: selectedAcademicYear,
+      ...(selectedSemester ? { semesterId: selectedSemester } : {}),
+    })
       .then((res) => {
         const rows = res.data.data || []
         setClasses(rows)
@@ -200,7 +203,7 @@ export default function ScoresPage() {
         }
       })
       .catch(() => toast.error('Không thể tải danh sách lớp'))
-  }, [selectedAcademicYear, selectedClass])
+  }, [selectedAcademicYear, selectedClass, selectedSemester])
 
   useEffect(() => {
     if (!selectedAcademicYear || !selectedClass) {
@@ -208,7 +211,11 @@ export default function ScoresPage() {
       setSelectedSubject('')
       return
     }
-    subjectApi.list({ academicYearId: selectedAcademicYear, classId: selectedClass })
+    subjectApi.list({
+      academicYearId: selectedAcademicYear,
+      classId: selectedClass,
+      ...(selectedSemester ? { semesterId: selectedSemester } : {}),
+    })
       .then((res) => {
         const rows = res.data.data || []
         setSubjects(rows)
@@ -221,7 +228,7 @@ export default function ScoresPage() {
         setSubjects([])
         toast.error('Không thể tải môn áp dụng cho lớp')
       })
-  }, [selectedAcademicYear, selectedClass, selectedSubject])
+  }, [selectedAcademicYear, selectedClass, selectedSubject, selectedSemester])
 
   useEffect(() => {
     if (!selectedAcademicYear || semesters.length === 0) return

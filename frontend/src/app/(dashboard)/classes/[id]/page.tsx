@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { classApi, exportApi, downloadBlob } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
-import { formatDate, getGenderLabel } from '@/lib/utils'
+import { formatDate, formatSemesterLabel, getGenderLabel } from '@/lib/utils'
 import {
   ArrowLeft,
   Save,
@@ -33,6 +33,7 @@ interface ClassDetail {
   teacherAssignments: Array<{
     id: string
     isHomeroom: boolean
+    semester?: { id: string; name: string; year?: string; displayName?: string } | null
     teacher: { id: string; fullName: string }
     subject: { id: string; name: string } | null
   }>
@@ -67,6 +68,7 @@ export default function ClassDetailPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const academicYearId = searchParams.get('academicYearId') || undefined
+  const semesterId = searchParams.get('semesterId') || undefined
   const user = useAuthStore((state) => state.user)
   const isTeacher = user?.role === 'TEACHER'
   const [classData, setClassData] = useState<ClassDetail | null>(null)
@@ -85,7 +87,7 @@ export default function ClassDetailPage() {
   const fetchClassData = async () => {
     try {
       const [classRes, logsRes] = await Promise.all([
-        classApi.get(id as string, { academicYearId }),
+        classApi.get(id as string, { academicYearId, semesterId }),
         isTeacher ? Promise.resolve({ data: { data: [] } }) : classApi.getStudentDeletions(id as string),
       ])
       const data = classRes.data.data
@@ -114,7 +116,7 @@ export default function ClassDetailPage() {
 
   useEffect(() => {
     if (id) fetchClassData()
-  }, [id, router, isTeacher, academicYearId])
+  }, [id, router, isTeacher, academicYearId, semesterId])
 
   const handleSave = async () => {
     if (!formData.name.trim()) {
@@ -129,7 +131,7 @@ export default function ClassDetailPage() {
       toast.success('Cập nhật lớp thành công')
       setEditing(false)
       // Refresh data
-      const res = await classApi.get(id as string, { academicYearId })
+      const res = await classApi.get(id as string, { academicYearId, semesterId })
       setClassData(res.data.data)
     } catch (error: any) {
       toast.error(error.response?.data?.error?.message || 'Cập nhật thất bại')
@@ -202,6 +204,11 @@ export default function ClassDetailPage() {
   const studentCount = classData.students?.length || classData._count?.students || 0
   const classCapacity = classData.capacity || 1
   const capacityPercent = Math.min((studentCount / classCapacity) * 100, 100)
+  const visibleAssignments = semesterId
+    ? (classData.teacherAssignments || []).filter((assignment) => assignment.semester?.id === semesterId)
+    : (classData.teacherAssignments || [])
+  const homeroomAssignment = visibleAssignments.find((assignment) => assignment.isHomeroom)
+  const selectedSemesterMeta = visibleAssignments[0]?.semester || null
 
   return (
     <div className="space-y-6">
@@ -238,8 +245,9 @@ export default function ClassDetailPage() {
                 </h1>
                 <p className="text-gray-500 text-sm mt-1">
                   {classData.grade.name}
-                  {classData.teacherAssignments?.find(a => a.isHomeroom)
-                    ? ` - GVCN: ${classData.teacherAssignments.find(a => a.isHomeroom)?.teacher.fullName}`
+                  {selectedSemesterMeta ? ` - ${formatSemesterLabel(selectedSemesterMeta)}` : ''}
+                  {homeroomAssignment
+                    ? ` - GVCN: ${homeroomAssignment.teacher.fullName}`
                     : ' - Chưa có GVCN'}
                 </p>
               </>

@@ -101,7 +101,7 @@ router.get('/grades', tenantGuard, async (req, res, next) => {
       academicYear: req.query.academicYear,
       academicYearId: req.query.academicYearId
     })
-    const scope = await getUserAssignmentScope(prisma, req)
+    const scope = await getUserAssignmentScope(prisma, req, { semesterId: req.query.semesterId })
     const assignmentClassFilter = scope ? { id: { in: scope.classIds } } : {}
 
     const grades = await prisma.grade.findMany({
@@ -133,7 +133,7 @@ router.get('/grades', tenantGuard, async (req, res, next) => {
 // GET /classes
 router.get('/', async (req, res, next) => {
   try {
-    const { gradeId, academicYear, academicYearId } = req.query
+    const { gradeId, academicYear, academicYearId, semesterId } = req.query
     const classContext = await buildAcademicYearClassContext(req.tenantId, { academicYear, academicYearId })
 
     const where = {
@@ -143,7 +143,7 @@ router.get('/', async (req, res, next) => {
       ...classContext.yearFilter
     }
 
-    const scope = await getUserAssignmentScope(prisma, req)
+    const scope = await getUserAssignmentScope(prisma, req, { semesterId })
     if (scope) where.id = { in: scope.classIds }
 
     const classes = await prisma.class.findMany({
@@ -153,6 +153,7 @@ router.get('/', async (req, res, next) => {
         _count: { select: { students: true } },
         teacherAssignments: {
           include: {
+            semester: { select: { id: true, name: true, year: true, semesterNum: true, isActive: true, academicYearId: true } },
             teacher: { select: { id: true, fullName: true } },
             subject: { select: { id: true, name: true } }
           }
@@ -170,7 +171,8 @@ router.get('/', async (req, res, next) => {
 // GET /classes/:id
 router.get('/:id', async (req, res, next) => {
   try {
-    await ensureClassAccess(prisma, req, req.params.id)
+    const selectedSemesterId = req.query.semesterId ? String(req.query.semesterId) : null
+    await ensureClassAccess(prisma, req, req.params.id, { semesterId: selectedSemesterId })
     const requestedAcademicYearId = req.query.academicYearId ? String(req.query.academicYearId) : null
 
     const classInfo = await prisma.class.findFirst({
@@ -183,6 +185,7 @@ router.get('/:id', async (req, res, next) => {
         },
         teacherAssignments: {
           include: {
+            semester: { select: { id: true, name: true, year: true, semesterNum: true, isActive: true, academicYearId: true } },
             teacher: { select: { id: true, fullName: true } },
             subject: { select: { id: true, name: true } }
           }
@@ -358,30 +361,38 @@ router.delete('/:id', authorize('SUPER_ADMIN'), async (req, res, next) => {
 // POST /classes/:id/assign-teacher
 router.post('/:id/assign-teacher', authorize('SUPER_ADMIN'), [
   body('teacherId').notEmpty(),
-  body('subjectId').notEmpty()
+  body('subjectId').notEmpty(),
+  body('semesterId').notEmpty()
 ], async (req, res, next) => {
   try {
-    const { teacherId, subjectId, isHomeroom } = req.body
+    const { teacherId, subjectId, semesterId, isHomeroom } = req.body
 
     // Verify class, teacher, and subject belong to current tenant
-    const [cls, teacher, subject] = await Promise.all([
+    const [cls, teacher, subject, semester] = await Promise.all([
       prisma.class.findFirst({ where: { id: req.params.id, tenantId: req.tenantId } }),
       prisma.user.findFirst({ where: { id: teacherId, tenantId: req.tenantId, role: { in: ['TEACHER', 'STAFF'] } } }),
-      prisma.subject.findFirst({ where: { id: subjectId, tenantId: req.tenantId } })
+      prisma.subject.findFirst({ where: { id: subjectId, tenantId: req.tenantId } }),
+      prisma.semester.findFirst({ where: { id: semesterId, tenantId: req.tenantId } })
     ])
     if (!cls) throw new AppError('Class not found', 404, 'NOT_FOUND')
     if (!teacher) throw new AppError('Teacher/staff not found', 404, 'NOT_FOUND')
     if (!subject) throw new AppError('Subject not found', 404, 'NOT_FOUND')
+    if (!semester) throw new AppError('Semester not found', 404, 'NOT_FOUND')
+    if ((cls.academicYearId && cls.academicYearId !== semester.academicYearId) || (!cls.academicYearId && cls.academicYear !== semester.year)) {
+      throw new AppError('Class assignment must belong to the selected semester academic year', 400, 'CLASS_SEMESTER_MISMATCH')
+    }
 
     const assignment = await prisma.teacherAssignment.create({
       data: {
         tenantId: req.tenantId,
         teacherId,
         classId: req.params.id,
+        semesterId,
         subjectId,
         isHomeroom: isHomeroom || false
       },
       include: {
+        semester: { select: { id: true, name: true, year: true, semesterNum: true, isActive: true, academicYearId: true } },
         teacher: { select: { id: true, fullName: true } },
         subject: { select: { id: true, name: true } },
         class: { select: { id: true, name: true } }

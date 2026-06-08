@@ -160,18 +160,13 @@ export default function PromotionPage() {
       }
       toast.success(`Đã thực thi: ${res.data.data.summary.promoted} lên lớp, ${res.data.data.summary.archived} tốt nghiệp`)
 
-      // Re-fetch academic years so the newly activated year is reflected in the UI.
-      // This also ensures /classes page will auto-switch to the new active year on next visit.
+      // Re-fetch academic years so other pages can follow the new active year.
+      // Keep the current filter on the evaluated year to avoid jumping the user away
+      // from the promotion result they just executed.
       try {
         const yearRes = await academicYearApi.list()
         const yearRows = yearRes.data.data || []
         setYears(yearRows)
-        // If the newly activated year differs from the filter, switch to it
-        const newActiveId = yearRows.find((y: any) => y.isActive)?.id
-        if (newActiveId && newActiveId !== filters.academicYearId) {
-          setFilters((prev) => ({ ...prev, academicYearId: newActiveId }))
-          return // refreshResults will be triggered by the filter change effect
-        }
       } catch {
         // non-critical
       }
