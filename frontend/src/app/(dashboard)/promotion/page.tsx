@@ -26,6 +26,11 @@ export default function PromotionPage() {
   const [missingDetails, setMissingDetails] = useState<any[]>([])
   const [graduationData, setGraduationData] = useState<any>(null)
 
+  const isActiveYear = useMemo(() => {
+    const selectedYear = years.find((y) => y.id === filters.academicYearId)
+    return selectedYear?.isActive ?? false
+  }, [years, filters.academicYearId])
+
   useEffect(() => {
     academicYearApi.list()
       .then((yearRes) => {
@@ -40,9 +45,27 @@ export default function PromotionPage() {
 
   useEffect(() => {
     if (!filters.academicYearId) {
+      setResults(null)
       setGraduationData(null)
       return
     }
+    setResults(null)
+    setGraduationData(null)
+
+    promotionApi.getYearEndResults({ academicYearId: filters.academicYearId })
+      .then((res) => {
+        const data = res.data.data
+        if (data && (data.passStudents?.length > 0 || data.failStudents?.length > 0)) {
+          setResults(data)
+          if (data.nextAcademicYear?.id) {
+            classApi.list({ academicYearId: data.nextAcademicYear.id })
+              .then((classRes) => setClasses(classRes.data.data || []))
+              .catch(() => {})
+          }
+        }
+      })
+      .catch(() => {})
+
     reportApi.graduationSummary(filters.academicYearId)
       .then((res) => setGraduationData(res.data.data))
       .catch(() => setGraduationData(null))
@@ -239,6 +262,12 @@ export default function PromotionPage() {
           </div>
         </div>
       </section>
+
+      {!results && filters.academicYearId && (
+        <section className="card p-6 text-center text-gray-500">
+          Chưa có dữ liệu xét lên lớp. Vui lòng bấm "Chạy xét" để bắt đầu.
+        </section>
+      )}
 
       {missingDetails.length > 0 ? (
         <section className="card p-5">

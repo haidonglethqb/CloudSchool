@@ -126,15 +126,16 @@ const findNextAcademicYear = async (tenantId, academicYear) => {
   return next || null
 }
 
-const getPlacementStatus = (promotion, latestHistory) => {
+const getPlacementStatus = (promotion, histories = []) => {
+  const actions = new Set(histories.map((h) => h.action))
   if (promotion.result === 'PASS') {
     if (promotion.class?.grade?.level && promotion.isGraduating) return 'GRADUATED'
-    return latestHistory?.action === 'ASSIGNED' ? 'ASSIGNED' : 'PENDING'
+    if (actions.has('ASSIGNED')) return 'ASSIGNED'
+    return 'PENDING'
   }
-  if (!latestHistory) return 'PENDING'
-  if (latestHistory.action === 'INACTIVE') return 'INACTIVE'
-  if (latestHistory.action === 'ASSIGNED') return 'ASSIGNED'
-  if (latestHistory.action === 'DRAFT_TARGET') return 'DRAFTED'
+  if (actions.has('INACTIVE')) return 'INACTIVE'
+  if (actions.has('ASSIGNED')) return 'ASSIGNED'
+  if (actions.has('DRAFT_TARGET')) return 'DRAFTED'
   return 'PENDING'
 }
 
@@ -172,7 +173,6 @@ const buildPromotionEvaluation = async (tenantId, academicYear) => {
       tenantId,
       academicYearId: academicYear.id,
       semesterId: finalSemester.id,
-      student: { isActive: true },
       class: { isActive: true }
     },
     include: {
@@ -184,7 +184,7 @@ const buildPromotionEvaluation = async (tenantId, academicYear) => {
 
   if (enrollments.length === 0) {
     const fallbackEnrollments = await prisma.classEnrollment.findMany({
-      where: { tenantId, academicYearId: academicYear.id, student: { isActive: true }, class: { isActive: true } },
+      where: { tenantId, academicYearId: academicYear.id, class: { isActive: true } },
       include: { student: true, class: { include: { grade: true } } },
       orderBy: [{ semester: { semesterNum: 'desc' } }, { class: { name: 'asc' } }]
     })
@@ -216,6 +216,11 @@ const buildPromotionEvaluation = async (tenantId, academicYear) => {
 
   for (const enrollment of enrollments) {
     const student = enrollment.student
+
+    // Skip students who have no scores at all in this academic year
+    const studentScores = scoresByStudent.get(student.id) || []
+    if (studentScores.length === 0) continue
+
     const classInfo = enrollment.class
     const subjectYearlyAverages = []
     let studentHasMissing = false
@@ -429,7 +434,7 @@ router.get('/year-end/results', async (req, res, next) => {
           isGraduating,
           autoTargetClassId: isGraduating ? null : (autoTargetClass?.id || null),
           autoTargetClassName: isGraduating ? 'Tốt nghiệp' : (autoTargetClass?.name || null),
-          placementStatus: isGraduating ? 'GRADUATED' : getPlacementStatus({ ...item, isGraduating }, latestHistory),
+          placementStatus: isGraduating ? 'GRADUATED' : getPlacementStatus({ ...item, isGraduating }, byPromotionId.get(item.id) || []),
           latestPlacementHistory: latestHistory,
           placementHistory: byPromotionId.get(item.id) || [],
           autoAssignmentReason: isGraduating
@@ -455,7 +460,7 @@ router.get('/year-end/results', async (req, res, next) => {
             const latestHistory = latestByPromotionId.get(item.id) || null
             return {
               ...item,
-              placementStatus: getPlacementStatus(item, latestHistory),
+              placementStatus: getPlacementStatus(item, byPromotionId.get(item.id) || []),
               latestPlacementHistory: latestHistory,
               placementHistory: byPromotionId.get(item.id) || []
             }
