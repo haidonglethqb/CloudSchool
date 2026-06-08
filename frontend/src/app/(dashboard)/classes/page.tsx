@@ -59,6 +59,7 @@ interface Semester {
   displayName?: string
   academicYearId?: string
   isActive: boolean
+  semesterNum?: number
 }
 
 export default function ClassesPage() {
@@ -82,6 +83,20 @@ export default function ClassesPage() {
   const [selectedGradeId, setSelectedGradeId] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  const getTeacherSemesterCandidates = (yearRows: AcademicYear[], semesterRows: Semester[]) => {
+    const yearsById = new Map(yearRows.map((year, index) => [year.id, { year, index }]))
+    return [...semesterRows]
+      .filter((semester) => semester.academicYearId && yearsById.has(semester.academicYearId))
+      .sort((left, right) => {
+        const leftYear = yearsById.get(left.academicYearId!)
+        const rightYear = yearsById.get(right.academicYearId!)
+        if (!leftYear || !rightYear) return 0
+        if (left.isActive !== right.isActive) return left.isActive ? -1 : 1
+        if (leftYear.index !== rightYear.index) return leftYear.index - rightYear.index
+        return (right.semesterNum || 0) - (left.semesterNum || 0)
+      })
+  }
+
   const fetchData = async () => {
     try {
       const yearRes = await academicYearApi.list()
@@ -99,11 +114,42 @@ export default function ClassesPage() {
         : activeSemesterId || ''
       setAcademicYears(yearRows)
       setSemesters(semesterRows)
-      if (targetYearId !== selectedAcademicYearId) setSelectedAcademicYearId(targetYearId)
-      if (targetSemesterId !== selectedSemesterId) setSelectedSemesterId(targetSemesterId)
+      let resolvedYearId = targetYearId
+      let resolvedSemesterId = targetSemesterId
+      let teacherRows = []
 
-      const classesRes = await classApi.list(targetYearId ? { academicYearId: targetYearId, ...(isTeacher && targetSemesterId ? { semesterId: targetSemesterId } : {}) } : undefined)
-      setTeacherClasses(classesRes.data.data || [])
+      if (isTeacher) {
+        const initialRes = await classApi.list(resolvedYearId ? {
+          academicYearId: resolvedYearId,
+          ...(resolvedSemesterId ? { semesterId: resolvedSemesterId } : {})
+        } : undefined)
+        teacherRows = initialRes.data.data || []
+
+        if (teacherRows.length === 0) {
+          const candidates = getTeacherSemesterCandidates(yearRows, semesterRows)
+          for (const semester of candidates) {
+            const res = await classApi.list({
+              academicYearId: semester.academicYearId,
+              semesterId: semester.id,
+            })
+            const rows = res.data.data || []
+            if (rows.length > 0) {
+              teacherRows = rows
+              resolvedYearId = semester.academicYearId || resolvedYearId
+              resolvedSemesterId = semester.id
+              break
+            }
+          }
+        }
+
+        setTeacherClasses(teacherRows)
+      } else {
+        const classesRes = await classApi.list(resolvedYearId ? { academicYearId: resolvedYearId } : undefined)
+        setTeacherClasses(classesRes.data.data || [])
+      }
+
+      if (resolvedYearId !== selectedAcademicYearId) setSelectedAcademicYearId(resolvedYearId)
+      if (resolvedSemesterId !== selectedSemesterId) setSelectedSemesterId(resolvedSemesterId)
 
       if (isTeacher) {
         setGrades([])

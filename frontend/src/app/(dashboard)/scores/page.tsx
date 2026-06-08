@@ -27,6 +27,7 @@ interface Semester {
   displayName?: string
   academicYearId?: string
   isActive: boolean
+  semesterNum?: number
   startDate?: string | null
   endDate?: string | null
 }
@@ -111,6 +112,19 @@ export default function ScoresPage() {
   const selectedSemesterEntryStatus = selectedSemesterMeta ? getSemesterEntryStatus(selectedSemesterMeta) : null
   const selectedSemesterScheduleStatus = selectedSemesterMeta ? getSemesterScheduleStatus(selectedSemesterMeta, now) : null
 
+  const getTeacherSemesterCandidates = (yearRows: AcademicYear[], semesterRows: Semester[]) => {
+    const yearsById = new Map(yearRows.map((year, index) => [year.id, index]))
+    return [...semesterRows]
+      .filter((semester) => semester.academicYearId && yearsById.has(semester.academicYearId))
+      .sort((left, right) => {
+        const leftYearIndex = yearsById.get(left.academicYearId!)
+        const rightYearIndex = yearsById.get(right.academicYearId!)
+        if (left.isActive !== right.isActive) return left.isActive ? -1 : 1
+        if (leftYearIndex !== rightYearIndex) return (leftYearIndex || 0) - (rightYearIndex || 0)
+        return (right.semesterNum || 0) - (left.semesterNum || 0)
+      })
+  }
+
   useEffect(() => {
     selectedSemesterRef.current = selectedSemester
   }, [selectedSemester])
@@ -169,7 +183,27 @@ export default function ScoresPage() {
         const querySemesterId = searchParams.get('semesterId')
         const queryYearId = searchParams.get('academicYearId')
         const activeYear = yearRows.find((row: AcademicYear) => row.isActive) || yearRows[0]
-        const initialYearId = queryYearId || (semesterRows || []).find((row: Semester) => row.id === querySemesterId)?.academicYearId || activeYear?.id || ''
+        let initialYearId = queryYearId || (semesterRows || []).find((row: Semester) => row.id === querySemesterId)?.academicYearId || activeYear?.id || ''
+        let initialSemesterId = querySemesterId && (semesterRows || []).some((row: Semester) => row.id === querySemesterId)
+          ? querySemesterId
+          : ''
+
+        if (user?.role === 'TEACHER' && !queryClassId && !querySubjectId) {
+          const candidates = getTeacherSemesterCandidates(yearRows, semesterRows || [])
+          for (const semester of candidates) {
+            const classRes = await classApi.list({
+              academicYearId: semester.academicYearId,
+              semesterId: semester.id,
+            })
+            const rows = classRes.data.data || []
+            if (rows.length > 0) {
+              initialYearId = semester.academicYearId || initialYearId
+              initialSemesterId = semester.id
+              break
+            }
+          }
+        }
+
         if (initialYearId) setSelectedAcademicYear(initialYearId)
 
         if (queryClassId) {
@@ -178,8 +212,8 @@ export default function ScoresPage() {
         if (querySubjectId) {
           setSelectedSubject(querySubjectId)
         }
-        if (querySemesterId && (semesterRows || []).some((row: Semester) => row.id === querySemesterId)) {
-          setSelectedSemester(querySemesterId)
+        if (initialSemesterId) {
+          setSelectedSemester(initialSemesterId)
         }
       } catch {
         toast.error('Không thể tải dữ liệu ban đầu')

@@ -35,7 +35,7 @@ const ALL_MODULES = [
 const ROLE_MODULES: Record<string, typeof ALL_MODULES> = {
   STAFF: ALL_MODULES, // STAFF có thể được cấp tất cả modules
   TEACHER: ALL_MODULES.filter((m) =>
-    ['student-lookup', 'classes', 'subjects', 'scores', 'reports'].includes(m.key)
+    ['student-lookup', 'classes', 'scores', 'reports'].includes(m.key)
   ), // TEACHER chỉ có 5 modules phù hợp
 }
 
