@@ -44,7 +44,10 @@ const ensureClassAccess = async (prisma, req, classId, options = {}) => {
 const ensureClassSubjectAccess = async (prisma, req, classId, subjectId, options = {}) => {
   const scope = await getUserAssignmentScope(prisma, req, { ...options, subjectId })
   if (!scope) return
-  if (options.semesterId && scope.classSubjectSemesterSet.has(`${classId}::${subjectId}::${options.semesterId}`)) return
+  if (options.semesterId) {
+    if (scope.classSubjectSemesterSet.has(`${classId}::${subjectId}::${options.semesterId}`)) return
+    throw new AppError('Not assigned to this class/subject in the selected semester', 403, 'FORBIDDEN')
+  }
   if (scope.pairSet.has(`${classId}::${subjectId}`)) return
   throw new AppError('Not assigned to this class/subject', 403, 'FORBIDDEN')
 }

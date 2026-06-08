@@ -81,10 +81,9 @@ router.get('/semesters', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHE
   }
 })
 
-router.use(authenticate, requireFeature('academic-calendar'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('academic-calendar'))
-
-// GET /academic-years
-router.get('/', async (req, res, next) => {
+// Shared read-only endpoints for teacher/staff dropdown context.
+// Must stay outside the /academic-calendar permission gate.
+router.get('/', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
   try {
     const academicYears = await prisma.academicYear.findMany({
       where: { tenantId: req.tenantId },
@@ -100,8 +99,7 @@ router.get('/', async (req, res, next) => {
   }
 })
 
-// GET /academic-years/:id
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
   try {
     const ay = await prisma.academicYear.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId },
@@ -116,6 +114,26 @@ router.get('/:id', async (req, res, next) => {
     next(error)
   }
 })
+
+router.get('/:id/semesters', authenticate, authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), async (req, res, next) => {
+  try {
+    const year = await prisma.academicYear.findFirst({
+      where: { id: req.params.id, tenantId: req.tenantId }
+    })
+    if (!year) throw new AppError('Academic year not found', 404, 'NOT_FOUND')
+
+    const semesters = await prisma.semester.findMany({
+      where: { tenantId: req.tenantId, academicYearId: req.params.id },
+      include: { academicYear: true },
+      orderBy: [{ semesterNum: 'asc' }, { startDate: 'asc' }]
+    })
+    res.json({ data: semesters.map(decorateSemester) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.use(authenticate, requireFeature('academic-calendar'), authorize('SUPER_ADMIN', 'STAFF', 'TEACHER'), requireRolePermission('academic-calendar'))
 
 // POST /academic-years
 router.post('/', authorize('SUPER_ADMIN', 'STAFF'), [
@@ -258,25 +276,6 @@ router.patch('/:id/activate', authorize('SUPER_ADMIN', 'STAFF'), async (req, res
     })
 
     res.json({ data: updated })
-  } catch (error) {
-    next(error)
-  }
-})
-
-// GET /academic-years/:id/semesters
-router.get('/:id/semesters', async (req, res, next) => {
-  try {
-    const year = await prisma.academicYear.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId }
-    })
-    if (!year) throw new AppError('Academic year not found', 404, 'NOT_FOUND')
-
-    const semesters = await prisma.semester.findMany({
-      where: { tenantId: req.tenantId, academicYearId: req.params.id },
-      include: { academicYear: true },
-      orderBy: [{ semesterNum: 'asc' }, { startDate: 'asc' }]
-    })
-    res.json({ data: semesters.map(decorateSemester) })
   } catch (error) {
     next(error)
   }
