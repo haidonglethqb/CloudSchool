@@ -267,10 +267,8 @@ export default function ReportsPage() {
   }, [selectedYearId, selectedYear, semesters])
 
   useEffect(() => {
-    Promise.all([subjectApi.list(), classApi.list(), subjectApi.getSemesters(), reportApi.dashboardByScope({ allYears: 'true' })])
-      .then(([subjectRes, classRes, semesterRes, dashboardRes]) => {
-        const subjectRows = subjectRes.data.data || []
-        const classRows = classRes.data.data || []
+    Promise.all([subjectApi.getSemesters(), reportApi.dashboardByScope({ allYears: 'true' })])
+      .then(([semesterRes, dashboardRes]) => {
         const semesterRows = semesterRes.data.data || []
         const dashboard = dashboardRes.data.data || {}
         const yearRows = (dashboard.academicYears || []).map((item: any) => ({
@@ -280,15 +278,15 @@ export default function ReportsPage() {
           isActive: item.isActive,
         }))
 
-        setSubjects(subjectRows)
-        setClasses(classRows)
         setSemesters(semesterRows)
         setYears(yearRows)
         setDashboardData(dashboard)
-        setReportState({
-          subjectId: subjectRows[0]?.id || '',
-          classId: classRows[0]?.id || '',
-        })
+        const activeYearId = yearRows.find((item: YearRow) => item.isActive)?.id || yearRows[0]?.id || ''
+        const activeSemesterId = semesterRows.find((item: SemesterRow) => item.isActive && item.academicYearId === activeYearId)?.id
+          || semesterRows.find((item: SemesterRow) => item.academicYearId === activeYearId)?.id
+          || ''
+        setSelectedYearId(activeYearId)
+        setSelectedSemesterId(activeSemesterId)
       })
       .catch(() => toast.error('Không thể tải dữ liệu báo cáo'))
       .finally(() => setLoading(false))
@@ -299,6 +297,35 @@ export default function ReportsPage() {
       setSelectedSemesterId('')
     }
   }, [filteredSemesters, selectedSemesterId])
+
+  useEffect(() => {
+    if (!selectedYearId && !selectedSemesterId) return
+
+    Promise.all([
+      classApi.list({
+        ...(selectedYearId ? { academicYearId: selectedYearId } : {}),
+        ...(selectedSemesterId ? { semesterId: selectedSemesterId } : {}),
+      }),
+      subjectApi.list({
+        ...(selectedYearId ? { academicYearId: selectedYearId } : {}),
+        ...(selectedSemesterId ? { semesterId: selectedSemesterId } : {}),
+      }),
+    ])
+      .then(([classRes, subjectRes]) => {
+        const classRows = classRes.data.data || []
+        const subjectRows = subjectRes.data.data || []
+        setClasses(classRows)
+        setSubjects(subjectRows)
+        setReportState((prev) => ({
+          subjectId: subjectRows.some((item: any) => item.id === prev.subjectId) ? prev.subjectId : (subjectRows[0]?.id || ''),
+          classId: classRows.some((item: any) => item.id === prev.classId) ? prev.classId : (classRows[0]?.id || ''),
+        }))
+      })
+      .catch(() => {
+        setClasses([])
+        setSubjects([])
+      })
+  }, [selectedYearId, selectedSemesterId])
 
   useEffect(() => {
     setDashboardLoading(true)

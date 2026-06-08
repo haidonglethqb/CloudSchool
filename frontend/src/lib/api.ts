@@ -109,7 +109,7 @@ export const userApi = {
   update: (id: string, data: Record<string, unknown>) => api.put(`/users/${id}`, data),
   disable: (id: string) => api.patch(`/users/${id}/disable`),
   delete: (id: string) => api.delete(`/users/${id}`),
-  updateAssignments: (id: string, assignments: Array<{ classId: string; subjectId: string; isHomeroom?: boolean }>) =>
+  updateAssignments: (id: string, assignments: Array<{ classId: string; semesterId: string; subjectId: string; isHomeroom?: boolean }>) =>
     api.put(`/users/${id}/assignments`, { assignments }),
 }
 
@@ -142,16 +142,16 @@ export const studentApi = {
 
 // ==================== Classes ====================
 export const classApi = {
-  list: (params?: { gradeId?: string; academicYear?: string; academicYearId?: string }) =>
+  list: (params?: { gradeId?: string; academicYear?: string; academicYearId?: string; semesterId?: string }) =>
     api.get('/classes', { params }),
-  get: (id: string, params?: { academicYearId?: string }) => api.get(`/classes/${id}`, { params }),
+  get: (id: string, params?: { academicYearId?: string; semesterId?: string }) => api.get(`/classes/${id}`, { params }),
   create: (data: { name: string; gradeId: string; academicYear?: string; academicYearId?: string }) =>
     api.post('/classes', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/classes/${id}`, data),
   delete: (id: string) => api.delete(`/classes/${id}`),
   getGrades: (params?: { academicYearId?: string; academicYear?: string }) => api.get('/classes/grades', { params }),
   // Teacher assignments
-  assignTeacher: (classId: string, data: { teacherId: string; subjectId: string; isHomeroom?: boolean }) =>
+  assignTeacher: (classId: string, data: { teacherId: string; semesterId: string; subjectId: string; isHomeroom?: boolean }) =>
     api.post(`/classes/${classId}/assign-teacher`, data),
   removeAssignment: (classId: string, assignmentId: string) =>
     api.delete(`/classes/${classId}/assign-teacher/${assignmentId}`),
@@ -169,7 +169,7 @@ export const classApi = {
 
 // ==================== Subjects ====================
 export const subjectApi = {
-  list: (params?: { includeInactive?: boolean; academicYearId?: string; classId?: string; includeVersions?: boolean }) => api.get('/subjects', { params }),
+  list: (params?: { includeInactive?: boolean; academicYearId?: string; classId?: string; semesterId?: string; includeVersions?: boolean }) => api.get('/subjects', { params }),
   get: (id: string) => api.get(`/subjects/${id}`),
   create: (data: { name: string; code: string; description?: string }) =>
     api.post('/subjects', data),

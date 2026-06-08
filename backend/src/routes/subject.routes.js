@@ -13,11 +13,11 @@ router.use(authenticate, requireFeature('subjects'), authorize('SUPER_ADMIN', 'S
 // GET /subjects
 router.get('/', async (req, res, next) => {
   try {
-    const { includeInactive, academicYearId, classId } = req.query
+    const { includeInactive, academicYearId, classId, semesterId } = req.query
 
     if (academicYearId && classId) {
       const effectiveSubjects = await getEffectiveSubjectsForClass(prisma, req.tenantId, { academicYearId, classId })
-      const scope = await getUserAssignmentScope(prisma, req)
+      const scope = await getUserAssignmentScope(prisma, req, { semesterId })
       const data = scope
         ? effectiveSubjects.filter((subject) => scope.pairSet.has(`${classId}::${subject.id}`))
         : effectiveSubjects
@@ -27,7 +27,7 @@ router.get('/', async (req, res, next) => {
     const where = { tenantId: req.tenantId }
     if (!includeInactive) where.isActive = true
 
-    const scope = await getUserAssignmentScope(prisma, req)
+    const scope = await getUserAssignmentScope(prisma, req, { semesterId })
     if (scope) where.id = { in: scope.subjectIds }
 
     const subjects = await prisma.subject.findMany({
@@ -59,7 +59,7 @@ router.get('/', async (req, res, next) => {
 // GET /subjects/:id
 router.get('/:id', async (req, res, next) => {
   try {
-    const scope = await getUserAssignmentScope(prisma, req)
+    const scope = await getUserAssignmentScope(prisma, req, { semesterId: req.query.semesterId })
     if (scope && !scope.subjectIds.includes(req.params.id)) {
       throw new AppError('Insufficient permissions', 403, 'FORBIDDEN')
     }

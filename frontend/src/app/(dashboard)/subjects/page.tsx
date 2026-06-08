@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { academicYearApi, classApi, scoreComponentSetApi, settingsApi, subjectApi } from '@/lib/api'
+import { useAuthStore } from '@/store/auth'
+import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { BookOpen, Copy, Loader2, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 
@@ -67,6 +69,8 @@ const yearLabel = (year?: AcademicYear) => year ? `${year.startYear}-${year.endY
 const semesterLabel = (semester?: Semester) => semester?.displayName || (semester ? `${semester.name} (${semester.year})` : '')
 
 export default function SubjectsPage() {
+  const user = useAuthStore((state) => state.user)
+  const router = useRouter()
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [years, setYears] = useState<AcademicYear[]>([])
   const [grades, setGrades] = useState<Grade[]>([])
@@ -78,6 +82,12 @@ export default function SubjectsPage() {
   const [showSubjectForm, setShowSubjectForm] = useState(false)
   const [editingSubject, setEditingSubject] = useState<string | null>(null)
   const [subjectForm, setSubjectForm] = useState({ code: '', name: '', description: '' })
+
+  useEffect(() => {
+    if (user?.role === 'TEACHER') {
+      router.replace('/scores')
+    }
+  }, [router, user?.role])
 
   const [selectedYearId, setSelectedYearId] = useState('')
   const [scopeSubjectId, setScopeSubjectId] = useState('')

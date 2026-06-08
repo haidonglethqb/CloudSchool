@@ -85,7 +85,6 @@ const teacherMenu: MenuItem[] = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
   { href: '/classes', icon: Users, label: 'Lớp của tôi', module: 'classes' },
   { href: '/students', icon: Search, label: 'Tra cứu HS', module: 'student-lookup' },
-  { href: '/subjects', icon: BookOpen, label: 'Môn học', module: 'subjects' },
   { href: '/scores', icon: ClipboardEdit, label: 'Nhập điểm', module: 'scores' },
   { href: '/reports', icon: BarChart3, label: 'Báo cáo', module: 'reports' },
 ]

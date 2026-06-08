@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { academicYearApi, classApi, downloadBlob, exportApi, subjectApi } from '@/lib/api'
+import { formatSemesterLabel } from '@/lib/utils'
 import { Download, Loader2, SlidersHorizontal } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -146,6 +147,9 @@ export default function ExportPage() {
   const sectionOptions = useMemo(() => sectionConfig[target], [target])
   const columnOptions = useMemo(() => columnConfig[target], [target])
   const currentTargetMeta = useMemo(() => targetMetadata[target], [target])
+  const filteredSemesters = useMemo(() => (
+    academicYearId ? semesters.filter((semester: any) => semester.academicYearId === academicYearId) : semesters
+  ), [academicYearId, semesters])
 
   useEffect(() => {
     semesterIdRef.current = semesterId
@@ -170,11 +174,16 @@ export default function ExportPage() {
   }, [])
 
   useEffect(() => {
-    Promise.all([subjectApi.list(), classApi.list(), academicYearApi.list(), refreshSemesters()])
-      .then(([subjectRes, classRes, yearRes]) => {
-        setSubjects(subjectRes.data.data || [])
-        setClasses(classRes.data.data || [])
-        setYears(yearRes.data.data || [])
+    Promise.all([academicYearApi.list(), refreshSemesters()])
+      .then(([yearRes, semesterRows]) => {
+        const years = yearRes.data.data || []
+        setYears(years)
+        const activeYearId = years.find((item: any) => item.isActive)?.id || years[0]?.id || ''
+        const activeSemesterId = (semesterRows || []).find((item: any) => item.isActive && item.academicYearId === activeYearId)?.id
+          || (semesterRows || []).find((item: any) => item.academicYearId === activeYearId)?.id
+          || ''
+        setAcademicYearId(activeYearId)
+        if (activeSemesterId) setSemesterId(activeSemesterId)
       })
       .catch(() => toast.error('Không thể tải dữ liệu export'))
       .finally(() => setLoading(false))
@@ -192,9 +201,42 @@ export default function ExportPage() {
   }, [refreshSemesters])
 
   useEffect(() => {
+    if (!academicYearId && !semesterId) return
+
+    Promise.all([
+      classApi.list({
+        ...(academicYearId ? { academicYearId } : {}),
+        ...(semesterId ? { semesterId } : {}),
+      }),
+      subjectApi.list({
+        ...(academicYearId ? { academicYearId } : {}),
+        ...(semesterId ? { semesterId } : {}),
+      }),
+    ])
+      .then(([classRes, subjectRes]) => {
+        const classRows = classRes.data.data || []
+        const subjectRows = subjectRes.data.data || []
+        setClasses(classRows)
+        setSubjects(subjectRows)
+        if (classId && !classRows.some((item: any) => item.id === classId)) setClassId('')
+        if (subjectId && !subjectRows.some((item: any) => item.id === subjectId)) setSubjectId('')
+      })
+      .catch(() => {
+        setClasses([])
+        setSubjects([])
+      })
+  }, [academicYearId, semesterId, classId, subjectId])
+
+  useEffect(() => {
     setSections(toDefaultValues(sectionConfig[target]))
     setColumns(toDefaultValues(columnConfig[target]))
   }, [target])
+
+  useEffect(() => {
+    if (semesterId && !filteredSemesters.some((semester: any) => semester.id === semesterId)) {
+      setSemesterId(filteredSemesters[0]?.id || '')
+    }
+  }, [filteredSemesters, semesterId])
 
   const toggleValue = (
     value: string,
@@ -317,8 +359,8 @@ export default function ExportPage() {
               <label className="label">Học kỳ</label>
               <select className="input" value={semesterId} onChange={(e) => setSemesterId(e.target.value)}>
                 <option value="">Chọn học kỳ</option>
-                {semesters.map((semester) => (
-                  <option key={semester.id} value={semester.id}>{semester.name}</option>
+                {filteredSemesters.map((semester) => (
+                  <option key={semester.id} value={semester.id}>{formatSemesterLabel(semester)}</option>
                 ))}
               </select>
             </div>
@@ -332,7 +374,7 @@ export default function ExportPage() {
               <select className="input" value={classId} onChange={(e) => setClassId(e.target.value)}>
                 <option value="">Chọn lớp</option>
                 {classes.map((cls) => (
-                  <option key={cls.id} value={cls.id}>{cls.name}</option>
+                  <option key={cls.id} value={cls.id}>{cls.name}{cls.grade?.name ? ` - ${cls.grade.name}` : ''}</option>
                 ))}
               </select>
             </div>
@@ -340,8 +382,8 @@ export default function ExportPage() {
               <label className="label">Học kỳ</label>
               <select className="input" value={semesterId} onChange={(e) => setSemesterId(e.target.value)}>
                 <option value="">Chọn học kỳ</option>
-                {semesters.map((semester) => (
-                  <option key={semester.id} value={semester.id}>{semester.name}</option>
+                {filteredSemesters.map((semester) => (
+                  <option key={semester.id} value={semester.id}>{formatSemesterLabel(semester)}</option>
                 ))}
               </select>
             </div>
@@ -353,8 +395,8 @@ export default function ExportPage() {
             <label className="label">Học kỳ</label>
             <select className="input" value={semesterId} onChange={(e) => setSemesterId(e.target.value)}>
               <option value="">Chọn học kỳ</option>
-              {semesters.map((semester) => (
-                <option key={semester.id} value={semester.id}>{semester.name}</option>
+              {filteredSemesters.map((semester) => (
+                <option key={semester.id} value={semester.id}>{formatSemesterLabel(semester)}</option>
               ))}
             </select>
           </div>
@@ -366,7 +408,7 @@ export default function ExportPage() {
             <select className="input" value={academicYearId} onChange={(e) => setAcademicYearId(e.target.value)}>
               <option value="">Chọn năm học</option>
               {years.map((year) => (
-                <option key={year.id} value={year.id}>{year.startYear}-{year.endYear}</option>
+                <option key={year.id} value={year.id}>{year.startYear}-{year.endYear}{year.isActive ? ' - Hiện tại' : ''}</option>
               ))}
             </select>
           </div>

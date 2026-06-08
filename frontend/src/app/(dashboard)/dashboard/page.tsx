@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { reportApi, adminApi, classApi } from '@/lib/api'
+import { reportApi, adminApi, academicYearApi, classApi, subjectApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
 import { formatDate } from '@/lib/utils'
 import {
@@ -328,8 +328,19 @@ function TeacherDashboardCompact() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    classApi.list()
-      .then((res) => setClasses(res.data.data || []))
+    Promise.all([academicYearApi.list(), subjectApi.getSemesters()])
+      .then(async ([yearRes, semesterRes]) => {
+        const years = yearRes.data.data || []
+        const semesters = semesterRes.data.data || []
+        const activeYearId = years.find((item: any) => item.isActive)?.id || years[0]?.id
+        const activeSemesterId = semesters.find((item: any) => item.isActive && item.academicYearId === activeYearId)?.id
+          || semesters.find((item: any) => item.academicYearId === activeYearId)?.id
+        const res = await classApi.list({
+          academicYearId: activeYearId,
+          semesterId: activeSemesterId,
+        })
+        setClasses(res.data.data || [])
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
